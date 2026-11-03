@@ -14,6 +14,25 @@ Painel em Streamlit para acompanhar a produção dos técnicos ao longo do tempo
 - Persistência local em SQLite e substituição sem duplicidade ao reenviar um arquivo.
 - Dados de demonstração identificados, removidos automaticamente na primeira importação real.
 
+## Estrutura do projeto
+
+```text
+streamlit_app.py             # Inicialização, navegação e roteamento
+production.py                # Importação, cálculos e persistência
+components/
+├── layout.py                # Cards, cabeçalho, navegação e estados visuais
+├── filters.py               # Filtros de período e técnicos
+├── charts.py                # Gráficos compartilhados
+├── overview.py              # Componentes da visão geral
+├── history.py               # Componentes do histórico mensal
+├── technicians.py           # Componentes da análise individual
+├── data_import.py           # Importação e manutenção da base
+└── styles.py                # Cores, estilos e configuração dos gráficos
+tests/                       # Testes das regras e componentes
+```
+
+Os componentes recebem DataFrames já normalizados e não alteram a regra de cálculo. Isso permite reutilizar cards, filtros e gráficos em outras páginas sem duplicar código.
+
 ## Formato das planilhas
 
 Arquivos Excel devem ter uma aba chamada **Prod** e/ou **Gpon**. Cada aba precisa conter:
