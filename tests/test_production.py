@@ -76,6 +76,33 @@ class WorkbookTests(unittest.TestCase):
         self.assertEqual(total["points_gpon"], 35.5)
         self.assertEqual(total["points_total"], 135.5)
 
+    def test_process_excel_finds_offset_headers_and_nome_equipe(self):
+        content = io.BytesIO()
+        with pd.ExcelWriter(content, engine="openpyxl") as writer:
+            pd.DataFrame(
+                [
+                    ["Relatório de produção", None, None, None, None],
+                    ["Competência: novembro/2026", None, None, None, None],
+                    ["Data Agendamento", "Data Atendimento", "Período", "Nome Equipe", "Pontos"],
+                    ["02/11/2026", None, "08:00 - 12:00", "Equipe A", 25],
+                    ["03/11/2026", "03/11/2026", "12:00 - 15:00", "Equipe A", 15],
+                ]
+            ).to_excel(writer, sheet_name="Prod", index=False, header=False)
+        records, issues = production.process_upload(
+            "producao.xlsx", content.getvalue()
+        )
+
+        self.assertEqual(issues, [])
+        self.assertEqual(len(records), 2)
+        self.assertEqual(records[0]["technician"], "Equipe A")
+        self.assertEqual(records[0]["reference_date"], "2026-11-02")
+        self.assertEqual(
+            production.summarize(
+                pd.DataFrame(records), ["technician", "reference_date"]
+            )["points_total"].sum(),
+            40,
+        )
+
     def test_csv_semicolon_and_filename_fallback(self):
         content = "Técnico;Pontos\nAndré Santos;125,5\n".encode("latin-1")
         records, issues = production.process_upload(

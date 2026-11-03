@@ -37,6 +37,7 @@ TECHNICIAN_ALIASES = {
     "tecnico",
     "nomtecnico",
     "nometecnico",
+    "nomeequipe",
     "colaborador",
     "nomecolaborador",
     "funcionario",
@@ -66,6 +67,19 @@ DATE_ALIASES = {
     "periodo",
     "referencia",
 }
+DATE_COLUMN_PREFERENCE = (
+    "dataagendamento",
+    "data",
+    "dataproducao",
+    "dataatendimento",
+    "datareferencia",
+    "datafechamento",
+    "competencia",
+    "mes",
+    "mesano",
+    "periodo",
+    "referencia",
+)
 
 MONTHS_PT = {
     "jan": 1,
@@ -240,6 +254,14 @@ def find_column(frame: pd.DataFrame, aliases: set[str]) -> object | None:
     return None
 
 
+def find_date_column(frame: pd.DataFrame) -> object | None:
+    normalized = {normalize_text(column): column for column in frame.columns}
+    for alias in DATE_COLUMN_PREFERENCE:
+        if alias in normalized:
+            return normalized[alias]
+    return find_column(frame, DATE_ALIASES)
+
+
 def process_dataframe(
     frame: pd.DataFrame,
     origin: str,
@@ -258,7 +280,7 @@ def process_dataframe(
 
     technician_col = find_column(frame, TECHNICIAN_ALIASES)
     points_col = find_column(frame, POINTS_ALIASES)
-    date_col = find_column(frame, DATE_ALIASES)
+    date_col = find_date_column(frame)
     available = ", ".join(str(column) for column in frame.columns)
     missing = []
     if technician_col is None:
@@ -362,7 +384,17 @@ def process_upload(
         if sheet_name is None:
             continue
         found = True
-        frame = workbook.parse(sheet_name)
+        frame = None
+        for header_row in range(10):
+            candidate = pd.read_excel(workbook, sheet_name=sheet_name, header=header_row)
+            if (
+                find_column(candidate, TECHNICIAN_ALIASES) is not None
+                and find_column(candidate, POINTS_ALIASES) is not None
+            ):
+                frame = candidate
+                break
+        if frame is None:
+            frame = pd.read_excel(workbook, sheet_name=sheet_name)
         sheet_records, sheet_issues = process_dataframe(
             frame, origin, filename, default_date
         )
