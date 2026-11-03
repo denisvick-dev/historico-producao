@@ -1,0 +1,16 @@
+# Banco local gerado pelas importações
+/data/
+*.db
+*.db-shm
+*.db-wal
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Streamlit e arquivos locais
+.streamlit/secrets.toml
+.DS_Store
