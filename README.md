@@ -11,6 +11,7 @@ Painel em Streamlit para acompanhar a produção dos técnicos ao longo do tempo
 - Histórico mensal detalhado, mapa de produção e exportação em CSV.
 - Perfil individual com melhor competência e comparação com a média da equipe.
 - Importação de vários arquivos `.xlsx`, `.xls` e `.csv`.
+- Importação direta da pasta do Google Drive, incluindo Planilhas Google.
 - Persistência local em SQLite e substituição sem duplicidade ao reenviar um arquivo.
 - Dados de demonstração identificados, removidos automaticamente na primeira importação real.
 
@@ -40,6 +41,27 @@ streamlit run streamlit_app.py
 ```
 
 Abra o endereço exibido pelo Streamlit. Na opção **Importar dados**, baixe a planilha modelo ou envie os arquivos baixados da [pasta de produção no Google Drive](https://drive.google.com/drive/folders/1P0ComfPrfZiq-bHfOi8fWJeAE4GAEkBq).
+
+### Importação direta do Google Drive
+
+Para habilitar o botão **Importar da pasta do Drive**:
+
+1. Habilite a Google Drive API no projeto Google Cloud associado à conta de serviço.
+2. Compartilhe a pasta com o endereço `client_email` da conta de serviço, com permissão de leitor.
+3. Configure as credenciais localmente em `.streamlit/secrets.toml` (não versione esse arquivo):
+
+```toml
+[gcp_service_account]
+type = "service_account"
+project_id = "seu-projeto"
+private_key_id = "..."
+private_key = "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
+client_email = "conta-de-servico@seu-projeto.iam.gserviceaccount.com"
+client_id = "..."
+token_uri = "https://oauth2.googleapis.com/token"
+```
+
+O importador lê arquivos XLSX, XLS, CSV e Planilhas Google diretamente na pasta compartilhada. Cada planilha Excel deve ter abas `Prod` e/ou `Gpon`; os arquivos CSV usam `Prod` como origem. A soma de pontos aparece no histórico por técnico e mês.
 
 ### Persistência
 

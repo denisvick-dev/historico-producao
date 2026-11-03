@@ -24,8 +24,10 @@ from production import (
     save_records,
     summarize,
 )
+from drive_import import DriveImportError, import_drive_folder
 
 DRIVE_FOLDER_URL = "https://drive.google.com/drive/folders/1P0ComfPrfZiq-bHfOi8fWJeAE4GAEkBq"
+DRIVE_FOLDER_ID = "1P0ComfPrfZiq-bHfOi8fWJeAE4GAEkBq"
 COLORS = {
     "ink": "#173c35",
     "green": "#157a5b",
@@ -644,9 +646,84 @@ def render_import(is_demo: bool) -> None:
         for issue in feedback.get("issues", []):
             st.caption(issue)
 
+    def finish_import(
+        records: list[dict], issues: list[str], successful_files: int
+    ) -> None:
+        if records:
+            count = save_records(records)
+            message = (
+                f"{count} registros importados de {successful_files} arquivo(s). "
+                "O histórico já foi atualizado."
+            )
+            if is_demo:
+                message += " Os dados de demonstração foram removidos."
+            st.session_state["import_feedback"] = {
+                "type": "success",
+                "message": message,
+                "issues": issues[:40],
+            }
+        else:
+            st.session_state["import_feedback"] = {
+                "type": "warning",
+                "message": "Nenhum registro válido foi importado. Revise os avisos abaixo.",
+                "issues": issues[:40],
+            }
+        st.rerun()
+
     upload_col, help_col = st.columns([1.65, 1])
     with upload_col:
         with st.container(border=True):
+            st.markdown("**Importar diretamente do Google Drive**")
+            st.markdown(
+                '<div class="small-muted">Lê as planilhas da pasta compartilhada com a conta de serviço configurada neste app.</div>',
+                unsafe_allow_html=True,
+            )
+            drive_option_col, drive_date_col = st.columns(2)
+            with drive_option_col:
+                drive_csv_origin = st.selectbox(
+                    "Origem dos arquivos CSV no Drive",
+                    [PROD, GPON],
+                    key="drive_csv_origin",
+                )
+            with drive_date_col:
+                drive_default_date = st.date_input(
+                    "Competência padrão para o Drive",
+                    value=None,
+                    key="drive_default_date",
+                    help="Usada quando o arquivo não tiver data e o nome não indicar ano e mês.",
+                )
+            if st.button(
+                "Importar da pasta do Drive",
+                type="primary",
+                width="stretch",
+            ):
+                if "gcp_service_account" not in st.secrets:
+                    st.session_state["import_feedback"] = {
+                        "type": "warning",
+                        "message": (
+                            "Configure as credenciais da conta de serviço em "
+                            ".streamlit/secrets.toml e compartilhe a pasta do Drive com ela."
+                        ),
+                        "issues": [],
+                    }
+                    st.rerun()
+                try:
+                    records, issues, successful_files = import_drive_folder(
+                        st.secrets["gcp_service_account"],
+                        DRIVE_FOLDER_ID,
+                        csv_origin=drive_csv_origin,
+                        default_date=drive_default_date,
+                    )
+                except DriveImportError as error:
+                    st.session_state["import_feedback"] = {
+                        "type": "warning",
+                        "message": f"Falha ao importar do Google Drive: {error}",
+                        "issues": [],
+                    }
+                    st.rerun()
+                finish_import(records, issues, successful_files)
+
+            st.divider()
             st.markdown("**1. Selecione os arquivos**")
             st.markdown(
                 '<div class="small-muted">Envie um ou mais arquivos. Ao reenviar um arquivo com o mesmo nome, seus registros serão substituídos sem duplicar o histórico.</div>',
@@ -694,27 +771,7 @@ def render_import(is_demo: bool) -> None:
                         issues.extend(f"{uploaded.name} · {issue}" for issue in file_issues[:20])
                     except ValueError as error:
                         issues.append(f"{uploaded.name} · {error}")
-                if all_records:
-                    count = save_records(all_records)
-                    message = (
-                        f"{count} registros importados de {successful_files} arquivo(s). "
-                        "O histórico já foi atualizado."
-                    )
-                    if is_demo:
-                        message += " Os dados de demonstração foram removidos."
-                    st.session_state["import_feedback"] = {
-                        "type": "success",
-                        "message": message,
-                        "issues": issues[:40],
-                    }
-                    st.rerun()
-                else:
-                    st.session_state["import_feedback"] = {
-                        "type": "warning",
-                        "message": "Nenhum registro válido foi importado. Revise os avisos abaixo.",
-                        "issues": issues[:40],
-                    }
-                    st.rerun()
+                finish_import(all_records, issues, successful_files)
 
     with help_col:
         with st.container(border=True):
@@ -722,7 +779,7 @@ def render_import(is_demo: bool) -> None:
             st.markdown(
                 """
                 <div class="small-muted">
-                Cada arquivo Excel deve conter as abas <b>Prod</b> e/ou <b>Gpon</b>, com:
+                Cada planilha Excel deve conter as abas <b>Prod</b> e/ou <b>Gpon</b>, com:
                 <ul>
                     <li><b>Técnico:</b> nome do colaborador</li>
                     <li><b>Pontos:</b> valor produzido</li>
