@@ -551,7 +551,12 @@ def render_technicians(filtered: pd.DataFrame) -> None:
     section_heading("Perfil do técnico", "Evolução individual e comparação com a média da equipe")
     ranking = summarize(filtered, "technician").sort_values("points_total", ascending=False)
     names = ranking["technician"].tolist()
+    if not names:
+        st.info("Nenhum técnico disponível no recorte atual.")
+        return
     selected = st.selectbox("Selecione o técnico", names, label_visibility="collapsed")
+    if selected is None:
+        return
     position = names.index(selected) + 1
     technician_data = filtered[filtered["technician"].eq(selected)]
     totals = ranking[ranking["technician"].eq(selected)].iloc[0]
@@ -566,7 +571,7 @@ def render_technicians(filtered: pd.DataFrame) -> None:
         unsafe_allow_html=True,
     )
     monthly = summarize(technician_data, "period").sort_values("period")
-    best = monthly.loc[monthly["points_total"].idxmax()]
+    best = monthly.sort_values("points_total").iloc[-1]
     average = monthly["points_total"].mean()
     columns = st.columns(4)
     with columns[0]:
