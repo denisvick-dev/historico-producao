@@ -225,6 +225,7 @@ class PersistenceTests(unittest.TestCase):
                     VALUES ('Ana', '2026-11-03', 'Prod', 10, 'legacy.xlsx', 2);
                     """
                 )
+            connection.close()
             production.init_database()
             loaded = production.load_records()
             self.assertEqual(loaded.iloc[0]["project"], "Sem projeto")
@@ -240,6 +241,49 @@ class PersistenceTests(unittest.TestCase):
         self.assertEqual(len(loaded), 1)
         self.assertEqual(loaded.iloc[0]["is_demo"], 0)
         self.assertEqual(production.get_setting("demo_disabled"), "1")
+
+    def test_drive_sync_replaces_processed_files_and_removes_deleted_files(self):
+        old_prod = self.record(points=10, row=2)
+        old_prod["source_file"] = "producao [live-id].xlsx"
+        old_gpon = self.record(points=20, origin="Gpon", row=2)
+        old_gpon["source_file"] = "producao [live-id].xlsx"
+        removed = self.record(points=30)
+        removed["source_file"] = "producao [removed-id].xlsx"
+        manual = self.record(points=40)
+        production.save_records([old_prod, old_gpon, removed, manual])
+
+        refreshed = self.record(points=50, row=3)
+        refreshed["source_file"] = "producao [live-id].xlsx"
+        count = production.sync_drive_records(
+            [refreshed],
+            live_file_ids={"live-id"},
+            refreshed_file_ids={"live-id"},
+        )
+
+        loaded = production.load_records()
+        self.assertEqual(count, 1)
+        self.assertEqual(
+            set(loaded["source_file"]),
+            {"producao [live-id].xlsx", "producao.xlsx"},
+        )
+        live_rows = loaded[loaded["source_file"] == "producao [live-id].xlsx"]
+        self.assertEqual(len(live_rows), 1)
+        self.assertEqual(live_rows.iloc[0]["points"], 50)
+
+    def test_drive_sync_preserves_records_for_live_but_unreadable_files(self):
+        current = self.record(points=70)
+        current["source_file"] = "producao [live-id].xlsx"
+        production.save_records([current])
+
+        production.sync_drive_records(
+            [],
+            live_file_ids={"live-id"},
+            refreshed_file_ids=set(),
+        )
+
+        loaded = production.load_records()
+        self.assertEqual(len(loaded), 1)
+        self.assertEqual(loaded.iloc[0]["points"], 70)
 
 
 if __name__ == "__main__":

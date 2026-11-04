@@ -40,7 +40,24 @@ streamlit run streamlit_app.py
 ```
 
 
-O painel atualiza automaticamente a leitura da base SQLite a cada 30 segundos. A rotina de sincronização do ambiente deve gravar os dados nessa base; a interface não oferece uma etapa manual de importação.
+O painel relê a base SQLite automaticamente a cada 30 segundos. Com as credenciais configuradas, o app também sincroniza a pasta de produção do Google Drive ao abrir uma nova sessão; não há etapa manual de importação na interface. Arquivos processados substituem sua versão anterior, arquivos removidos da pasta saem do histórico e arquivos que não puderem ser lidos mantêm os dados locais existentes.
+
+### Sincronização automática do Google Drive
+
+Habilite a Google Drive API, compartilhe a pasta de produção com a conta de serviço e configure suas credenciais em `.streamlit/secrets.toml` (não versione esse arquivo):
+
+```toml
+[gcp_service_account]
+type = "service_account"
+project_id = "seu-projeto"
+private_key_id = "..."
+private_key = "-----BEGIN PRIVATE KEY-----\\n...\\n-----END PRIVATE KEY-----\\n"
+client_email = "conta-de-servico@seu-projeto.iam.gserviceaccount.com"
+client_id = "..."
+token_uri = "https://oauth2.googleapis.com/token"
+```
+
+Os arquivos Excel devem conter as abas `Prod` e/ou `Gpon`; arquivos CSV são lidos como `Prod` por padrão.
 
 ### Persistência
 

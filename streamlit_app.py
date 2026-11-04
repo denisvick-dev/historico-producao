@@ -3,15 +3,18 @@ from __future__ import annotations
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+from streamlit.errors import StreamlitSecretNotFoundError
 
 from production import (
     GPON,
     PROD,
     create_demonstration,
     format_points,
+    init_database,
     load_dashboard_snapshot,
     month_label,
     summarize,
+    sync_drive_records,
 )
 from components.componentes import (
     Cores,
@@ -24,6 +27,9 @@ from components.componentes import (
     render_sidebar_section,
 )
 from components.prod_os import render_prod_orders
+from drive_import import DriveImportError, import_drive_folder_snapshot
+
+DRIVE_FOLDER_ID = "1P0ComfPrfZiq-bHfOi8fWJeAE4GAEkBq"
 
 COLORS = {
     "ink": Cores.PRIMARIA,
@@ -713,9 +719,6 @@ def render_technicians(filtered: pd.DataFrame) -> None:
         },
     )
 
-
-
-
 @st.cache_resource(show_spinner=False)
 def _initialize_demo_once() -> None:
     """Cria a base de demonstração uma vez por processo do app."""
@@ -727,6 +730,55 @@ def _load_dashboard_snapshot() -> tuple[pd.DataFrame, dict]:
     """Mantém a consulta da base em cache curto para navegação mais fluida."""
     return load_dashboard_snapshot()
 
+
+def _drive_service_account():
+    try:
+        return st.secrets["gcp_service_account"]
+    except (KeyError, StreamlitSecretNotFoundError):
+        return None
+
+
+# Preserva a sincronização automática da pasta do Drive: ela ocorre ao abrir uma
+# nova sessão, antes da leitura/cache do painel. A UI não expõe importação manual.
+init_database()
+if "drive_auto_sync_attempted" not in st.session_state:
+    st.session_state["drive_auto_sync_attempted"] = True
+    drive_service_account = _drive_service_account()
+    if drive_service_account is not None:
+        try:
+            drive_result = import_drive_folder_snapshot(
+                drive_service_account, DRIVE_FOLDER_ID
+            )
+        except DriveImportError as error:
+            st.session_state["drive_auto_sync_status"] = {
+                "type": "warning",
+                "message": f"Falha ao atualizar os dados do Drive: {error}",
+                "issues": [],
+            }
+        else:
+            count = sync_drive_records(
+                drive_result.records,
+                drive_result.file_ids,
+                drive_result.refreshed_file_ids,
+            )
+            _load_dashboard_snapshot.clear()
+            st.session_state["drive_auto_sync_status"] = {
+                "type": "warning" if drive_result.issues else "success",
+                "message": (
+                    f"Drive sincronizado: {count} registros em "
+                    f"{drive_result.successful_files} arquivo(s)."
+                ),
+                "issues": drive_result.issues[:10],
+            }
+    else:
+        st.session_state["drive_auto_sync_status"] = {
+            "type": "info",
+            "message": (
+                "Atualização automática do Drive não configurada. "
+                "Configure a conta de serviço para habilitá-la."
+            ),
+            "issues": [],
+        }
 
 _initialize_demo_once()
 records, stats = _load_dashboard_snapshot()
@@ -794,6 +846,17 @@ def render_dashboard() -> None:
         updated = pd.Timestamp(current_stats["last_import"]).strftime(
             "Atualizado em %d/%m/%Y às %H:%M"
         )
+    drive_status = st.session_state.get("drive_auto_sync_status")
+    if drive_status:
+        if drive_status["type"] == "warning":
+            st.warning(drive_status["message"])
+        elif drive_status["type"] == "success":
+            st.success(drive_status["message"])
+        else:
+            st.info(drive_status["message"])
+        for issue in drive_status["issues"]:
+            st.caption(issue)
+
     render_hero_totale_1(
         titulo=title,
         subtitulo=subtitle,
