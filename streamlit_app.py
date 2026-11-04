@@ -50,7 +50,7 @@ st.set_page_config(
 st.markdown(
     """
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap');
 
     :root {
         --ink: #012869;
@@ -62,7 +62,8 @@ st.markdown(
         --surface: #ffffff;
         --background: #f3f6fb;
     }
-    html, body, [class*="css"], .stApp { font-family: 'DM Sans', 'Segoe UI', sans-serif; }
+    html, body, [class*="css"], .stApp { font-family: 'Inter', 'Segoe UI', Arial, sans-serif; }
+    h1, h2, h3, .brand-name { font-family: 'Manrope', 'Inter', 'Segoe UI', sans-serif; }
     .stApp { background: var(--background); color: var(--text); }
     #MainMenu, footer { visibility: hidden; }
     [data-testid="stHeader"] { background: rgba(243,246,251,.88); }
@@ -75,7 +76,7 @@ st.markdown(
         width: 40px; height: 40px; border-radius: 12px; background:#F37C04; color:#012869;
         display:flex; align-items:center; justify-content:center; font-size:24px; font-weight:700;
     }
-    [data-testid="stSidebar"] .brand-name { font-size:22px; line-height:1.1; font-weight:700; letter-spacing:-.5px; }
+    [data-testid="stSidebar"] .brand-name { font-size:22px; line-height:1.1; font-weight:800; letter-spacing:-.5px; }
     [data-testid="stSidebar"] .brand-sub { font-size:11px; color:#b9cae3; letter-spacing:1.7px; text-transform:uppercase; margin-top:4px; }
     [data-testid="stSidebar"] .nav-caption { color:#b9cae3; font-size:10px; letter-spacing:1.5px; font-weight:700; padding:0 .65rem .5rem; }
     [data-testid="stSidebar"] [role="radiogroup"] { gap: .3rem; }
@@ -91,7 +92,7 @@ st.markdown(
     [data-testid="stSidebar"] .sidebar-foot strong { color:#ffffff; font-weight:600; }
 
     h1, h2, h3 { color:#012869; letter-spacing:-.035em; }
-    h1 { font-size:2rem !important; font-weight:700 !important; margin-bottom:.1rem !important; }
+    h1 { font-size:2rem !important; font-weight:800 !important; margin-bottom:.1rem !important; }
     h2 { font-size:1.15rem !important; font-weight:650 !important; }
     h3 { font-size:1rem !important; font-weight:650 !important; }
     p { color:var(--muted); }
@@ -104,26 +105,75 @@ st.markdown(
     }
     .demo-banner strong { color:#012869; }
     .filter-label { color:#4f6560; font-size:12px; font-weight:600; margin-bottom:-5px; }
-    .kpi-card { background:#fff; border:1px solid var(--line); border-radius:13px; padding:1.15rem 1.25rem 1rem; min-height:134px; }
-    .kpi-top { display:flex; align-items:center; justify-content:space-between; gap:.5rem; }
-    .kpi-label { font-size:12px; font-weight:600; color:#667b75; }
-    .kpi-dot { width:28px; height:28px; border-radius:8px; background:#FFF3E6; display:flex; align-items:center; justify-content:center; font-size:13px; color:var(--green); font-weight:700; }
-    .kpi-value { font-size:28px; line-height:1.15; letter-spacing:-1px; font-weight:700; color:#012869; margin:.7rem 0 .25rem; }
-    .kpi-note { font-size:11px; color:#81918c; }
+    .kpi-card {
+        position:relative; isolation:isolate; overflow:hidden; min-height:144px;
+        display:flex; flex-direction:column; justify-content:space-between;
+        padding:1.15rem 1.25rem 1.05rem; background:#fff;
+        border:1px solid #e2eaf4; border-radius:15px;
+        box-shadow:0 5px 18px rgba(1,40,105,.055);
+        transition:transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+    }
+    .kpi-card::before {
+        content:""; position:absolute; z-index:1; inset:0 0 auto; height:3px; pointer-events:none;
+        background:linear-gradient(90deg, #012869 0%, #0A48AA 72%, #F37C04 100%);
+    }
+    .kpi-card:hover { transform:translateY(-3px); border-color:#c8d7eb; box-shadow:0 12px 26px rgba(1,40,105,.11); }
+    .kpi-top { display:flex; align-items:center; justify-content:space-between; gap:.65rem; }
+    .kpi-label { font-size:11px; font-weight:700; color:#52657d; letter-spacing:.075em; line-height:1.35; }
+    .kpi-dot {
+        flex:0 0 34px; width:34px; height:34px; border-radius:10px;
+        background:linear-gradient(145deg,#fff7ed,#ffedd5); border:1px solid #fed7aa;
+        display:flex; align-items:center; justify-content:center; font-size:12px;
+        color:#9a4d00; font-weight:800;
+    }
+    .kpi-value {
+        font-family:'Manrope','Inter',sans-serif; font-size:30px; line-height:1.1;
+        letter-spacing:-.045em; font-weight:800; color:#012869; margin:.45rem 0 .15rem;
+        font-variant-numeric:tabular-nums;
+    }
+    .kpi-note { font-size:11px; line-height:1.4; color:#718198; }
     .kpi-note.positive { color:#218361; }
     .kpi-note.negative { color:#bc5d58; }
     .section-heading { margin:1.45rem 0 .75rem; display:flex; justify-content:space-between; align-items:end; }
-    .section-heading h2 { margin:0 !important; }
+    .section-heading h2 { margin:0 !important; font-family:"Manrope", "Inter", sans-serif; font-weight:750 !important; }
     .section-heading p { margin:.15rem 0 0; font-size:12px; }
-    [data-testid="stVerticalBlockBorderWrapper"] { background:#fff; border-color:var(--line) !important; border-radius:13px !important; }
+    [data-testid="stVerticalBlockBorderWrapper"] { background:#fff; border-color:var(--line) !important; border-radius:13px !important; box-shadow:0 4px 16px rgba(1,40,105,.035); }
     [data-testid="stVerticalBlockBorderWrapper"] [data-testid="stVerticalBlock"] { gap:.8rem; }
     [data-testid="stPlotlyChart"] { border-radius:8px; }
     .stButton > button, .stDownloadButton > button { border-radius:8px; font-weight:600; min-height:2.55rem; }
     .stButton > button[kind="primary"], .stDownloadButton > button[kind="primary"] { background:#012869; border-color:#012869; }
-    .stButton > button[kind="primary"]:hover { background:#011838; border-color:#011838; }
+    .stButton > button[kind="primary"]:hover { background:#011838; border-color:#F37C04; box-shadow:0 0 0 3px rgba(243,124,4,.12); }
     .stTextInput input, .stSelectbox > div > div, .stMultiSelect > div > div, .stDateInput > div > div { border-radius:8px; }
     [data-testid="stFileUploader"] { background:#f8faff; border:1px dashed #b9cae3; border-radius:12px; padding:.4rem; }
-    [data-testid="stDataFrame"] { border:1px solid #e6edf5; border-radius:9px; overflow:hidden; }
+    [data-testid="stDataFrame"] {
+        --gdg-accent-color:#F37C04;
+        --gdg-bg-cell:#ffffff;
+        --gdg-bg-cell-medium:#f8faff;
+        --gdg-bg-header:#edf3fb;
+        --gdg-bg-header-hover:#e5edf8;
+        --gdg-bg-header-has-focus:#dce8f7;
+        --gdg-text-dark:#122033;
+        --gdg-text-medium:#52657d;
+        --gdg-text-light:#718198;
+        --gdg-text-header:#012869;
+        --gdg-border-color:#e2eaf4;
+        --gdg-horizontal-border-color:#edf1f7;
+        --gdg-header-font-style:700 11px 'Inter','Segoe UI',sans-serif;
+        --gdg-font-family:'Inter','Segoe UI',sans-serif;
+        overflow:hidden; border:1px solid #e2eaf4; border-radius:13px;
+        background:#fff; box-shadow:0 6px 20px rgba(1,40,105,.06);
+    }
+    [data-testid="stDataFrame"] [data-testid="stDataFrameResizable"] { border-radius:12px; }
+    [data-testid="stTable"] { overflow:hidden; border:1px solid #e2eaf4; border-radius:13px; box-shadow:0 6px 20px rgba(1,40,105,.06); }
+    [data-testid="stTable"] table { border-collapse:separate; border-spacing:0; font-size:13px; }
+    [data-testid="stTable"] thead th {
+        background:#edf3fb !important; color:#012869 !important; font-family:'Inter',sans-serif;
+        font-size:10px !important; font-weight:750 !important; letter-spacing:.075em;
+        text-transform:uppercase; border-bottom:1px solid #dce6f3 !important;
+    }
+    [data-testid="stTable"] tbody tr:nth-child(even) { background:#f8faff; }
+    [data-testid="stTable"] tbody tr:hover { background:#fff7ed; }
+    [data-testid="stTable"] tbody td { border-bottom:1px solid #edf1f7 !important; color:#26384f; }
     .small-muted { color:var(--muted); font-size:12px; line-height:1.5; }
     .formula { background:#E8EEF8; border-radius:9px; padding:.8rem 1rem; color:#012869; font-size:13px; border:1px solid #e0ece5; }
     .technician-hero { display:flex; align-items:center; gap:1rem; padding:.25rem 0 .8rem; }
@@ -157,7 +207,7 @@ def chart_layout(fig: go.Figure, height: int = 340) -> go.Figure:
         margin=dict(l=8, r=12, t=15, b=8),
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(family="DM Sans, Segoe UI, sans-serif", color=COLORS["muted"], size=11),
+        font=dict(family="Inter, Segoe UI, Arial, sans-serif", color=COLORS["muted"], size=11),
         legend=dict(
             orientation="h",
             yanchor="bottom",
@@ -288,10 +338,10 @@ def section_heading(title: str, subtitle: str = "") -> None:
 def template_file() -> bytes:
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        pd.DataFrame(columns=["Data", "Técnico", "Pontos"]).to_excel(
+        pd.DataFrame(columns=["Data", "Técnico", "Projeto", "Pontos"]).to_excel(
             writer, sheet_name=PROD, index=False
         )
-        pd.DataFrame(columns=["Data", "Técnico", "Pontos"]).to_excel(
+        pd.DataFrame(columns=["Data", "Técnico", "Projeto", "Pontos"]).to_excel(
             writer, sheet_name=GPON, index=False
         )
     return output.getvalue()
@@ -301,17 +351,28 @@ def csv_download(frame: pd.DataFrame) -> bytes:
     return frame.to_csv(index=False, sep=";", decimal=",").encode("utf-8-sig")
 
 
-def apply_filters(records: pd.DataFrame) -> tuple[pd.DataFrame, list[str], int | None]:
+def apply_filters(
+    records: pd.DataFrame,
+) -> tuple[pd.DataFrame, list[str], int | None, list[str]]:
     """Renderiza filtros compartilhados e devolve também a janela em meses."""
     all_technicians = sorted(records["technician"].unique())
+    all_projects = sorted(records["project"].dropna().unique())
     with st.container(border=True):
-        period_col, technician_col, spacer = st.columns([1.25, 1.8, 0.3])
+        period_col, project_col, technician_col = st.columns([1.15, 1.55, 1.7])
         with period_col:
             period_choice = st.selectbox(
                 "Período de análise",
                 ["Todo o período", "Últimos 3 meses", "Últimos 6 meses", "Últimos 12 meses", "Personalizado"],
                 index=3,
                 key="period_filter",
+            )
+        with project_col:
+            selected_projects = st.multiselect(
+                "Projetos",
+                all_projects,
+                default=[],
+                placeholder="Todos os projetos",
+                key="project_filter",
             )
         with technician_col:
             selected_technicians = st.multiselect(
@@ -354,13 +415,24 @@ def apply_filters(records: pd.DataFrame) -> tuple[pd.DataFrame, list[str], int |
         filtered = filtered[
             filtered["reference_date"].between(pd.Timestamp(start), pd.Timestamp(end))
         ]
+    if selected_projects:
+        filtered = filtered[filtered["project"].isin(selected_projects)]
     if selected_technicians:
         filtered = filtered[filtered["technician"].isin(selected_technicians)]
-    return filtered, selected_technicians or all_technicians, months
+    return (
+        filtered,
+        selected_technicians or all_technicians,
+        months,
+        selected_projects or all_projects,
+    )
 
 
 def previous_period(
-    records: pd.DataFrame, filtered: pd.DataFrame, technicians: list[str], months: int | None
+    records: pd.DataFrame,
+    filtered: pd.DataFrame,
+    technicians: list[str],
+    months: int | None,
+    projects: list[str],
 ) -> pd.DataFrame:
     if filtered.empty or months is None:
         return filtered.iloc[0:0]
@@ -373,12 +445,17 @@ def previous_period(
     previous_end = first - pd.Timedelta(days=1)
     return records[
         records["technician"].isin(technicians)
+        & records["project"].isin(projects)
         & records["reference_date"].between(previous_start, previous_end)
     ]
 
 
 def render_metrics(
-    filtered: pd.DataFrame, records: pd.DataFrame, technicians: list[str], months: int | None
+    filtered: pd.DataFrame,
+    records: pd.DataFrame,
+    technicians: list[str],
+    months: int | None,
+    projects: list[str],
 ) -> None:
     totals = summarize(filtered, [])
     if totals.empty:
@@ -390,7 +467,7 @@ def render_metrics(
     active = filtered["technician"].nunique()
     average = current_total / active if active else 0
 
-    previous = previous_period(records, filtered, technicians, months)
+    previous = previous_period(records, filtered, technicians, months, projects)
     previous_total = previous["points"].sum()
     if previous_total:
         variation = (current_total / previous_total - 1) * 100
@@ -418,8 +495,14 @@ def render_metrics(
         )
 
 
-def render_overview(filtered: pd.DataFrame, records: pd.DataFrame, technicians: list[str], months: int | None) -> None:
-    render_metrics(filtered, records, technicians, months)
+def render_overview(
+    filtered: pd.DataFrame,
+    records: pd.DataFrame,
+    technicians: list[str],
+    months: int | None,
+    projects: list[str],
+) -> None:
+    render_metrics(filtered, records, technicians, months, projects)
     section_heading("Produção da equipe", "Pontos consolidados por competência e por técnico")
     chart_col, ranking_col = st.columns([1.65, 1])
     monthly = summarize(filtered, "period").sort_values("period")
@@ -505,7 +588,7 @@ def render_history(filtered: pd.DataFrame) -> None:
             height=max(300, len(pivot) * 32 + 70),
             margin=dict(l=8, r=8, t=15, b=5),
             paper_bgcolor="rgba(0,0,0,0)",
-            font=dict(family="DM Sans, Segoe UI, sans-serif", size=10, color=COLORS["muted"]),
+            font=dict(family="Inter, Segoe UI, Arial, sans-serif", size=10, color=COLORS["muted"]),
         )
         with st.container(border=True):
             st.markdown("**Mapa de produção · Pontos Totais**")
@@ -789,10 +872,11 @@ def render_import(is_demo: bool) -> None:
                 Cada planilha Excel deve conter as abas <b>Prod</b> e/ou <b>Gpon</b>, com:
                 <ul>
                     <li><b>Técnico:</b> nome do colaborador</li>
+                    <li><b>Projeto (opcional):</b> nome do projeto</li>
                     <li><b>Pontos:</b> valor produzido</li>
                     <li><b>Data:</b> dia ou competência mensal</li>
                 </ul>
-                Também reconhecemos Competência, Mês, Colaborador e Pontuação.
+                Também reconhecemos Competência, Mês, Colaborador, Projeto e Pontuação.
                 </div>
                 """,
                 unsafe_allow_html=True,
@@ -840,12 +924,16 @@ def render_import(is_demo: bool) -> None:
             if st.button("Remover dados de demonstração"):
                 clear_demonstration()
                 st.session_state.pop("period_filter", None)
+                st.session_state.pop("project_filter", None)
+                st.session_state.pop("technician_filter", None)
                 st.rerun()
         st.warning("A limpeza completa apaga todos os registros importados. Essa ação não pode ser desfeita.")
         confirmation = st.checkbox("Confirmo que desejo apagar toda a base de produção")
         if st.button("Apagar toda a base", disabled=not confirmation):
             clear_database()
-            for key in ("period_filter", "technician_filter", "custom_start", "custom_end"):
+            for key in (
+                "period_filter", "project_filter", "technician_filter", "custom_start", "custom_end"
+            ):
                 st.session_state.pop(key, None)
             st.rerun()
 
@@ -936,11 +1024,11 @@ elif records.empty:
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
 else:
-    filtered, technicians, months = apply_filters(records)
+    filtered, technicians, months, projects = apply_filters(records)
     if filtered.empty:
         st.info("Não há produção para os filtros selecionados. Ajuste o período ou os técnicos.")
     elif navigation == "Visão geral":
-        render_overview(filtered, records, technicians, months)
+        render_overview(filtered, records, technicians, months, projects)
     elif navigation == "Prod":
         render_prod_orders(filtered)
     elif navigation == "Histórico":

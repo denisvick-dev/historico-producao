@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -53,6 +54,7 @@ class WorkbookTests(unittest.TestCase):
         self.assertEqual(records[0]["technician"], "André Santos")
         self.assertEqual(records[0]["points"], 100.5)
         self.assertEqual(records[0]["reference_date"], "2026-11-01")
+        self.assertEqual(records[0]["project"], "Sem projeto")
         self.assertEqual(len(issues), 1)
         self.assertIn("Linha 4", issues[0])
 
@@ -71,6 +73,22 @@ class WorkbookTests(unittest.TestCase):
         self.assertEqual(total, 3)
         self.assertEqual(by_technician.loc["André Santos", "os_count"], 2)
         self.assertEqual(by_technician.loc["Bruno Oliveira", "os_count"], 1)
+
+    def test_process_dataframe_reads_project_column(self):
+        frame = pd.DataFrame(
+            {
+                "Data": ["03/11/2026", "04/11/2026", "05/11/2026"],
+                "Técnico": ["Ana", "Bruno", "Carla"],
+                "Projeto": ["  Fibra Norte  ", "Projeto Alfa", None],
+                "Pontos": [10, 20, 30],
+            }
+        )
+        records, issues = production.process_dataframe(frame, production.PROD, "projetos.xlsx")
+        self.assertEqual(issues, [])
+        self.assertEqual(
+            [record["project"] for record in records],
+            ["Fibra Norte", "Projeto Alfa", "Sem projeto"],
+        )
 
     def test_process_excel_combines_prod_and_gpon(self):
         content = io.BytesIO()
@@ -145,11 +163,12 @@ class PersistenceTests(unittest.TestCase):
         self.temp_dir.cleanup()
 
     @staticmethod
-    def record(points=100, technician="André Santos", origin="Prod", row=2):
+    def record(points=100, technician="André Santos", origin="Prod", row=2, project="Sem projeto"):
         return {
             "technician": technician,
             "reference_date": "2026-11-03",
             "source_sheet": origin,
+            "project": project,
             "points": points,
             "source_file": "producao.xlsx",
             "source_row": row,
@@ -164,6 +183,40 @@ class PersistenceTests(unittest.TestCase):
         self.assertEqual(total["points_prod"], 120)
         self.assertEqual(total["points_gpon"], 40)
         self.assertEqual(total["points_total"], 160)
+
+    def test_save_and_load_preserves_project(self):
+        production.save_records([self.record(project="Rede Metropolitana")])
+        loaded = production.load_records()
+        self.assertEqual(loaded.iloc[0]["project"], "Rede Metropolitana")
+
+    def test_existing_database_migrates_project_column(self):
+        current_path = production.DB_PATH
+        production.DB_PATH = Path(self.temp_dir.name) / "legacy.db"
+        try:
+            with sqlite3.connect(production.DB_PATH) as connection:
+                connection.executescript(
+                    """
+                    CREATE TABLE production_records (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        technician TEXT NOT NULL,
+                        reference_date TEXT NOT NULL,
+                        source_sheet TEXT NOT NULL,
+                        points REAL NOT NULL,
+                        source_file TEXT NOT NULL,
+                        source_row INTEGER NOT NULL,
+                        is_demo INTEGER NOT NULL DEFAULT 0,
+                        imported_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                    );
+                    INSERT INTO production_records
+                        (technician, reference_date, source_sheet, points, source_file, source_row)
+                    VALUES ('Ana', '2026-11-03', 'Prod', 10, 'legacy.xlsx', 2);
+                    """
+                )
+            production.init_database()
+            loaded = production.load_records()
+            self.assertEqual(loaded.iloc[0]["project"], "Sem projeto")
+        finally:
+            production.DB_PATH = current_path
 
     def test_first_real_import_removes_demonstration(self):
         demo = self.record(points=999)

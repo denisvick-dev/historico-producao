@@ -43,7 +43,7 @@ def _chart_layout(fig: go.Figure, height: int = 320) -> go.Figure:
         margin=dict(l=8, r=12, t=15, b=8),
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(family="DM Sans, Segoe UI, sans-serif", color="#64748b", size=11),
+        font=dict(family="Inter, Segoe UI, Arial, sans-serif", color="#64748b", size=11),
         bargap=0.35,
     )
     fig.update_xaxes(showgrid=False, zeroline=False, fixedrange=True, tickfont=dict(size=10))
