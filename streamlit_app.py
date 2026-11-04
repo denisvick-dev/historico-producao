@@ -134,10 +134,83 @@ st.markdown(
         transition:transform .18s ease, box-shadow .18s ease, border-color .18s ease;
     }
     .kpi-card::before {
-        content:""; position:absolute; z-index:1; inset:0 0 auto; height:3px; pointer-events:none;
+        content:""; position:absolute; z-index:1; inset:0 0 auto; height:4px; pointer-events:none;
         background:linear-gradient(90deg, #012869 0%, #0A48AA 72%, #F37C04 100%);
     }
     .kpi-card:hover { transform:translateY(-3px); border-color:#c8d7eb; box-shadow:0 12px 26px rgba(1,40,105,.11); }
+
+    /* KPI cards coloridos por métrica */
+    .kpi-card--azul { border-color:#012869; box-shadow:0 5px 18px rgba(1,40,105,.08); }
+    .kpi-card--azul::before { background:linear-gradient(90deg, #012869 0%, #1E40AF 100%); }
+    .kpi-card--azul .kpi-value { color:#012869 !important; }
+    .kpi-card--azul .kpi-label { color:#1E40AF !important; }
+
+    .kpi-card--laranja { border-color:#F37C04; box-shadow:0 5px 18px rgba(243,124,4,.08); }
+    .kpi-card--laranja::before { background:linear-gradient(90deg, #F37C04 0%, #FB923C 100%); }
+    .kpi-card--laranja .kpi-value { color:#F37C04 !important; }
+    .kpi-card--laranja .kpi-label { color:#C2410C !important; }
+
+    .kpi-card--verde { border-color:#047857; box-shadow:0 5px 18px rgba(4,120,87,.08); }
+    .kpi-card--verde::before { background:linear-gradient(90deg, #047857 0%, #10B981 100%); }
+    .kpi-card--verde .kpi-value { color:#047857 !important; }
+    .kpi-card--verde .kpi-label { color:#0F766E !important; }
+
+    .kpi-card--roxo { border-color:#7C3AED; box-shadow:0 5px 18px rgba(124,58,237,.08); }
+    .kpi-card--roxo::before { background:linear-gradient(90deg, #7C3AED 0%, #A855F7 100%); }
+    .kpi-card--roxo .kpi-value { color:#7C3AED !important; }
+    .kpi-card--roxo .kpi-label { color:#6D28D9 !important; }
+
+    .kpi-card--vermelho { border-color:#DC2626; box-shadow:0 5px 18px rgba(220,38,38,.08); }
+    .kpi-card--vermelho::before { background:linear-gradient(90deg, #DC2626 0%, #EF4444 100%); }
+    .kpi-card--vermelho .kpi-value { color:#DC2626 !important; }
+    .kpi-card--vermelho .kpi-label { color:#B91C1C !important; }
+
+    /* Badges coloridos */
+    .badge {
+        display:inline-flex; align-items:center; gap:.4rem;
+        padding:.25rem .7rem; border-radius:999px; font-size:11px;
+        font-weight:750; letter-spacing:.05em; text-transform:uppercase;
+    }
+    .badge--azul { background:#EFF6FF; color:#1E40AF; border:1px solid #BFDBFE; }
+    .badge--laranja { background:#FFF7ED; color:#C2410C; border:1px solid #FCD34D; }
+    .badge--verde { background:#ECFDF5; color:#0F766E; border:1px solid #A7F3D0; }
+    .badge--roxo { background:#FAF5FF; color:#6D28D9; border:1px solid #E9D5FF; }
+    .badge--vermelho { background:#FEF2F2; color:#B91C1C; border:1px solid #FECACA; }
+
+    /* Cards de destaque com gradiente vibrante */
+    .highlight-card {
+        position:relative; isolation:isolate; overflow:hidden;
+        min-height:120px; border-radius:16px; padding:1.25rem 1.4rem;
+        display:flex; flex-direction:column; justify-content:space-between;
+        color:#fff; box-shadow:0 8px 24px rgba(0,0,0,.12);
+        transition:transform .2s ease;
+    }
+    .highlight-card:hover { transform:translateY(-2px); }
+    .highlight-card::before {
+        content:""; position:absolute; z-index:0; inset:-20% -20% -20% -20%;
+        background:conic-gradient(from 45deg, #012869 0%, #1E40AF 25%, #012869 50%, #0A48AA 75%, #012869 100%);
+        opacity:.85; animation:rotate-gradient 8s linear infinite;
+    }
+    .highlight-card > * { position:relative; z-index:1; }
+    .highlight-card--azul::before { background:conic-gradient(from 45deg, #012869 0%, #1E40AF 33%, #012869 66%, #0A48AA 100%); }
+    .highlight-card--laranja::before { background:conic-gradient(from 45deg, #F37C04 0%, #FB923C 33%, #F37C04 66%, #C2410C 100%); }
+    .highlight-card--verde::before { background:conic-gradient(from 45deg, #047857 0%, #10B981 33%, #047857 66%, #0F766E 100%); }
+    .highlight-card h3 { color:#fff !important; margin:0 0 .5rem; font-size:1rem; font-weight:750; opacity:.95; }
+    .highlight-card .big-number { font-size:2.2rem; font-weight:800; letter-spacing:-.03em; margin:0; }
+
+    @keyframes rotate-gradient { to { transform:rotate(360deg); } }
+
+    /* Barra de progresso colorida */
+    .progress-track {
+        width:100%; height:8px; background:#E2E8F0; border-radius:999px;
+        overflow:hidden; margin-top:.5rem;
+    }
+    .progress-fill {
+        height:100%; border-radius:999px; transition:width .6s ease;
+    }
+    .progress-fill--azul { background:linear-gradient(90deg, #012869, #1E40AF); }
+    .progress-fill--laranja { background:linear-gradient(90deg, #F37C04, #FB923C); }
+    .progress-fill--verde { background:linear-gradient(90deg, #047857, #10B981); }
     .kpi-top { display:flex; align-items:center; justify-content:space-between; gap:.65rem; }
     .kpi-label { font-size:11px; font-weight:700; color:#52657d; letter-spacing:.075em; line-height:1.35; }
     .kpi-dot {
@@ -386,10 +459,10 @@ def initials(name: str) -> str:
     return "".join(part[0] for part in (parts[0], parts[-1])).upper()
 
 
-def metric_card(label: str, value: str, note: str, symbol: str, note_class: str = "") -> None:
+def metric_card(label: str, value: str, note: str, symbol: str, note_class: str = "", card_class: str = "") -> None:
     st.markdown(
         f"""
-        <div class="kpi-card">
+        <div class="kpi-card {card_class}">
             <div class="kpi-top"><span class="kpi-label">{label}</span><span class="kpi-dot">{symbol}</span></div>
             <div class="kpi-value">{value}</div>
             <div class="kpi-note {note_class}">{note}</div>
@@ -542,19 +615,19 @@ def render_metrics(
 
     columns = st.columns(4)
     with columns[0]:
-        metric_card("PONTOS TOTAIS", format_points(current_total), note, "Σ", note_class)
+        metric_card("PONTOS TOTAIS", format_points(current_total), note, "Σ", note_class, "kpi-card--azul")
     with columns[1]:
         share = current_prod / current_total * 100 if current_total else 0
-        metric_card("PONTOS EM PROD", format_points(current_prod), f"{share:.1f}% do total".replace(".", ","), "P")
+        metric_card("PONTOS EM PROD", format_points(current_prod), f"{share:.1f}% do total".replace(".", ","), "P", "", "kpi-card--laranja")
     with columns[2]:
         share = current_gpon / current_total * 100 if current_total else 0
-        metric_card("PONTOS EM GPON", format_points(current_gpon), f"{share:.1f}% do total".replace(".", ","), "G")
+        metric_card("PONTOS EM GPON", format_points(current_gpon), f"{share:.1f}% do total".replace(".", ","), "G", "", "kpi-card--verde")
     with columns[3]:
         metric_card(
             "MÉDIA POR TÉCNICO",
             format_points(average),
             f"{active} {'técnicos ativos' if active != 1 else 'técnico ativo'} no recorte",
-            "Ø",
+            "Ø", "", "kpi-card--roxo",
         )
 
 
@@ -604,6 +677,18 @@ def render_overview(
 
         render_ticker(ticker_items, label="Indicadores da visão geral")
 
+    # Card de destaque com o principal indicador
+    if not totals.empty:
+        st.markdown(
+            f"""
+            <div class="highlight-card highlight-card--laranja">
+                <h3>Pontos Totais do Período</h3>
+                <h2 class="big-number">{format_points(current_total)}</h2>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
     section_heading("Produção da equipe", "Pontos consolidados por competência e por técnico")
     chart_col, ranking_col = st.columns([1.65, 1])
     monthly = summarize(filtered, "period").sort_values("period")
@@ -627,11 +712,24 @@ def render_overview(
     table = ranking.copy()
     table["Média mensal"] = table["points_total"] / periods_count
     variations = []
+    variation_badges = []
     for technician in table["technician"]:
         current_value = latest["points_total"].get(technician, 0)
         previous_value = previous["points_total"].get(technician, 0)
-        variations.append((current_value / previous_value - 1) * 100 if previous_value else None)
+        var = (current_value / previous_value - 1) * 100 if previous_value else None
+        variations.append(var)
+        if var is None:
+            variation_badges.append('<span class="badge badge--roxo">Sem dado</span>')
+        elif var >= 10:
+            variation_badges.append(f'<span class="badge badge--verde">↑ {var:.1f}%</span>')
+        elif var >= 0:
+            variation_badges.append(f'<span class="badge badge--azul">→ {var:.1f}%</span>')
+        elif var >= -10:
+            variation_badges.append(f'<span class="badge badge--laranja">↓ {abs(var):.1f}%</span>')
+        else:
+            variation_badges.append(f'<span class="badge badge--vermelho">↓ {abs(var):.1f}%</span>')
     table["Variação no último mês"] = variations
+    table["Status"] = variation_badges
     table.insert(0, "Posição", range(1, len(table) + 1))
     table = table.rename(
         columns={
@@ -642,7 +740,7 @@ def render_overview(
         }
     )
     display_table = table[
-        ["Posição", "Técnico", "Prod", "Gpon", "Pontos Totais", "Média mensal", "Variação no último mês"]
+        ["Posição", "Técnico", "Prod", "Gpon", "Pontos Totais", "Média mensal", "Variação no último mês", "Status"]
     ]
     st.dataframe(
         display_table.style.map(_monthly_average_style, subset=["Média mensal"]),
@@ -656,6 +754,7 @@ def render_overview(
             "Pontos Totais": st.column_config.NumberColumn(format="%.2f"),
             "Média mensal": st.column_config.NumberColumn(format="%.2f"),
             "Variação no último mês": st.column_config.NumberColumn(format="%+.1f%%"),
+            "Status": st.column_config.TextColumn(width="small"),
         },
     )
     st.caption(
