@@ -653,6 +653,26 @@ def summarize(frame: pd.DataFrame, keys: str | list[str]) -> pd.DataFrame:
     return result[columns]
 
 
+def summarize_os(frame: pd.DataFrame, keys: str | list[str]) -> pd.DataFrame:
+    """Conta O.S. da aba Prod; cada linha válida importada equivale a uma O.S."""
+    if isinstance(keys, str):
+        keys = [keys]
+    columns = keys + ["os_count"]
+    if frame.empty:
+        return pd.DataFrame(columns=columns)
+
+    prod = frame[frame["source_sheet"].eq(PROD)].copy()
+    if prod.empty:
+        return pd.DataFrame(columns=columns)
+    if not keys:
+        return pd.DataFrame([{"os_count": int(len(prod))}])
+    return (
+        prod.groupby(keys, as_index=False, dropna=False)
+        .size()
+        .rename(columns={"size": "os_count"})[columns]
+    )
+
+
 def month_label(value: object, include_year: bool = True) -> str:
     timestamp = pd.Timestamp(value)
     label = MONTHS_SHORT[timestamp.month - 1]
