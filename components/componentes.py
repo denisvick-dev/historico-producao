@@ -1672,6 +1672,35 @@ def render_insight(msg: str, tipo: TipoInsightType = "info", titulo: str = "") -
     _safe_render_html(markup)
 
 
+def render_ticker(
+    items: Sequence[tuple[str, str]], label: str = "Informações relevantes"
+) -> None:
+    if not items:
+        return
+
+    ticker_items = "".join(
+        (
+            '<span class="ticker-item">'
+            f'<span class="ticker-label">{html_lib.escape(title)}</span>'
+            f"<strong>{html_lib.escape(value)}</strong>"
+            "</span>"
+        )
+        for title, value in items
+    )
+    accessible_label = html_lib.escape(label, quote=True)
+    st.markdown(
+        f"""
+        <div class="ticker-viewport" role="region" aria-label="{accessible_label}">
+            <div class="ticker-track">
+                <div class="ticker-group">{ticker_items}</div>
+                <div class="ticker-group" aria-hidden="true">{ticker_items}</div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def render_notification(
     mensagem: str,
     tipo: TipoNotificationType = "info",
