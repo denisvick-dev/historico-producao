@@ -35,6 +35,11 @@ class ParsingTests(unittest.TestCase):
         self.assertEqual(production.parse_reference_date("nov/26"), pd.Timestamp("2026-11-01"))
         self.assertEqual(production.infer_date_from_filename("producao_2026-10.xlsx"), pd.Timestamp("2026-10-01"))
 
+    def test_format_points_always_displays_two_decimal_places(self):
+        self.assertEqual(production.format_points(1234), "1.234,00")
+        self.assertEqual(production.format_points(1234.5), "1.234,50")
+        self.assertEqual(production.format_points(0), "0,00")
+
     def test_clean_technician_standardizes_case_and_spaces(self):
         self.assertEqual(production.clean_technician("  joão   DA silva "), "João da Silva")
         self.assertEqual(production.clean_technician("nan"), "")
@@ -188,6 +193,14 @@ class PersistenceTests(unittest.TestCase):
         production.save_records([self.record(project="Rede Metropolitana")])
         loaded = production.load_records()
         self.assertEqual(loaded.iloc[0]["project"], "Rede Metropolitana")
+
+    def test_dashboard_snapshot_returns_records_and_stats(self):
+        production.save_records([self.record(project="Rede Metropolitana")])
+        loaded, stats = production.load_dashboard_snapshot()
+        self.assertEqual(len(loaded), 1)
+        self.assertEqual(loaded.iloc[0]["project"], "Rede Metropolitana")
+        self.assertEqual(stats["records"], 1)
+        self.assertEqual(stats["technicians"], 1)
 
     def test_existing_database_migrates_project_column(self):
         current_path = production.DB_PATH
