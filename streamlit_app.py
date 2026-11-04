@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
@@ -27,7 +28,11 @@ from components.componentes import (
 from components.prod_os import render_prod_orders
 from drive_import import DriveImportError, import_drive_folder_snapshot
 
-DRIVE_FOLDER_ID = "1P0ComfPrfZiq-bHfOi8fWJeAE4GAEkBq"
+DRIVE_FOLDER_ID = (
+    st.secrets.get("drive_folder_id")
+    or os.getenv("DRIVE_FOLDER_ID")
+    or "1P0ComfPrfZiq-bHfOi8fWJeAE4GAEkBq"
+)
 
 COLORS = {
     "ink": Cores.PRIMARIA,
@@ -662,7 +667,7 @@ def _initialize_demo_once() -> None:
     create_demonstration()
 
 
-@st.cache_data(ttl=15, show_spinner=False)
+@st.cache_data(ttl=60, show_spinner=False)
 def _load_dashboard_snapshot() -> tuple[pd.DataFrame, dict]:
     """Mantém a consulta da base em cache curto para navegação mais fluida."""
     return load_dashboard_snapshot()
