@@ -39,6 +39,7 @@ from components.componentes import (
     render_sidebar_divider,
     render_sidebar_footer_info,
     render_sidebar_section,
+    render_ticker,
 )
 from components.prod_os import render_prod_orders
 from drive_import import DriveImportError, import_drive_folder_snapshot
@@ -204,6 +205,59 @@ st.markdown(
     .footer { text-align:center; color:#8a9995; font-size:11px; margin-top:2rem; padding-top:1rem; border-top:1px solid #e6edf5; }
     .stTabs [data-baseweb="tab-list"] { gap:1.5rem; }
     .stTabs [data-baseweb="tab"] { font-weight:600; }
+
+    /* Ticker animado — Indicadores da visão geral */
+    .ticker-viewport {
+        overflow: hidden;
+        margin: 1rem 0 1.5rem;
+        border: 1px solid #dce6f3;
+        border-radius: 12px;
+        background: linear-gradient(110deg, #fff, #f8faff);
+        box-shadow: 0 4px 14px rgba(1, 40, 105, 0.045);
+    }
+    .ticker-track {
+        display: flex;
+        width: max-content;
+        animation: ticker-scroll 25s linear infinite;
+    }
+    .ticker-group {
+        display: flex;
+        align-items: center;
+        flex: 0 0 max-content;
+        min-width: 100vw;
+        justify-content: space-around;
+    }
+    .ticker-item {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.55rem;
+        flex: 0 0 auto;
+        padding: 0.78rem 1.25rem;
+        color: #012869;
+        font-size: 12px;
+        white-space: nowrap;
+    }
+    .ticker-item::before {
+        content: "";
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: #F37C04;
+    }
+    .ticker-label {
+        color: #718198;
+        font-size: 10px;
+        font-weight: 750;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+    }
+    .ticker-item strong {
+        font-weight: 750;
+    }
+    @keyframes ticker-scroll {
+        to { transform: translateX(-50%); }
+    }
+
     @media (max-width: 700px) {
         [data-testid="stMainBlockContainer"] { padding:1rem; }
         .header-meta { display:none; }
@@ -512,6 +566,43 @@ def render_overview(
     projects: list[str],
 ) -> None:
     render_metrics(filtered, records, technicians, months, projects)
+
+    # Ticker animado com destaques da visão geral
+    totals = summarize(filtered, [])
+    if not totals.empty:
+        current_total = totals.iloc[0]["points_total"]
+        current_prod = totals.iloc[0]["points_prod"]
+        current_gpon = totals.iloc[0]["points_gpon"]
+
+        ranking = summarize(filtered, "technician").sort_values(
+            "points_total", ascending=False
+        )
+        top_tech = ""
+        if not ranking.empty:
+            top_tech = f'{ranking.iloc[0]["technician"]} · {format_points(ranking.iloc[0]["points_total"])} pontos'
+
+        periods_count = max(filtered["period"].nunique(), 1)
+        latest_period = filtered["period"].max()
+        latest = summarize(
+            filtered[filtered["period"].eq(latest_period)], "technician"
+        ).set_index("technician")
+        best_competence = ""
+        if not latest.empty:
+            best_tech = latest["points_total"].idxmax()
+            best_competence = f'{best_tech} · {format_points(latest.loc[best_tech, "points_total"])} pontos em {month_label(latest_period)}'
+
+        ticker_items = [
+            ("Pontos totais", format_points(current_total)),
+            ("Prod", f'{format_points(current_prod)} pontos'),
+            ("Gpon", f'{format_points(current_gpon)} pontos'),
+        ]
+        if top_tech:
+            ticker_items.append(("Destaque da equipe", top_tech))
+        if best_competence:
+            ticker_items.append(("Melhor competência", best_competence))
+
+        render_ticker(ticker_items, label="Indicadores da visão geral")
+
     section_heading("Produção da equipe", "Pontos consolidados por competência e por técnico")
     chart_col, ranking_col = st.columns([1.65, 1])
     monthly = summarize(filtered, "period").sort_values("period")
