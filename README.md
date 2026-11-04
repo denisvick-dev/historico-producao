@@ -40,7 +40,7 @@ streamlit run streamlit_app.py
 ```
 
 
-O painel relê a base SQLite automaticamente a cada 30 segundos. Com as credenciais configuradas, o app também sincroniza a pasta de produção do Google Drive ao abrir uma nova sessão; não há etapa manual de importação na interface. Arquivos processados substituem sua versão anterior, arquivos removidos da pasta saem do histórico e arquivos que não puderem ser lidos mantêm os dados locais existentes.
+O painel relê a base SQLite automaticamente a cada 30 segundos. Com as credenciais configuradas, o app também sincroniza a pasta de produção do Google Drive ao abrir uma nova sessão, baixando e processando arquivos em paralelo (até oito por vez); não há etapa manual de importação na interface. Arquivos processados substituem sua versão anterior, arquivos removidos da pasta saem do histórico e arquivos que não puderem ser lidos mantêm os dados locais existentes.
 
 ### Sincronização automática do Google Drive
 

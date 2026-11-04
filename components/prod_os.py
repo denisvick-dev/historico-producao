@@ -38,6 +38,24 @@ def _csv_download(frame: pd.DataFrame) -> bytes:
     return frame.to_csv(index=False, sep=";", decimal=",").encode("utf-8-sig")
 
 
+def _technician_monthly_table(
+    prod: pd.DataFrame, month_labels: list[str]
+) -> pd.DataFrame:
+    detail = summarize_os(prod, ["technician", "period"])
+    detail["Competência"] = detail["period"].map(month_label)
+    table = (
+        detail.pivot(index="technician", columns="Competência", values="os_count")
+        .reindex(columns=month_labels)
+        .fillna(0)
+        .astype(int)
+    )
+    table["Total"] = table.sum(axis=1)
+    table = table.sort_values("Total", ascending=False)
+    table.loc["Total geral"] = table.sum(axis=0)
+    table.index.name = "Técnico"
+    return table.reset_index()
+
+
 def _chart_layout(fig: go.Figure, height: int = 320) -> go.Figure:
     fig.update_layout(
         height=height,
@@ -72,13 +90,12 @@ def render_prod_orders(filtered: pd.DataFrame) -> None:
     total_os = len(prod)
     active_technicians = prod["technician"].nunique()
     monthly = summarize_os(prod, "period").sort_values("period")
+    month_labels = monthly["period"].map(month_label).tolist()
     ranking = (
         summarize_os(prod, "technician")
         .nlargest(15, "os_count")
         .sort_values("os_count", ascending=True)
     )
-    detail = summarize_os(prod, ["period", "technician"])
-    detail = detail.sort_values(["period", "os_count"], ascending=[False, False])
 
     columns = st.columns(3)
     with columns[0]:
@@ -153,19 +170,26 @@ def render_prod_orders(filtered: pd.DataFrame) -> None:
             st.markdown("**O.S. por técnico · Top 15**")
             st.plotly_chart(ranking_fig, width="stretch", config=CHART_CONFIG)
 
-    _section_heading("O.S. por técnico e competência", "Detalhamento das linhas válidas da aba Prod")
-    detail["Competência"] = detail["period"].map(month_label)
-    detail = detail.rename(columns={"technician": "Técnico", "os_count": "Quantidade de O.S."})
-    detail = detail[["Competência", "Técnico", "Quantidade de O.S."]]
+    _section_heading(
+        "O.S. por técnico",
+        "Uma linha por técnico, com a quantidade de cada competência e o total do período",
+    )
+    technician_monthly = _technician_monthly_table(prod, month_labels)
+    count_columns = {
+        column: st.column_config.NumberColumn(format="%d")
+        for column in technician_monthly.columns
+        if column != "Técnico"
+    }
     st.dataframe(
-        detail,
+        technician_monthly,
         width="stretch",
         hide_index=True,
-        column_config={"Quantidade de O.S.": st.column_config.NumberColumn(format="%d")},
+        column_config=count_columns,
+        alt="Quantidade de ordens de serviço por técnico, competência e total",
     )
     st.download_button(
         "Baixar quantidade de O.S. em CSV",
-        data=_csv_download(detail),
+        data=_csv_download(technician_monthly),
         file_name="quantidade_os_prod.csv",
         mime="text/csv",
     )

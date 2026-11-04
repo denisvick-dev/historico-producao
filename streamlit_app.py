@@ -6,8 +6,6 @@ import streamlit as st
 from streamlit.errors import StreamlitSecretNotFoundError
 
 from production import (
-    GPON,
-    PROD,
     create_demonstration,
     format_points,
     init_database,
@@ -154,8 +152,6 @@ st.markdown(
         --gdg-text-header:#012869;
         --gdg-border-color:#e2eaf4;
         --gdg-horizontal-border-color:#edf1f7;
-        --gdg-header-font-style:700 11px 'Inter','Segoe UI',sans-serif;
-        --gdg-font-family:'Inter','Segoe UI',sans-serif;
         overflow:hidden; border:1px solid #e2eaf4; border-radius:13px;
         background:#fff; box-shadow:0 6px 20px rgba(1,40,105,.06);
     }
@@ -191,16 +187,6 @@ st.markdown(
     }
     </style>
     """,
-    unsafe_allow_html=True,
-)
-
-# O DataFrame usa Glide Data Grid: alinhe a tipografia ao token compartilhado do DS.
-st.markdown(
-    "<style>"
-    f'[data-testid="stDataFrame"] {{ --gdg-font-family:{Fontes.TEXTO}; '
-    f'--gdg-header-font-style:700 11px {Fontes.TEXTO}; font-family:{Fontes.TEXTO} !important; }}'
-    f'[data-testid="stTable"] table {{ font-family:{Fontes.TEXTO} !important; }}'
-    "</style>",
     unsafe_allow_html=True,
 )
 
@@ -342,18 +328,19 @@ def section_heading(title: str, subtitle: str = "") -> None:
 
 
 
-def csv_download(frame: pd.DataFrame) -> bytes:
-    return frame.to_csv(index=False, sep=";", decimal=",").encode("utf-8-sig")
-
-
 def apply_filters(
     records: pd.DataFrame,
+    *,
+    show_technicians: bool = True,
 ) -> tuple[pd.DataFrame, list[str], int | None, list[str]]:
     """Renderiza filtros compartilhados e devolve também a janela em meses."""
     all_technicians = sorted(records["technician"].unique())
     all_projects = sorted(records["project"].dropna().unique())
     with st.container(border=True):
-        period_col, project_col, technician_col = st.columns([1.15, 1.55, 1.7])
+        filter_columns = st.columns(
+            [1.15, 1.55, 1.7] if show_technicians else [1.15, 1.55]
+        )
+        period_col, project_col = filter_columns[:2]
         with period_col:
             period_choice = st.selectbox(
                 "Período de análise",
@@ -369,14 +356,16 @@ def apply_filters(
                 placeholder="Todos os projetos",
                 key="project_filter",
             )
-        with technician_col:
-            selected_technicians = st.multiselect(
-                "Técnicos",
-                all_technicians,
-                default=[],
-                placeholder="Todos os técnicos",
-                key="technician_filter",
-            )
+        selected_technicians = []
+        if show_technicians:
+            with filter_columns[2]:
+                selected_technicians = st.multiselect(
+                    "Técnicos",
+                    all_technicians,
+                    default=[],
+                    placeholder="Todos os técnicos",
+                    key="technician_filter",
+                )
 
     filtered = records.copy()
     months: int | None = None
@@ -535,8 +524,11 @@ def render_overview(
             "points_total": "Pontos Totais",
         }
     )
+    display_table = table[
+        ["Posição", "Técnico", "Prod", "Gpon", "Pontos Totais", "Média mensal", "Variação no último mês"]
+    ]
     st.dataframe(
-        table[["Posição", "Técnico", "Prod", "Gpon", "Pontos Totais", "Média mensal", "Variação no último mês"]],
+        display_table.style.map(_monthly_average_style, subset=["Média mensal"]),
         width="stretch",
         hide_index=True,
         column_config={
@@ -549,82 +541,21 @@ def render_overview(
             "Variação no último mês": st.column_config.NumberColumn(format="%+.1f%%"),
         },
     )
-
-
-def render_history(filtered: pd.DataFrame) -> None:
-    section_heading("Histórico mensal", "Consulte, compare e exporte todas as competências do recorte")
-    history = summarize(filtered, ["period", "technician"])
-    history = history.sort_values(["period", "points_total"], ascending=[False, False])
-    ranking = summarize(filtered, "technician")
-    top_names = ranking.nlargest(12, "points_total")["technician"].tolist()
-
-    pivot = history[history["technician"].isin(top_names)].pivot_table(
-        index="technician", columns="period", values="points_total", aggfunc="sum", fill_value=0
+    st.caption(
+        "Critérios da média mensal: 275–299,99 amarelo · 300–399,99 verde · 400 ou mais azul."
     )
-    if not pivot.empty:
-        pivot = pivot.reindex(top_names)
-        pivot = pivot.reindex(sorted(pivot.columns), axis=1)
-        labels = [month_label(column) for column in pivot.columns]
-        heatmap = go.Figure(
-            go.Heatmap(
-                z=pivot.values,
-                x=labels,
-                y=pivot.index,
-                colorscale=[[0, "#E8EEF8"], [0.45, "#8CA9D4"], [1, "#012869"]],
-                showscale=False,
-                hovertemplate="%{y}<br>%{x}<br><b>%{z:,.2f} pontos</b><extra></extra>",
-                xgap=3,
-                ygap=3,
-            )
-        )
-        heatmap.update_xaxes(side="top", showgrid=False, fixedrange=True)
-        heatmap.update_yaxes(showgrid=False, autorange="reversed", fixedrange=True)
-        heatmap.update_layout(
-            height=max(300, len(pivot) * 32 + 70),
-            margin=dict(l=8, r=8, t=15, b=5),
-            paper_bgcolor="rgba(0,0,0,0)",
-            font=dict(family=Fontes.TEXTO, size=10, color=COLORS["muted"]),
-        )
-        with st.container(border=True):
-            st.markdown("**Mapa de produção · Pontos Totais**")
-            st.plotly_chart(heatmap, width="stretch", config=CHART_CONFIG)
 
-    display = history.copy()
-    display["Competência"] = display["period"].map(month_label)
-    display = display.rename(
-        columns={
-            "technician": "Técnico",
-            "points_prod": "Pontos Prod",
-            "points_gpon": "Pontos Gpon",
-            "points_total": "Pontos Totais",
-        }
-    )
-    display = display[["Competência", "Técnico", "Pontos Prod", "Pontos Gpon", "Pontos Totais"]]
-    download_col, info_col = st.columns([1.3, 4])
-    with download_col:
-        st.download_button(
-            "Baixar histórico em CSV",
-            data=csv_download(display),
-            file_name="historico_producao.csv",
-            mime="text/csv",
-            width="stretch",
-        )
-    with info_col:
-        st.markdown(
-            f'<div class="small-muted" style="padding-top:10px">{len(display):,} registros mensais no recorte atual.</div>'.replace(",", "."),
-            unsafe_allow_html=True,
-        )
-    st.dataframe(
-        display,
-        width="stretch",
-        hide_index=True,
-        height=480,
-        column_config={
-            "Pontos Prod": st.column_config.NumberColumn(format="%.2f"),
-            "Pontos Gpon": st.column_config.NumberColumn(format="%.2f"),
-            "Pontos Totais": st.column_config.NumberColumn(format="%.2f"),
-        },
-    )
+
+def _monthly_average_style(value: object) -> str:
+    if not isinstance(value, (int, float)):
+        return ""
+    if 275 <= value < 300:
+        return "background-color: #FEF3C7; color: #92400E; font-weight: 600"
+    if 300 <= value < 400:
+        return "background-color: #DCFCE7; color: #166534; font-weight: 600"
+    if value >= 400:
+        return "background-color: #DBEAFE; color: #1E40AF; font-weight: 600"
+    return ""
 
 
 def render_technicians(filtered: pd.DataFrame) -> None:
@@ -708,8 +639,14 @@ def render_technicians(filtered: pd.DataFrame) -> None:
     detail = detail.rename(
         columns={"points_prod": "Prod", "points_gpon": "Gpon", "points_total": "Pontos Totais"}
     )
+    st.caption(
+        "Critérios da média mensal de Pontos Totais: "
+        "275–299,99 amarelo · 300–399,99 verde · 400 ou mais azul."
+    )
     st.dataframe(
-        detail[["Competência", "Prod", "Gpon", "Pontos Totais"]],
+        detail[["Competência", "Prod", "Gpon", "Pontos Totais"]].style.map(
+            _monthly_average_style, subset=["Pontos Totais"]
+        ),
         width="stretch",
         hide_index=True,
         column_config={
@@ -794,7 +731,6 @@ with st.sidebar:
     nav_labels = {
         "Visão geral": "▦  Visão geral",
         "Quantidade de O.S.": "▤  Quantidade de O.S.",
-        "Histórico": "◷  Histórico",
         "Técnicos": "♙  Técnicos",
     }
     navigation = st.radio(
@@ -830,10 +766,6 @@ def render_dashboard() -> None:
         "Quantidade de O.S.": (
             "Quantidade de O.S.",
             "Ordens de serviço registradas na aba Prod, por competência e técnico.",
-        ),
-        "Histórico": (
-            "Histórico de produção",
-            "Detalhamento mensal da produção por técnico.",
         ),
         "Técnicos": (
             "Produção por técnico",
@@ -888,15 +820,15 @@ def render_dashboard() -> None:
             unsafe_allow_html=True,
         )
     else:
-        filtered, technicians, months, projects = apply_filters(current_records)
+        filtered, technicians, months, projects = apply_filters(
+            current_records, show_technicians=navigation != "Técnicos"
+        )
         if filtered.empty:
             st.info("Não há produção para os filtros selecionados. Ajuste o período, projeto ou técnico.")
         elif navigation == "Visão geral":
             render_overview(filtered, current_records, technicians, months, projects)
         elif navigation == "Quantidade de O.S.":
             render_prod_orders(filtered)
-        elif navigation == "Histórico":
-            render_history(filtered)
         elif navigation == "Técnicos":
             render_technicians(filtered)
 

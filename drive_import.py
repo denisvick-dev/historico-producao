@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
@@ -18,6 +19,7 @@ DRIVE_API_URL = "https://www.googleapis.com/drive/v3"
 DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.readonly"
 GOOGLE_SHEET_MIME_TYPE = "application/vnd.google-apps.spreadsheet"
 SUPPORTED_SUFFIXES = {".csv", ".xls", ".xlsx"}
+MAX_PARALLEL_DOWNLOADS = 8
 
 
 class DriveImportError(RuntimeError):
@@ -135,6 +137,52 @@ def download_file(
     return filename, response.content
 
 
+def _import_drive_file(
+    credentials: Any,
+    service_account_info: Mapping[str, Any],
+    drive_file: dict[str, str],
+    *,
+    csv_origin: str,
+    default_date: date | datetime | pd.Timestamp | None,
+) -> tuple[list[dict], list[str], bool]:
+    drive_name = drive_file.get("name", "Arquivo sem nome")
+    if _source_filename(drive_file) is None:
+        return [], [
+            f"{drive_name} · formato não suportado; use XLSX, XLS, CSV ou Planilhas Google."
+        ], False
+
+    try:
+        worker_session = (
+            AuthorizedSession(credentials)
+            if credentials is not None
+            else create_drive_session(service_account_info)
+        )
+        downloaded = download_file(
+            worker_session, drive_file
+        )
+    except DriveImportError as error:
+        return [], [f"{drive_name} · {error}"], False
+    if downloaded is None:
+        return [], [
+            f"{drive_name} · formato não suportado; use XLSX, XLS, CSV ou Planilhas Google."
+        ], False
+
+    filename, content = downloaded
+    try:
+        file_records, file_issues = process_upload(
+            filename,
+            content,
+            csv_origin=csv_origin,
+            default_date=default_date,
+        )
+    except ValueError as error:
+        return [], [f"{drive_name} · {error}"], False
+
+    refreshed = bool(file_records or not file_issues)
+    issues = [f"{drive_name} · {issue}" for issue in file_issues[:20]]
+    return file_records, issues, refreshed
+
+
 def import_drive_folder_snapshot(
     service_account_info: Mapping[str, Any],
     folder_id: str,
@@ -153,37 +201,33 @@ def import_drive_folder_snapshot(
         if (file_id := drive_file.get("id", "").strip())
     }
     refreshed_file_ids: set[str] = set()
+    credentials = getattr(session, "credentials", None)
 
-    for drive_file in files:
-        drive_name = drive_file.get("name", "Arquivo sem nome")
-        try:
-            downloaded = download_file(session, drive_file)
-        except DriveImportError as error:
-            issues.append(f"{drive_name} · {error}")
-            continue
-        if downloaded is None:
-            issues.append(f"{drive_name} · formato não suportado; use XLSX, XLS, CSV ou Planilhas Google.")
-            continue
-
-        filename, content = downloaded
-        try:
-            file_records, file_issues = process_upload(
-                filename,
-                content,
-                csv_origin=csv_origin,
-                default_date=default_date,
+    if files:
+        with ThreadPoolExecutor(
+            max_workers=min(MAX_PARALLEL_DOWNLOADS, len(files))
+        ) as executor:
+            results = executor.map(
+                lambda drive_file: _import_drive_file(
+                    credentials,
+                    service_account_info,
+                    drive_file,
+                    csv_origin=csv_origin,
+                    default_date=default_date,
+                ),
+                files,
             )
-        except ValueError as error:
-            issues.append(f"{drive_name} · {error}")
-            continue
-        if file_records or not file_issues:
-            file_id = drive_file.get("id", "").strip()
-            if file_id:
-                refreshed_file_ids.add(file_id)
-        if file_records:
-            records.extend(file_records)
-            successful_files += 1
-        issues.extend(f"{drive_name} · {issue}" for issue in file_issues[:20])
+            for drive_file, (file_records, file_issues, refreshed) in zip(
+                files, results
+            ):
+                if refreshed:
+                    file_id = drive_file.get("id", "").strip()
+                    if file_id:
+                        refreshed_file_ids.add(file_id)
+                if file_records:
+                    records.extend(file_records)
+                    successful_files += 1
+                issues.extend(file_issues)
 
     if not files:
         issues.append("A pasta do Google Drive não contém arquivos.")

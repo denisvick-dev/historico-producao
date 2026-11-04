@@ -1,4 +1,5 @@
 import unittest
+from threading import Barrier
 from unittest.mock import patch
 
 import pandas as pd
@@ -108,6 +109,29 @@ class DriveImportTests(unittest.TestCase):
         self.assertEqual(result.file_ids, {"file-id"})
         self.assertEqual(result.refreshed_file_ids, {"file-id"})
         self.assertEqual(result.successful_files, 1)
+
+    def test_snapshot_downloads_files_in_parallel(self):
+        files = [
+            {"id": "one", "name": "one.csv", "mimeType": "text/csv"},
+            {"id": "two", "name": "two.csv", "mimeType": "text/csv"},
+        ]
+        session = FakeSession([FakeResponse(data={"files": files})])
+        barrier = Barrier(2)
+
+        def download_file(_session, drive_file):
+            barrier.wait(timeout=5)
+            content = f"Tecnico;Data;Pontos\n{drive_file['id']};11/2026;10\n".encode()
+            return f"{drive_file['name']} [{drive_file['id']}].csv", content
+
+        with (
+            patch("drive_import.create_drive_session", return_value=session),
+            patch("drive_import.download_file", side_effect=download_file),
+        ):
+            result = drive_import.import_drive_folder_snapshot({}, "folder-id")
+
+        self.assertEqual(result.successful_files, 2)
+        self.assertEqual(result.refreshed_file_ids, {"one", "two"})
+        self.assertEqual(len(result.records), 2)
 
     def test_unsupported_file_is_not_downloaded(self):
         session = FakeSession([])
