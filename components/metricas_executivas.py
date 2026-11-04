@@ -258,3 +258,18 @@ def resumo_frequencia(
     )
     resumo["Última atividade"] = pd.to_datetime(resumo["Última atividade"]).dt.date
     return resumo[colunas_saida]
+
+
+__all__ = [
+    # Constantes
+    "COLUNAS_DATA",
+    # Detecção de colunas
+    "encontrar_coluna",
+    # Séries temporais
+    "serie_diaria",
+    "comparar_periodos",
+    "serie_atingimento_meta",
+    "serie_quebra_diaria",
+    # Resumo executivo
+    "resumo_frequencia",
+]

@@ -55,3 +55,13 @@ def avaliar_consistencia(df: pd.DataFrame | None) -> tuple[EstadoSaude, str]:
             detalhes.append(f"{len(vazias)} coluna(s) sem valores")
         return "alerta", " · ".join(detalhes)
     return "ok", f"Estrutura íntegra · {len(df):,} linhas".replace(",", ".")
+
+
+__all__ = [
+    # Tipos
+    "EstadoSaude",
+    "FUSO_BR",
+    # Avaliações
+    "avaliar_frescor",
+    "avaliar_consistencia",
+]

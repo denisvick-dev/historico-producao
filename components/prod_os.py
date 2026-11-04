@@ -222,3 +222,13 @@ def render_prod_orders(filtered: pd.DataFrame) -> None:
         file_name="quantidade_os_prod.csv",
         mime="text/csv",
     )
+
+
+__all__ = [
+    # Constantes
+    "AZUL_TOTALE",
+    "LARANJA_TOTALE",
+    "CHART_CONFIG",
+    # Renderização
+    "render_prod_orders",
+]

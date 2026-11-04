@@ -1,10 +1,25 @@
 from __future__ import annotations
 
 import os
+import structlog
+
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 from streamlit.errors import StreamlitSecretNotFoundError
+
+structlog.configure(
+    processors=[
+        structlog.processors.TimeStamper(fmt="iso"),
+        structlog.processors.add_log_level,
+        structlog.processors.JSONRenderer(),
+    ],
+    wrapper_class=structlog.make_filtering_bound_logger(20),  # INFO
+    logger_factory=structlog.PrintLoggerFactory(),
+    cache_logger_on_first_use=True,
+)
+
+logger = structlog.get_logger(__name__)
 
 from production import (
     create_demonstration,
@@ -28,8 +43,13 @@ from components.componentes import (
 from components.prod_os import render_prod_orders
 from drive_import import DriveImportError, import_drive_folder_snapshot
 
+try:
+    _drive_folder_secret = st.secrets.get("drive_folder_id")
+except (KeyError, StreamlitSecretNotFoundError, AttributeError):
+    _drive_folder_secret = None
+
 DRIVE_FOLDER_ID = (
-    st.secrets.get("drive_folder_id")
+    _drive_folder_secret
     or os.getenv("DRIVE_FOLDER_ID")
     or "1P0ComfPrfZiq-bHfOi8fWJeAE4GAEkBq"
 )
@@ -680,9 +700,12 @@ def _drive_service_account():
         return None
 
 
+logger.info("aplicacao_iniciando", pasta_drive=DRIVE_FOLDER_ID)
+
 # Preserva a sincronização automática da pasta do Drive: ela ocorre ao abrir uma
 # nova sessão, antes da leitura/cache do painel. A UI não expõe importação manual.
 init_database()
+logger.info("banco_dados_inicializado")
 if "drive_auto_sync_attempted" not in st.session_state:
     st.session_state["drive_auto_sync_attempted"] = True
     drive_service_account = _drive_service_account()
@@ -692,6 +715,7 @@ if "drive_auto_sync_attempted" not in st.session_state:
                 drive_service_account, DRIVE_FOLDER_ID
             )
         except DriveImportError as error:
+            logger.error("falha_sincronizacao_drive", erro=str(error))
             st.session_state["drive_auto_sync_status"] = {
                 "type": "warning",
                 "message": f"Falha ao atualizar os dados do Drive: {error}",
@@ -712,6 +736,12 @@ if "drive_auto_sync_attempted" not in st.session_state:
                 ),
                 "issues": drive_result.issues[:10],
             }
+            logger.info(
+                "sincronizacao_drive_sucesso",
+                registros_sincronizados=count,
+                arquivos_processados=drive_result.successful_files,
+                total_issues=len(drive_result.issues),
+            )
     else:
         st.session_state["drive_auto_sync_status"] = {
             "type": "info",
@@ -724,6 +754,12 @@ if "drive_auto_sync_attempted" not in st.session_state:
 
 _initialize_demo_once()
 records, stats = _load_dashboard_snapshot()
+logger.info(
+    "dashboard_carregado",
+    total_registros=stats.get("records", 0),
+    total_tecnicos=stats.get("technicians", 0),
+    dados_demonstracao=stats.get("demo_rows", 0),
+)
 
 with st.sidebar:
     render_sidebar_brand(

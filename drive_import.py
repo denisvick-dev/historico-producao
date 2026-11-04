@@ -9,9 +9,11 @@ from urllib.parse import quote
 
 import pandas as pd
 import requests
+import structlog
 from google.auth.exceptions import GoogleAuthError
 from google.auth.transport.requests import AuthorizedSession
 from google.oauth2.service_account import Credentials
+from tenacity import retry, stop_after_attempt, wait_exponential
 
 from production import PROD, process_upload
 
@@ -20,6 +22,8 @@ DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.readonly"
 GOOGLE_SHEET_MIME_TYPE = "application/vnd.google-apps.spreadsheet"
 SUPPORTED_SUFFIXES = {".csv", ".xls", ".xlsx"}
 MAX_PARALLEL_DOWNLOADS = 8
+
+logger = structlog.get_logger(__name__)
 
 
 class DriveImportError(RuntimeError):
@@ -49,6 +53,11 @@ def create_drive_session(
     return AuthorizedSession(credentials)
 
 
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=2, max=10),
+    reraise=True,
+)
 def _request(
     session: Any,
     url: str,
@@ -190,6 +199,7 @@ def import_drive_folder_snapshot(
     csv_origin: str = PROD,
     default_date: date | datetime | pd.Timestamp | None = None,
 ) -> DriveFolderImport:
+    logger.info("iniciando_sincronizacao_drive", pasta_id=folder_id)
     session = create_drive_session(service_account_info)
     files = list_folder_files(session, folder_id)
     records: list[dict] = []
@@ -231,6 +241,14 @@ def import_drive_folder_snapshot(
 
     if not files:
         issues.append("A pasta do Google Drive não contém arquivos.")
+    logger.info(
+        "sincronizacao_drive_concluida",
+        pasta_id=folder_id,
+        arquivos_encontrados=len(files),
+        arquivos_processados=successful_files,
+        total_registros=len(records),
+        total_issues=len(issues),
+    )
     return DriveFolderImport(
         records=records,
         issues=issues,
