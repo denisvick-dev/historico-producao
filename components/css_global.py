@@ -508,7 +508,7 @@ def css_containers() -> str:
     {_MAIN} [data-testid="stTable"] thead th {{
         background: var(--totale-azul-suave) !important;
         color: var(--totale-azul) !important;
-        font-family: var(--font-titulo, 'Oscine', 'Manrope', 'Segoe UI', Arial, sans-serif) !important;
+        font-family: var(--font-texto, 'Inter', 'Segoe UI', Arial, sans-serif) !important;
         font-weight: 750;
         text-transform: uppercase;
         font-size: 10.5px;
