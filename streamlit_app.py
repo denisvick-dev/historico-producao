@@ -140,6 +140,7 @@ st.markdown(
     .stTextInput input, .stSelectbox > div > div, .stMultiSelect > div > div, .stDateInput > div > div { border-radius:8px; }
     [data-testid="stFileUploader"] { background:#f8faff; border:1px dashed #b9cae3; border-radius:12px; padding:.4rem; }
     [data-testid="stDataFrame"] {
+        --gdg-font-family:'Inter', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
         --gdg-accent-color:#F37C04;
         --gdg-bg-cell:#ffffff;
         --gdg-bg-cell-medium:#f8faff;
@@ -157,9 +158,13 @@ st.markdown(
     }
     [data-testid="stDataFrame"] [data-testid="stDataFrameResizable"] { border-radius:12px; }
     [data-testid="stTable"] { overflow:hidden; border:1px solid #e2eaf4; border-radius:13px; box-shadow:0 6px 20px rgba(1,40,105,.06); }
-    [data-testid="stTable"] table { border-collapse:separate; border-spacing:0; font-size:13px; }
+    [data-testid="stTable"] table {
+        border-collapse:separate; border-spacing:0; font-family:'Inter', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        font-size:13px;
+    }
     [data-testid="stTable"] thead th {
-        background:#edf3fb !important; color:#012869 !important; font-family:'Inter',sans-serif;
+        background:#edf3fb !important; color:#012869 !important;
+        font-family:'Manrope', 'Inter', 'Segoe UI', Arial, sans-serif;
         font-size:10px !important; font-weight:750 !important; letter-spacing:.075em;
         text-transform:uppercase; border-bottom:1px solid #dce6f3 !important;
     }
@@ -729,7 +734,7 @@ with st.sidebar:
     )
     render_sidebar_section("Acompanhamento", tema="azul")
     nav_labels = {
-        "Visão geral": "▦  Visão geral",
+        "Visão Geral": "▦  Visão Geral",
         "Quantidade de O.S.": "▤  Quantidade de O.S.",
         "Técnicos": "♙  Técnicos",
     }
@@ -759,7 +764,7 @@ def render_dashboard() -> None:
         and current_stats["demo_rows"] == current_stats["records"]
     )
     page_titles = {
-        "Visão geral": (
+        "Visão Geral": (
             "Histórico de produção",
             "Acompanhe a evolução e os resultados da equipe técnica.",
         ),
@@ -814,7 +819,7 @@ def render_dashboard() -> None:
         )
         if filtered.empty:
             st.info("Não há produção para os filtros selecionados. Ajuste o período, projeto ou técnico.")
-        elif navigation == "Visão geral":
+        elif navigation == "Visão Geral":
             render_overview(filtered, current_records, technicians, months, projects)
         elif navigation == "Quantidade de O.S.":
             render_prod_orders(filtered)
