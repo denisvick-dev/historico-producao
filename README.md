@@ -7,6 +7,7 @@ Painel em Streamlit para acompanhar a produção dos técnicos ao longo do tempo
 ## Funcionalidades
 
 - Visão geral com Pontos Totais, Prod, Gpon e média por técnico.
+- Aba Prod com quantidade de O.S. por competência e técnico (cada linha válida importada da aba Prod conta como uma O.S.).
 - Evolução mensal e ranking da equipe.
 - Histórico mensal detalhado, mapa de produção e exportação em CSV.
 - Perfil individual com melhor competência e comparação com a média da equipe.

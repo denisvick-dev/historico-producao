@@ -56,6 +56,22 @@ class WorkbookTests(unittest.TestCase):
         self.assertEqual(len(issues), 1)
         self.assertIn("Linha 4", issues[0])
 
+    def test_summarize_os_counts_only_prod_rows(self):
+        frame = pd.DataFrame(
+            [
+                {"technician": "André Santos", "period": pd.Timestamp("2026-11-01"), "source_sheet": "Prod"},
+                {"technician": "André Santos", "period": pd.Timestamp("2026-11-01"), "source_sheet": "Prod"},
+                {"technician": "Bruno Oliveira", "period": pd.Timestamp("2026-11-01"), "source_sheet": "Prod"},
+                {"technician": "André Santos", "period": pd.Timestamp("2026-11-01"), "source_sheet": "Gpon"},
+            ]
+        )
+
+        total = production.summarize_os(frame, []).iloc[0]["os_count"]
+        by_technician = production.summarize_os(frame, "technician").set_index("technician")
+        self.assertEqual(total, 3)
+        self.assertEqual(by_technician.loc["André Santos", "os_count"], 2)
+        self.assertEqual(by_technician.loc["Bruno Oliveira", "os_count"], 1)
+
     def test_process_excel_combines_prod_and_gpon(self):
         content = io.BytesIO()
         with pd.ExcelWriter(content, engine="openpyxl") as writer:
