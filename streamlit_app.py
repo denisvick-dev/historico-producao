@@ -23,6 +23,7 @@ from components.componentes import (
     render_sidebar_divider,
     render_sidebar_footer_info,
     render_sidebar_section,
+    render_ticker,
 )
 from components.prod_os import render_prod_orders
 from drive_import import DriveImportError, import_drive_folder_snapshot
@@ -128,6 +129,24 @@ st.markdown(
     .kpi-note { font-size:11px; line-height:1.4; color:#718198; }
     .kpi-note.positive { color:#218361; }
     .kpi-note.negative { color:#bc5d58; }
+    .ticker-viewport {
+        overflow:hidden; margin:0 0 1.1rem; border:1px solid #dce6f3; border-radius:12px;
+        background:linear-gradient(110deg,#fff,#f8faff); box-shadow:0 4px 14px rgba(1,40,105,.045);
+    }
+    .ticker-track { display:flex; width:max-content; animation:ticker-scroll 30s linear infinite; }
+    .ticker-viewport:hover .ticker-track { animation-play-state:paused; }
+    .ticker-group {
+        display:flex; align-items:center; flex:0 0 max-content; min-width:100vw;
+        justify-content:space-around;
+    }
+    .ticker-item {
+        display:inline-flex; align-items:center; gap:.55rem; flex:0 0 auto;
+        padding:.78rem 1.25rem; color:#012869; font-size:12px; white-space:nowrap;
+    }
+    .ticker-item::before { content:""; width:6px; height:6px; border-radius:50%; background:#F37C04; }
+    .ticker-label { color:#718198; font-size:10px; font-weight:750; letter-spacing:.07em; text-transform:uppercase; }
+    .ticker-item strong { font-weight:750; }
+    @keyframes ticker-scroll { to { transform:translateX(-50%); } }
     .section-heading { margin:1.45rem 0 .75rem; display:flex; justify-content:space-between; align-items:end; }
     .section-heading h2 { margin:0 !important; font-family:"Manrope", "Inter", sans-serif; font-weight:750 !important; }
     .section-heading p { margin:.15rem 0 0; font-size:12px; }
@@ -189,6 +208,11 @@ st.markdown(
         .header-meta { display:none; }
         .kpi-card { padding:1rem; min-height:120px; }
         .kpi-value { font-size:23px; }
+        .ticker-item { padding:.72rem .85rem; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+        .ticker-viewport { overflow-x:auto; }
+        .ticker-track { animation:none; }
     }
     </style>
     """,
@@ -491,6 +515,32 @@ def render_overview(
     months: int | None,
     projects: list[str],
 ) -> None:
+    totals = summarize(filtered, [])
+    technicians_by_points = summarize(filtered, "technician")
+    periods_by_points = summarize(filtered, "period")
+    ticker_items = [
+        ("Pontos totais", format_points(totals.iloc[0]["points_total"])),
+        ("Prod", f'{format_points(totals.iloc[0]["points_prod"])} pontos'),
+        ("Gpon", f'{format_points(totals.iloc[0]["points_gpon"])} pontos'),
+    ]
+    if not technicians_by_points.empty:
+        top_technician = technicians_by_points.nlargest(1, "points_total").iloc[0]
+        ticker_items.append(
+            (
+                "Destaque da equipe",
+                f'{top_technician["technician"]} · {format_points(top_technician["points_total"])} pontos',
+            )
+        )
+    if not periods_by_points.empty:
+        top_period = periods_by_points.nlargest(1, "points_total").iloc[0]
+        ticker_items.append(
+            (
+                "Competência destaque",
+                f'{month_label(top_period["period"])} · {format_points(top_period["points_total"])} pontos',
+            )
+        )
+    render_ticker(ticker_items, label="Indicadores da visão geral")
+
     render_metrics(filtered, records, technicians, months, projects)
     section_heading("Produção da equipe", "Pontos consolidados por competência e por técnico")
     chart_col, ranking_col = st.columns([1.65, 1])
@@ -818,6 +868,16 @@ def render_dashboard() -> None:
             current_records, show_technicians=navigation != "Técnicos"
         )
         if filtered.empty:
+            if navigation == "Visão Geral":
+                render_ticker(
+                    [("Produção", "Nenhum registro nos filtros selecionados")],
+                    label="Indicadores da visão geral",
+                )
+            elif navigation == "Quantidade de O.S.":
+                render_ticker(
+                    [("Ordens de serviço", "Nenhum registro nos filtros selecionados")],
+                    label="Indicadores de quantidade de O.S.",
+                )
             st.info("Não há produção para os filtros selecionados. Ajuste o período, projeto ou técnico.")
         elif navigation == "Visão Geral":
             render_overview(filtered, current_records, technicians, months, projects)

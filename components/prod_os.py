@@ -6,7 +6,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from components.componentes import Cores, Fontes, formatar_numero_br
+from components.componentes import Cores, Fontes, formatar_numero_br, render_ticker
 from production import PROD, month_label, summarize_os
 
 AZUL_TOTALE = Cores.PRIMARIA
@@ -84,12 +84,41 @@ def render_prod_orders(filtered: pd.DataFrame) -> None:
     """
     prod = filtered[filtered["source_sheet"].eq(PROD)]
     if prod.empty:
+        render_ticker(
+            [("Ordens de serviço", "Nenhuma O.S. da aba Prod no recorte")],
+            label="Indicadores de quantidade de O.S.",
+        )
         st.info("Não há O.S. da aba Prod para os filtros selecionados.")
         return
 
     total_os = len(prod)
     active_technicians = prod["technician"].nunique()
     monthly = summarize_os(prod, "period").sort_values("period")
+    technician_totals = summarize_os(prod, "technician").sort_values(
+        ["os_count", "technician"], ascending=[False, True]
+    )
+    top_month = monthly.nlargest(1, "os_count").iloc[0]
+    top_technician = technician_totals.iloc[0]
+    latest_month = monthly.iloc[-1]
+    render_ticker(
+        [
+            ("Total de O.S.", formatar_numero_br(total_os)),
+            (
+                "Competência mais recente",
+                f'{month_label(latest_month["period"])} · {formatar_numero_br(latest_month["os_count"])} O.S.',
+            ),
+            (
+                "Mês com mais O.S.",
+                f'{month_label(top_month["period"])} · {formatar_numero_br(top_month["os_count"])} O.S.',
+            ),
+            (
+                "Técnico destaque",
+                f'{top_technician["technician"]} · {formatar_numero_br(top_technician["os_count"])} O.S.',
+            ),
+            ("Técnicos ativos", formatar_numero_br(active_technicians)),
+        ],
+        label="Indicadores de quantidade de O.S.",
+    )
     month_labels = monthly["period"].map(month_label).tolist()
     ranking = (
         summarize_os(prod, "technician")
