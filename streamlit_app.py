@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
@@ -23,12 +24,15 @@ from components.componentes import (
     render_sidebar_divider,
     render_sidebar_footer_info,
     render_sidebar_section,
-    render_ticker,
 )
 from components.prod_os import render_prod_orders
 from drive_import import DriveImportError, import_drive_folder_snapshot
 
-DRIVE_FOLDER_ID = "1P0ComfPrfZiq-bHfOi8fWJeAE4GAEkBq"
+DRIVE_FOLDER_ID = (
+    st.secrets.get("drive_folder_id")
+    or os.getenv("DRIVE_FOLDER_ID")
+    or "1P0ComfPrfZiq-bHfOi8fWJeAE4GAEkBq"
+)
 
 COLORS = {
     "ink": Cores.PRIMARIA,
@@ -129,23 +133,6 @@ st.markdown(
     .kpi-note { font-size:11px; line-height:1.4; color:#718198; }
     .kpi-note.positive { color:#218361; }
     .kpi-note.negative { color:#bc5d58; }
-    .ticker-viewport {
-        overflow:hidden; margin:0 0 1.1rem; border:1px solid #dce6f3; border-radius:12px;
-        background:linear-gradient(110deg,#fff,#f8faff); box-shadow:0 4px 14px rgba(1,40,105,.045);
-    }
-    .ticker-track { display:flex; width:max-content; animation:ticker-scroll 22s linear infinite; }
-    .ticker-group {
-        display:flex; align-items:center; flex:0 0 max-content; min-width:100vw;
-        justify-content:space-around;
-    }
-    .ticker-item {
-        display:inline-flex; align-items:center; gap:.55rem; flex:0 0 auto;
-        padding:.78rem 1.25rem; color:#012869; font-size:12px; white-space:nowrap;
-    }
-    .ticker-item::before { content:""; width:6px; height:6px; border-radius:50%; background:#F37C04; }
-    .ticker-label { color:#718198; font-size:10px; font-weight:750; letter-spacing:.07em; text-transform:uppercase; }
-    .ticker-item strong { font-weight:750; }
-    @keyframes ticker-scroll { to { transform:translateX(-50%); } }
     .section-heading { margin:1.45rem 0 .75rem; display:flex; justify-content:space-between; align-items:end; }
     .section-heading h2 { margin:0 !important; font-family:"Manrope", "Inter", sans-serif; font-weight:750 !important; }
     .section-heading p { margin:.15rem 0 0; font-size:12px; }
@@ -158,7 +145,6 @@ st.markdown(
     .stTextInput input, .stSelectbox > div > div, .stMultiSelect > div > div, .stDateInput > div > div { border-radius:8px; }
     [data-testid="stFileUploader"] { background:#f8faff; border:1px dashed #b9cae3; border-radius:12px; padding:.4rem; }
     [data-testid="stDataFrame"] {
-        --gdg-font-family:'Inter', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
         --gdg-accent-color:#F37C04;
         --gdg-bg-cell:#ffffff;
         --gdg-bg-cell-medium:#f8faff;
@@ -176,13 +162,9 @@ st.markdown(
     }
     [data-testid="stDataFrame"] [data-testid="stDataFrameResizable"] { border-radius:12px; }
     [data-testid="stTable"] { overflow:hidden; border:1px solid #e2eaf4; border-radius:13px; box-shadow:0 6px 20px rgba(1,40,105,.06); }
-    [data-testid="stTable"] table {
-        border-collapse:separate; border-spacing:0; font-family:'Inter', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-        font-size:13px;
-    }
+    [data-testid="stTable"] table { border-collapse:separate; border-spacing:0; font-size:13px; }
     [data-testid="stTable"] thead th {
-        background:#edf3fb !important; color:#012869 !important;
-        font-family:'Manrope', 'Inter', 'Segoe UI', Arial, sans-serif;
+        background:#edf3fb !important; color:#012869 !important; font-family:'Inter',sans-serif;
         font-size:10px !important; font-weight:750 !important; letter-spacing:.075em;
         text-transform:uppercase; border-bottom:1px solid #dce6f3 !important;
     }
@@ -207,7 +189,6 @@ st.markdown(
         .header-meta { display:none; }
         .kpi-card { padding:1rem; min-height:120px; }
         .kpi-value { font-size:23px; }
-        .ticker-item { padding:.72rem .85rem; }
     }
     </style>
     """,
@@ -510,32 +491,6 @@ def render_overview(
     months: int | None,
     projects: list[str],
 ) -> None:
-    totals = summarize(filtered, [])
-    technicians_by_points = summarize(filtered, "technician")
-    periods_by_points = summarize(filtered, "period")
-    ticker_items = [
-        ("Pontos totais", format_points(totals.iloc[0]["points_total"])),
-        ("Prod", f'{format_points(totals.iloc[0]["points_prod"])} pontos'),
-        ("Gpon", f'{format_points(totals.iloc[0]["points_gpon"])} pontos'),
-    ]
-    if not technicians_by_points.empty:
-        top_technician = technicians_by_points.nlargest(1, "points_total").iloc[0]
-        ticker_items.append(
-            (
-                "Destaque da equipe",
-                f'{top_technician["technician"]} · {format_points(top_technician["points_total"])} pontos',
-            )
-        )
-    if not periods_by_points.empty:
-        top_period = periods_by_points.nlargest(1, "points_total").iloc[0]
-        ticker_items.append(
-            (
-                "Competência destaque",
-                f'{month_label(top_period["period"])} · {format_points(top_period["points_total"])} pontos',
-            )
-        )
-    render_ticker(ticker_items, label="Indicadores da visão geral")
-
     render_metrics(filtered, records, technicians, months, projects)
     section_heading("Produção da equipe", "Pontos consolidados por competência e por técnico")
     chart_col, ranking_col = st.columns([1.65, 1])
@@ -712,7 +667,7 @@ def _initialize_demo_once() -> None:
     create_demonstration()
 
 
-@st.cache_data(ttl=15, show_spinner=False)
+@st.cache_data(ttl=60, show_spinner=False)
 def _load_dashboard_snapshot() -> tuple[pd.DataFrame, dict]:
     """Mantém a consulta da base em cache curto para navegação mais fluida."""
     return load_dashboard_snapshot()
@@ -779,7 +734,7 @@ with st.sidebar:
     )
     render_sidebar_section("Acompanhamento", tema="azul")
     nav_labels = {
-        "Visão Geral": "▦  Visão Geral",
+        "Visão geral": "▦  Visão geral",
         "Quantidade de O.S.": "▤  Quantidade de O.S.",
         "Técnicos": "♙  Técnicos",
     }
@@ -793,14 +748,14 @@ with st.sidebar:
     render_sidebar_divider(label="Sincronização", estilo="gradiente", tema="azul")
     render_sidebar_footer_info(
         itens={"Registros": stats["records"], "Técnicos": stats["technicians"]},
-        unidade="Consulta automática a cada 60s",
+        unidade="Consulta automática a cada 30s",
         ambiente="Produção",
         copyright="Totale · Histórico de produção",
         tema="azul",
     )
 
 
-@st.fragment(run_every="60s")
+@st.fragment(run_every="30s")
 def render_dashboard() -> None:
     """Painel principal, atualizado em segundo plano sem recarregar a página toda."""
     current_records, current_stats = _load_dashboard_snapshot()
@@ -809,7 +764,7 @@ def render_dashboard() -> None:
         and current_stats["demo_rows"] == current_stats["records"]
     )
     page_titles = {
-        "Visão Geral": (
+        "Visão geral": (
             "Histórico de produção",
             "Acompanhe a evolução e os resultados da equipe técnica.",
         ),
@@ -853,7 +808,7 @@ def render_dashboard() -> None:
             <div class="empty-state">
                 <div class="empty-icon">↻</div>
                 <h2>Nenhum registro disponível</h2>
-                <p>O painel consulta a base automaticamente a cada 60 segundos e exibirá os dados assim que estiverem disponíveis.</p>
+                <p>O painel consulta a base automaticamente a cada 30 segundos e exibirá os dados assim que estiverem disponíveis.</p>
             </div>
             """,
             unsafe_allow_html=True,
@@ -863,18 +818,8 @@ def render_dashboard() -> None:
             current_records, show_technicians=navigation != "Técnicos"
         )
         if filtered.empty:
-            if navigation == "Visão Geral":
-                render_ticker(
-                    [("Produção", "Nenhum registro nos filtros selecionados")],
-                    label="Indicadores da visão geral",
-                )
-            elif navigation == "Quantidade de O.S.":
-                render_ticker(
-                    [("Ordens de serviço", "Nenhum registro nos filtros selecionados")],
-                    label="Indicadores de quantidade de O.S.",
-                )
             st.info("Não há produção para os filtros selecionados. Ajuste o período, projeto ou técnico.")
-        elif navigation == "Visão Geral":
+        elif navigation == "Visão geral":
             render_overview(filtered, current_records, technicians, months, projects)
         elif navigation == "Quantidade de O.S.":
             render_prod_orders(filtered)
