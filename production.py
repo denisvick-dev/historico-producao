@@ -15,7 +15,7 @@ import unicodedata
 from contextlib import contextmanager
 from datetime import date, datetime
 from pathlib import Path
-from typing import Iterable, Iterator
+from typing import Generator, Iterable
 
 import pandas as pd
 
@@ -157,7 +157,7 @@ def clean_technician(value: object) -> str:
 
 def clean_project(value: object) -> str:
     """Normaliza o rótulo do projeto, mantendo códigos e capitalização de origem."""
-    if value is None or pd.isna(value):
+    if value is None or value is pd.NA or value is pd.NaT:
         return "Sem projeto"
     text = re.sub(r"\s+", " ", str(value)).strip()
     if not text or normalize_text(text) in {"nan", "none", "nat", "semprojeto"}:
@@ -201,16 +201,19 @@ def parse_points(value: object) -> float | None:
 
 def parse_reference_date(value: object) -> pd.Timestamp | None:
     """Interpreta datas completas, competências mensais e datas seriais do Excel."""
-    if value is None or (not isinstance(value, str) and pd.isna(value)):
+    if value is None or value is pd.NA or value is pd.NaT:
+        return None
+    if isinstance(value, float) and pd.isna(value):
         return None
     if isinstance(value, (pd.Timestamp, datetime, date)):
         timestamp = pd.Timestamp(value)
         return timestamp.normalize() if pd.notna(timestamp) else None
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         if 1 <= float(value) <= 100000:
-            return pd.to_datetime(
+            timestamp = pd.to_datetime(
                 float(value), unit="D", origin="1899-12-30", errors="coerce"
-            ).normalize()
+            )
+            return timestamp.normalize() if isinstance(timestamp, pd.Timestamp) else None
         return None
 
     text = str(value).strip()
@@ -247,9 +250,7 @@ def parse_reference_date(value: object) -> pd.Timestamp | None:
         return pd.Timestamp(year, month, 1)
 
     timestamp = pd.to_datetime(text, dayfirst=True, errors="coerce")
-    if pd.isna(timestamp):
-        return None
-    return pd.Timestamp(timestamp).normalize()
+    return timestamp.normalize() if isinstance(timestamp, pd.Timestamp) else None
 
 
 def infer_date_from_filename(filename: str) -> pd.Timestamp | None:
@@ -263,8 +264,12 @@ def infer_date_from_filename(filename: str) -> pd.Timestamp | None:
     return None
 
 
-def find_column(frame: pd.DataFrame, aliases: set[str]) -> object | None:
-    normalized = {normalize_text(column): column for column in frame.columns}
+def find_column(frame: pd.DataFrame, aliases: set[str]) -> str | None:
+    normalized = {
+        normalize_text(column): column
+        for column in frame.columns
+        if isinstance(column, str)
+    }
     for alias in aliases:
         if alias in normalized:
             return normalized[alias]
@@ -275,8 +280,12 @@ def find_column(frame: pd.DataFrame, aliases: set[str]) -> object | None:
     return None
 
 
-def find_date_column(frame: pd.DataFrame) -> object | None:
-    normalized = {normalize_text(column): column for column in frame.columns}
+def find_date_column(frame: pd.DataFrame) -> str | None:
+    normalized = {
+        normalize_text(column): column
+        for column in frame.columns
+        if isinstance(column, str)
+    }
     for alias in DATE_COLUMN_PREFERENCE:
         if alias in normalized:
             return normalized[alias]
@@ -304,12 +313,12 @@ def process_dataframe(
     project_col = find_column(frame, PROJECT_ALIASES)
     date_col = find_date_column(frame)
     available = ", ".join(str(column) for column in frame.columns)
-    missing = []
-    if technician_col is None:
-        missing.append("Técnico")
-    if points_col is None:
-        missing.append("Pontos")
-    if missing:
+    if technician_col is None or points_col is None:
+        missing = []
+        if technician_col is None:
+            missing.append("Técnico")
+        if points_col is None:
+            missing.append("Pontos")
         raise ValueError(
             f"Coluna(s) obrigatória(s) não encontrada(s): {', '.join(missing)}. "
             f"Colunas disponíveis: {available or 'nenhuma'}."
@@ -338,13 +347,14 @@ def process_dataframe(
         if points is None:
             issues.append(f"Linha {excel_row}: pontos inválidos ({row[points_col]!r}).")
             continue
+        date_value = row[date_col] if date_col is not None else None
         reference_date = (
-            parse_reference_date(row[date_col]) if date_col is not None else fallback_date
+            parse_reference_date(date_value) if date_col is not None else fallback_date
         )
         if reference_date is None:
             reference_date = fallback_date
         if reference_date is None:
-            issues.append(f"Linha {excel_row}: data inválida ({row[date_col]!r}).")
+            issues.append(f"Linha {excel_row}: data inválida ({date_value!r}).")
             continue
 
         records.append(
@@ -427,13 +437,13 @@ def process_upload(
     if not found:
         raise ValueError(
             "O arquivo precisa conter uma aba chamada Prod e/ou Gpon. "
-            f"Abas encontradas: {', '.join(workbook.sheet_names)}."
+            f"Abas encontradas: {', '.join(map(str, workbook.sheet_names))}."
         )
     return records, issues
 
 
 @contextmanager
-def connect() -> Iterator[sqlite3.Connection]:
+def connect() -> Generator[sqlite3.Connection, None, None]:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(DB_PATH, timeout=30)
     connection.row_factory = sqlite3.Row
@@ -794,7 +804,9 @@ def summarize_os(frame: pd.DataFrame, keys: str | list[str]) -> pd.DataFrame:
     )
 
 
-def month_label(value: object, include_year: bool = True) -> str:
+def month_label(
+    value: int | float | str | date | datetime, include_year: bool = True
+) -> str:
     timestamp = pd.Timestamp(value)
     label = MONTHS_SHORT[timestamp.month - 1]
     return f"{label}/{str(timestamp.year)[2:]}" if include_year else label.capitalize()
@@ -802,5 +814,5 @@ def month_label(value: object, include_year: bool = True) -> str:
 
 def format_points(value: object) -> str:
     """Formata pontos sempre com duas casas decimais no padrão pt-BR."""
-    number = float(value or 0)
+    number = float(str(value or 0))
     return f"{number:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
