@@ -133,8 +133,7 @@ st.markdown(
         overflow:hidden; margin:0 0 1.1rem; border:1px solid #dce6f3; border-radius:12px;
         background:linear-gradient(110deg,#fff,#f8faff); box-shadow:0 4px 14px rgba(1,40,105,.045);
     }
-    .ticker-track { display:flex; width:max-content; animation:ticker-scroll 30s linear infinite; }
-    .ticker-viewport:hover .ticker-track { animation-play-state:paused; }
+    .ticker-track { display:flex; width:max-content; animation:ticker-scroll 22s linear infinite; }
     .ticker-group {
         display:flex; align-items:center; flex:0 0 max-content; min-width:100vw;
         justify-content:space-around;
@@ -209,10 +208,6 @@ st.markdown(
         .kpi-card { padding:1rem; min-height:120px; }
         .kpi-value { font-size:23px; }
         .ticker-item { padding:.72rem .85rem; }
-    }
-    @media (prefers-reduced-motion: reduce) {
-        .ticker-viewport { overflow-x:auto; }
-        .ticker-track { animation:none; }
     }
     </style>
     """,
@@ -798,14 +793,14 @@ with st.sidebar:
     render_sidebar_divider(label="Sincronização", estilo="gradiente", tema="azul")
     render_sidebar_footer_info(
         itens={"Registros": stats["records"], "Técnicos": stats["technicians"]},
-        unidade="Consulta automática a cada 30s",
+        unidade="Consulta automática a cada 60s",
         ambiente="Produção",
         copyright="Totale · Histórico de produção",
         tema="azul",
     )
 
 
-@st.fragment(run_every="30s")
+@st.fragment(run_every="60s")
 def render_dashboard() -> None:
     """Painel principal, atualizado em segundo plano sem recarregar a página toda."""
     current_records, current_stats = _load_dashboard_snapshot()
@@ -858,7 +853,7 @@ def render_dashboard() -> None:
             <div class="empty-state">
                 <div class="empty-icon">↻</div>
                 <h2>Nenhum registro disponível</h2>
-                <p>O painel consulta a base automaticamente a cada 30 segundos e exibirá os dados assim que estiverem disponíveis.</p>
+                <p>O painel consulta a base automaticamente a cada 60 segundos e exibirá os dados assim que estiverem disponíveis.</p>
             </div>
             """,
             unsafe_allow_html=True,
