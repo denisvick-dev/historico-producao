@@ -588,8 +588,9 @@ def render_overview(
         ).set_index("technician")
         best_competence = ""
         if not latest.empty:
-            best_tech = latest["points_total"].idxmax()
-            best_competence = f'{best_tech} · {format_points(latest.loc[best_tech, "points_total"])} pontos em {month_label(latest_period)}'
+            best_tech = str(latest["points_total"].idxmax())
+            best_points = latest["points_total"].loc[best_tech]
+            best_competence = f'{best_tech} · {format_points(best_points)} pontos em {month_label(latest_period)}'
 
         ticker_items = [
             ("Pontos totais", format_points(current_total)),
