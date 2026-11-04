@@ -28,6 +28,7 @@ RECORD_COLUMNS = [
     "technician",
     "reference_date",
     "source_sheet",
+    "project",
     "points",
     "source_file",
     "source_row",
@@ -55,6 +56,15 @@ POINTS_ALIASES = {
     "qtdpontos",
     "quantidadepontos",
     "pontosrealizados",
+}
+PROJECT_ALIASES = {
+    "projeto",
+    "nomeprojeto",
+    "projetonome",
+    "codprojeto",
+    "codigoprojeto",
+    "idprojeto",
+    "projetoid",
 }
 DATE_ALIASES = {
     "data",
@@ -142,6 +152,16 @@ def clean_technician(value: object) -> str:
         word.lower() if index > 0 and word in particles else word
         for index, word in enumerate(words)
     )
+
+
+def clean_project(value: object) -> str:
+    """Normaliza o rótulo do projeto, mantendo códigos e capitalização de origem."""
+    if value is None or pd.isna(value):
+        return "Sem projeto"
+    text = re.sub(r"\s+", " ", str(value)).strip()
+    if not text or normalize_text(text) in {"nan", "none", "nat", "semprojeto"}:
+        return "Sem projeto"
+    return text
 
 
 def parse_points(value: object) -> float | None:
@@ -280,6 +300,7 @@ def process_dataframe(
 
     technician_col = find_column(frame, TECHNICIAN_ALIASES)
     points_col = find_column(frame, POINTS_ALIASES)
+    project_col = find_column(frame, PROJECT_ALIASES)
     date_col = find_date_column(frame)
     available = ", ".join(str(column) for column in frame.columns)
     missing = []
@@ -330,6 +351,7 @@ def process_dataframe(
                 "technician": technician,
                 "reference_date": reference_date.strftime("%Y-%m-%d"),
                 "source_sheet": origin,
+                "project": clean_project(row[project_col]) if project_col is not None else "Sem projeto",
                 "points": float(points),
                 "source_file": source_file,
                 "source_row": excel_row,
@@ -425,6 +447,7 @@ def init_database() -> None:
                 technician TEXT NOT NULL,
                 reference_date TEXT NOT NULL,
                 source_sheet TEXT NOT NULL CHECK(source_sheet IN ('Prod', 'Gpon')),
+                project TEXT NOT NULL DEFAULT 'Sem projeto',
                 points REAL NOT NULL,
                 source_file TEXT NOT NULL,
                 source_row INTEGER NOT NULL,
@@ -441,6 +464,17 @@ def init_database() -> None:
                 value TEXT NOT NULL
             );
             """
+        )
+        columns = {
+            row["name"]
+            for row in connection.execute("PRAGMA table_info(production_records)").fetchall()
+        }
+        if "project" not in columns:
+            connection.execute(
+                "ALTER TABLE production_records ADD COLUMN project TEXT NOT NULL DEFAULT 'Sem projeto'"
+            )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_production_project ON production_records(project)"
         )
 
 
@@ -484,15 +518,16 @@ def save_records(records: Iterable[dict], is_demo: bool = False) -> int:
         connection.executemany(
             """
             INSERT INTO production_records (
-                technician, reference_date, source_sheet, points,
+                technician, reference_date, source_sheet, project, points,
                 source_file, source_row, is_demo
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 (
                     row["technician"],
                     row["reference_date"],
                     row["source_sheet"],
+                    clean_project(row.get("project", "Sem projeto")),
                     row["points"],
                     row["source_file"],
                     row["source_row"],
@@ -509,7 +544,7 @@ def load_records() -> pd.DataFrame:
     with connect() as connection:
         frame = pd.read_sql_query(
             """
-            SELECT id, technician, reference_date, source_sheet, points,
+            SELECT id, technician, reference_date, source_sheet, project, points,
                    source_file, source_row, is_demo, imported_at
             FROM production_records
             ORDER BY reference_date, technician, source_sheet

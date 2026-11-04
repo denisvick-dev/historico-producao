@@ -8,6 +8,7 @@ Painel em Streamlit para acompanhar a produção dos técnicos ao longo do tempo
 
 - Visão geral com Pontos Totais, Prod, Gpon e média por técnico.
 - Aba Prod com quantidade de O.S. por competência e técnico (cada linha válida importada da aba Prod conta como uma O.S.).
+- Filtros compartilhados por período, projeto e técnico.
 - Evolução mensal e ranking da equipe.
 - Histórico mensal detalhado, mapa de produção e exportação em CSV.
 - Perfil individual com melhor competência e comparação com a média da equipe.
@@ -24,11 +25,12 @@ Arquivos Excel devem ter uma aba chamada **Prod** e/ou **Gpon**. Cada aba precis
 | --- | --- | --- |
 | Data / Competência | Sim* | `03/11/2026` ou `11/2026` |
 | Técnico | Sim | `André Santos` |
+| Projeto | Não | `Rede Metropolitana` |
 | Pontos | Sim | `125,50` |
 
 \* Quando não houver data, é possível selecionar uma competência padrão na tela de importação ou informar ano/mês no nome do arquivo (por exemplo, `producao_2026-11.xlsx`).
 
-O importador também reconhece variações como `Colaborador`, `Funcionário`, `Nome`, `Pontuação`, `Mês/Ano` e `Período`. Valores vazios e erros de conversão são informados por linha, sem interromper os demais registros válidos.
+O importador também reconhece variações como `Colaborador`, `Funcionário`, `Nome`, `Projeto`, `Pontuação`, `Mês/Ano` e `Período`. Sem coluna ou valor preenchido, o registro fica classificado como **Sem projeto**. Valores vazios e erros de conversão são informados por linha, sem interromper os demais registros válidos.
 
 Para arquivos CSV, selecione na interface se a origem é **Prod** ou **Gpon**. O CSV pode usar vírgula ou ponto e vírgula e codificação UTF-8 ou Latin-1.
 
