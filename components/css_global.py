@@ -501,6 +501,12 @@ def css_containers() -> str:
         --gdg-font-family: var(--font-texto, 'Inter', 'Segoe UI', Arial, sans-serif);
         --gdg-header-font-style: 700 11px;
     }}
+    {_MAIN} [data-testid="stDataFrame"] [data-testid="stColumnHeader"],
+    {_MAIN} [data-testid="stDataFrame"] [role="columnheader"],
+    {_MAIN} [data-testid="stDataEditor"] [data-testid="stColumnHeader"],
+    {_MAIN} [data-testid="stDataEditor"] [role="columnheader"] {{
+        font-family: var(--font-texto, 'Inter', 'Segoe UI', Arial, sans-serif) !important;
+    }}
     {_MAIN} [data-testid="stTable"] table {{
         font-family: var(--font-texto, 'Inter', 'Segoe UI', Arial, sans-serif) !important;
         font-size: 12.5px;
