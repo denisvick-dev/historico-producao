@@ -712,24 +712,15 @@ def render_overview(
     table = ranking.copy()
     table["Média mensal"] = table["points_total"] / periods_count
     variations = []
-    variation_badges = []
+    status_values = []
     for technician in table["technician"]:
         current_value = latest["points_total"].get(technician, 0)
         previous_value = previous["points_total"].get(technician, 0)
         var = (current_value / previous_value - 1) * 100 if previous_value else None
         variations.append(var)
-        if var is None:
-            variation_badges.append('<span class="badge badge--roxo">Sem dado</span>')
-        elif var >= 10:
-            variation_badges.append(f'<span class="badge badge--verde">↑ {var:.1f}%</span>')
-        elif var >= 0:
-            variation_badges.append(f'<span class="badge badge--azul">→ {var:.1f}%</span>')
-        elif var >= -10:
-            variation_badges.append(f'<span class="badge badge--laranja">↓ {abs(var):.1f}%</span>')
-        else:
-            variation_badges.append(f'<span class="badge badge--vermelho">↓ {abs(var):.1f}%</span>')
+        status_values.append(_status_value(var))
     table["Variação no último mês"] = variations
-    table["Status"] = variation_badges
+    table["Status"] = status_values
     table.insert(0, "Posição", range(1, len(table) + 1))
     table = table.rename(
         columns={
@@ -743,7 +734,9 @@ def render_overview(
         ["Posição", "Técnico", "Prod", "Gpon", "Pontos Totais", "Média mensal", "Variação no último mês", "Status"]
     ]
     st.dataframe(
-        display_table.style.map(_monthly_average_style, subset=["Média mensal"]),
+        display_table.style.map(_monthly_average_style, subset=["Média mensal"]).map(
+            _status_badge_style, subset=["Status"]
+        ),
         width="stretch",
         hide_index=True,
         column_config={
@@ -771,6 +764,64 @@ def _monthly_average_style(value: object) -> str:
         return "background-color: #DCFCE7; color: #166534; font-weight: 600"
     if value >= 400:
         return "background-color: #DBEAFE; color: #1E40AF; font-weight: 600"
+    return ""
+
+
+def _status_value(var: float | None) -> str:
+    if var is None:
+        return "Sem dado"
+    if var >= 10:
+        return f"↑ {var:.1f}%"
+    if var >= 0:
+        return f"→ {var:.1f}%"
+    if var >= -10:
+        return f"↓ {abs(var):.1f}%"
+    return f"↓ {abs(var):.1f}%"
+
+
+def _status_badge_style(value: object) -> str:
+    if not isinstance(value, str):
+        return ""
+    if value == "Sem dado":
+        return (
+            "background-color: #FAF5FF; color: #6D28D9; border: 1px solid #E9D5FF; "
+            "border-radius: 999px; padding: 0.16rem 0.5rem; font-size: 10px; "
+            "font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; "
+            "display: inline-flex; align-items: center; justify-content: center; "
+            "min-width: 74px; line-height: 1.4;"
+        )
+    if value.startswith("↑"):
+        return (
+            "background-color: #ECFDF5; color: #0F766E; border: 1px solid #A7F3D0; "
+            "border-radius: 999px; padding: 0.16rem 0.5rem; font-size: 10px; "
+            "font-weight: 700; display: inline-flex; align-items: center; justify-content: center; "
+            "min-width: 74px; line-height: 1.4;"
+        )
+    if value.startswith("→"):
+        return (
+            "background-color: #EFF6FF; color: #1E40AF; border: 1px solid #BFDBFE; "
+            "border-radius: 999px; padding: 0.16rem 0.5rem; font-size: 10px; "
+            "font-weight: 700; display: inline-flex; align-items: center; justify-content: center; "
+            "min-width: 74px; line-height: 1.4;"
+        )
+    if value.startswith("↓"):
+        try:
+            magnitude = float(value[2:-1])
+        except ValueError:
+            magnitude = 0.0
+        if magnitude > 10:
+            return (
+                "background-color: #FEF2F2; color: #B91C1C; border: 1px solid #FECACA; "
+                "border-radius: 999px; padding: 0.16rem 0.5rem; font-size: 10px; "
+                "font-weight: 700; display: inline-flex; align-items: center; justify-content: center; "
+                "min-width: 74px; line-height: 1.4;"
+            )
+        return (
+            "background-color: #FFF7ED; color: #C2410C; border: 1px solid #FCD34D; "
+            "border-radius: 999px; padding: 0.16rem 0.5rem; font-size: 10px; "
+            "font-weight: 700; display: inline-flex; align-items: center; justify-content: center; "
+            "min-width: 74px; line-height: 1.4;"
+        )
     return ""
 
 
