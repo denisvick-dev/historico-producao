@@ -778,17 +778,6 @@ def render_dashboard() -> None:
         updated = pd.Timestamp(current_stats["last_import"]).strftime(
             "Atualizado em %d/%m/%Y às %H:%M"
         )
-    drive_status = st.session_state.get("drive_auto_sync_status")
-    if drive_status:
-        if drive_status["type"] == "warning":
-            st.warning(drive_status["message"])
-        elif drive_status["type"] == "success":
-            st.success(drive_status["message"])
-        else:
-            st.info(drive_status["message"])
-        for issue in drive_status["issues"]:
-            st.caption(issue)
-
     render_hero_totale_1(
         titulo=title,
         subtitulo=subtitle,
