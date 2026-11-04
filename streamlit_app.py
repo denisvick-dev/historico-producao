@@ -1,44 +1,45 @@
 from __future__ import annotations
 
-import io
-from datetime import date
-
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+from streamlit.errors import StreamlitSecretNotFoundError
 
 from production import (
-    DEMO_SOURCE,
     GPON,
     PROD,
-    clear_database,
-    clear_demonstration,
     create_demonstration,
-    database_stats,
     format_points,
-    import_batches,
     init_database,
-    load_records,
+    load_dashboard_snapshot,
     month_label,
-    process_upload,
-    save_records,
     summarize,
     sync_drive_records,
 )
-from drive_import import DriveImportError, import_drive_folder_snapshot
+from components.componentes import (
+    Cores,
+    Fontes,
+    aplicar_estilo_corp,
+    render_hero_totale_1,
+    render_sidebar_brand,
+    render_sidebar_divider,
+    render_sidebar_footer_info,
+    render_sidebar_section,
+)
 from components.prod_os import render_prod_orders
+from drive_import import DriveImportError, import_drive_folder_snapshot
 
-DRIVE_FOLDER_URL = "https://drive.google.com/drive/folders/1P0ComfPrfZiq-bHfOi8fWJeAE4GAEkBq"
 DRIVE_FOLDER_ID = "1P0ComfPrfZiq-bHfOi8fWJeAE4GAEkBq"
+
 COLORS = {
-    "ink": "#012869",
-    "green": "#012869",
-    "mint": "#F37C04",
-    "pale": "#E8EEF8",
-    "text": "#122033",
-    "muted": "#64748b",
-    "grid": "#e6edf5",
-    "background": "#f3f6fb",
+    "ink": Cores.PRIMARIA,
+    "green": Cores.PRIMARIA,
+    "mint": Cores.SECUNDARIA,
+    "pale": Cores.AZUL_SUAVE,
+    "text": Cores.TEXTO,
+    "muted": Cores.TEXTO_3,
+    "grid": Cores.BORDA,
+    "background": Cores.FUNDO,
 }
 
 st.set_page_config(
@@ -48,11 +49,12 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# Ativa tipografia, tokens, componentes nativos e tema corporativo do Design System.
+aplicar_estilo_corp(tema_sidebar="azul")
+
 st.markdown(
     """
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap');
-
     :root {
         --ink: #012869;
         --green: #012869;
@@ -64,33 +66,26 @@ st.markdown(
         --background: #f3f6fb;
     }
     html, body, [class*="css"], .stApp { font-family: 'Inter', 'Segoe UI', Arial, sans-serif; }
-    h1, h2, h3, .brand-name { font-family: 'Manrope', 'Inter', 'Segoe UI', sans-serif; }
+    h1, h2, h3 { font-family: 'Manrope', 'Inter', 'Segoe UI', sans-serif; }
     .stApp { background: var(--background); color: var(--text); }
     #MainMenu, footer { visibility: hidden; }
     [data-testid="stHeader"] { background: rgba(243,246,251,.88); }
     [data-testid="stMainBlockContainer"] { max-width: 1440px; padding-top: 2rem; padding-bottom: 3rem; }
-    [data-testid="stSidebar"] { background: #012869; border-right: 0; }
-    [data-testid="stSidebar"] > div:first-child { padding: 1.8rem 1.15rem 1rem; }
-    [data-testid="stSidebar"] * { color: #e7f1ed; }
-    [data-testid="stSidebar"] .brand { display:flex; align-items:center; gap:.75rem; padding: 0 .45rem 1.6rem; }
-    [data-testid="stSidebar"] .brand-mark {
-        width: 40px; height: 40px; border-radius: 12px; background:#F37C04; color:#012869;
-        display:flex; align-items:center; justify-content:center; font-size:24px; font-weight:700;
-    }
-    [data-testid="stSidebar"] .brand-name { font-size:22px; line-height:1.1; font-weight:800; letter-spacing:-.5px; }
-    [data-testid="stSidebar"] .brand-sub { font-size:11px; color:#b9cae3; letter-spacing:1.7px; text-transform:uppercase; margin-top:4px; }
-    [data-testid="stSidebar"] .nav-caption { color:#b9cae3; font-size:10px; letter-spacing:1.5px; font-weight:700; padding:0 .65rem .5rem; }
-    [data-testid="stSidebar"] [role="radiogroup"] { gap: .3rem; }
+    [data-testid="stSidebar"] [role="radiogroup"] { gap:.3rem; }
     [data-testid="stSidebar"] [role="radiogroup"] label {
-        width:100%; padding:.72rem .8rem; border-radius:9px; transition:all .15s; cursor:pointer;
+        width:100%; padding:.68rem .75rem; border-radius:10px; transition:all .16s ease;
     }
-    [data-testid="stSidebar"] [role="radiogroup"] label:hover { background:rgba(255,255,255,.07); }
-    [data-testid="stSidebar"] [role="radiogroup"] label:has(input:checked) { background:rgba(255,255,255,.12); border-left:3px solid #F37C04; }
-    [data-testid="stSidebar"] [role="radiogroup"] label > div:first-child { display:none; }
-    [data-testid="stSidebar"] [role="radiogroup"] label p { font-size:14px; font-weight:500; }
-    [data-testid="stSidebar"] hr { border-color:rgba(255,255,255,.12); margin:1.2rem .4rem; }
-    [data-testid="stSidebar"] .sidebar-foot { color:#b9cae3; font-size:12px; line-height:1.55; padding:0 .45rem; }
-    [data-testid="stSidebar"] .sidebar-foot strong { color:#ffffff; font-weight:600; }
+    [data-testid="stSidebar"] [role="radiogroup"] label > div:first-child { display:none !important; }
+    [data-testid="stSidebar"] [role="radiogroup"] label:hover {
+        background:var(--totale-sb-nav-hover-bg);
+    }
+    [data-testid="stSidebar"] [role="radiogroup"] label:has(input:checked) {
+        background:var(--totale-sb-nav-active-bg);
+        border-left:3px solid var(--totale-sb-nav-active-accent);
+        box-shadow:0 4px 12px rgba(0,0,0,.12);
+    }
+    [data-testid="stSidebar"] [role="radiogroup"] label p { font-size:13px; font-weight:600; }
+
 
     h1, h2, h3 { color:#012869; letter-spacing:-.035em; }
     h1 { font-size:2rem !important; font-weight:800 !important; margin-bottom:.1rem !important; }
@@ -199,6 +194,16 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+# O DataFrame usa Glide Data Grid: alinhe a tipografia ao token compartilhado do DS.
+st.markdown(
+    "<style>"
+    f'[data-testid="stDataFrame"] {{ --gdg-font-family:{Fontes.TEXTO}; '
+    f'--gdg-header-font-style:700 11px {Fontes.TEXTO}; font-family:{Fontes.TEXTO} !important; }}'
+    f'[data-testid="stTable"] table {{ font-family:{Fontes.TEXTO} !important; }}'
+    "</style>",
+    unsafe_allow_html=True,
+)
+
 CHART_CONFIG = {"displayModeBar": False, "responsive": True}
 
 
@@ -208,7 +213,7 @@ def chart_layout(fig: go.Figure, height: int = 340) -> go.Figure:
         margin=dict(l=8, r=12, t=15, b=8),
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(family="Inter, Segoe UI, Arial, sans-serif", color=COLORS["muted"], size=11),
+        font=dict(family=Fontes.TEXTO, color=COLORS["muted"], size=11),
         legend=dict(
             orientation="h",
             yanchor="bottom",
@@ -247,14 +252,14 @@ def production_chart(monthly: pd.DataFrame) -> go.Figure:
         y=monthly["points_prod"],
         name="Prod",
         marker_color=COLORS["ink"],
-        hovertemplate="<b>%{x}</b><br>Prod: %{y:,.0f} pontos<extra></extra>",
+        hovertemplate="<b>%{x}</b><br>Prod: %{y:,.2f} pontos<extra></extra>",
     )
     fig.add_bar(
         x=monthly["label"],
         y=monthly["points_gpon"],
         name="Gpon",
         marker_color=COLORS["mint"],
-        hovertemplate="<b>%{x}</b><br>Gpon: %{y:,.0f} pontos<extra></extra>",
+        hovertemplate="<b>%{x}</b><br>Gpon: %{y:,.2f} pontos<extra></extra>",
     )
     fig.add_scatter(
         x=monthly["label"],
@@ -282,7 +287,7 @@ def ranking_chart(ranking: pd.DataFrame, top: int = 8) -> go.Figure:
         name="Prod",
         orientation="h",
         marker_color=COLORS["ink"],
-        hovertemplate="%{y}<br>Prod: %{x:,.0f}<extra></extra>",
+        hovertemplate="%{y}<br>Prod: %{x:,.2f}<extra></extra>",
     )
     fig.add_bar(
         y=data["technician"],
@@ -290,7 +295,7 @@ def ranking_chart(ranking: pd.DataFrame, top: int = 8) -> go.Figure:
         name="Gpon",
         orientation="h",
         marker_color=COLORS["mint"],
-        hovertemplate="%{y}<br>Gpon: %{x:,.0f}<extra></extra>",
+        hovertemplate="%{y}<br>Gpon: %{x:,.2f}<extra></extra>",
     )
     fig.add_scatter(
         y=data["technician"],
@@ -335,17 +340,6 @@ def section_heading(title: str, subtitle: str = "") -> None:
         unsafe_allow_html=True,
     )
 
-
-def template_file() -> bytes:
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        pd.DataFrame(columns=["Data", "Técnico", "Projeto", "Pontos"]).to_excel(
-            writer, sheet_name=PROD, index=False
-        )
-        pd.DataFrame(columns=["Data", "Técnico", "Projeto", "Pontos"]).to_excel(
-            writer, sheet_name=GPON, index=False
-        )
-    return output.getvalue()
 
 
 def csv_download(frame: pd.DataFrame) -> bytes:
@@ -548,10 +542,10 @@ def render_overview(
         column_config={
             "Posição": st.column_config.NumberColumn(format="%dº", width="small"),
             "Técnico": st.column_config.TextColumn(width="medium"),
-            "Prod": st.column_config.NumberColumn(format="%.0f"),
-            "Gpon": st.column_config.NumberColumn(format="%.0f"),
-            "Pontos Totais": st.column_config.NumberColumn(format="%.0f"),
-            "Média mensal": st.column_config.NumberColumn(format="%.0f"),
+            "Prod": st.column_config.NumberColumn(format="%.2f"),
+            "Gpon": st.column_config.NumberColumn(format="%.2f"),
+            "Pontos Totais": st.column_config.NumberColumn(format="%.2f"),
+            "Média mensal": st.column_config.NumberColumn(format="%.2f"),
             "Variação no último mês": st.column_config.NumberColumn(format="%+.1f%%"),
         },
     )
@@ -578,7 +572,7 @@ def render_history(filtered: pd.DataFrame) -> None:
                 y=pivot.index,
                 colorscale=[[0, "#E8EEF8"], [0.45, "#8CA9D4"], [1, "#012869"]],
                 showscale=False,
-                hovertemplate="%{y}<br>%{x}<br><b>%{z:,.0f} pontos</b><extra></extra>",
+                hovertemplate="%{y}<br>%{x}<br><b>%{z:,.2f} pontos</b><extra></extra>",
                 xgap=3,
                 ygap=3,
             )
@@ -589,7 +583,7 @@ def render_history(filtered: pd.DataFrame) -> None:
             height=max(300, len(pivot) * 32 + 70),
             margin=dict(l=8, r=8, t=15, b=5),
             paper_bgcolor="rgba(0,0,0,0)",
-            font=dict(family="Inter, Segoe UI, Arial, sans-serif", size=10, color=COLORS["muted"]),
+            font=dict(family=Fontes.TEXTO, size=10, color=COLORS["muted"]),
         )
         with st.container(border=True):
             st.markdown("**Mapa de produção · Pontos Totais**")
@@ -634,13 +628,13 @@ def render_history(filtered: pd.DataFrame) -> None:
 
 
 def render_technicians(filtered: pd.DataFrame) -> None:
-    section_heading("Perfil do técnico", "Evolução individual e comparação com a média da equipe")
+    section_heading("Perfil do técnico", "Filtre por projeto e selecione o técnico para ver seu desempenho.")
     ranking = summarize(filtered, "technician").sort_values("points_total", ascending=False)
     names = ranking["technician"].tolist()
     if not names:
         st.info("Nenhum técnico disponível no recorte atual.")
         return
-    selected = st.selectbox("Selecione o técnico", names, label_visibility="collapsed")
+    selected = st.selectbox("Técnico", names, key="technician_profile")
     if selected is None:
         return
     position = names.index(selected) + 1
@@ -691,7 +685,7 @@ def render_technicians(filtered: pd.DataFrame) -> None:
         textposition="outside",
         textfont=dict(size=10, color="#012869"),
         cliponaxis=False,
-        hovertemplate="<b>%{x}</b><br>%{y:,.0f} pontos<extra></extra>",
+        hovertemplate="<b>%{x}</b><br>%{y:,.2f} pontos<extra></extra>",
     )
     fig.add_scatter(
         x=team_monthly["label"],
@@ -700,7 +694,7 @@ def render_technicians(filtered: pd.DataFrame) -> None:
         mode="lines+markers",
         line=dict(color="#F37C04", width=2, dash="dot"),
         marker=dict(size=6),
-        hovertemplate="<b>%{x}</b><br>Média: %{y:,.0f}<extra></extra>",
+        hovertemplate="<b>%{x}</b><br>Média: %{y:,.2f}<extra></extra>",
     )
     maximum = max(monthly["points_total"].max(), team_monthly["team_average"].max())
     fig.update_yaxes(range=[0, maximum * 1.25 if maximum else 1])
@@ -725,242 +719,35 @@ def render_technicians(filtered: pd.DataFrame) -> None:
         },
     )
 
-
-def render_import(is_demo: bool) -> None:
-    section_heading("Importar e gerenciar dados", "Atualize o histórico com as planilhas de produção da equipe")
-    feedback = st.session_state.pop("import_feedback", None)
-    if feedback:
-        if feedback["type"] == "success":
-            st.success(feedback["message"])
-        else:
-            st.warning(feedback["message"])
-        for issue in feedback.get("issues", []):
-            st.caption(issue)
-
-    def finish_import(
-        records: list[dict], issues: list[str], successful_files: int
-    ) -> None:
-        if records:
-            count = save_records(records)
-            message = (
-                f"{count} registros importados de {successful_files} arquivo(s). "
-                "O histórico já foi atualizado."
-            )
-            if is_demo:
-                message += " Os dados de demonstração foram removidos."
-            st.session_state["import_feedback"] = {
-                "type": "success",
-                "message": message,
-                "issues": issues[:40],
-            }
-        else:
-            st.session_state["import_feedback"] = {
-                "type": "warning",
-                "message": "Nenhum registro válido foi importado. Revise os avisos abaixo.",
-                "issues": issues[:40],
-            }
-        st.rerun()
-
-    upload_col, help_col = st.columns([1.65, 1])
-    with upload_col:
-        with st.container(border=True):
-            st.markdown("**Importar diretamente do Google Drive**")
-            st.markdown(
-                '<div class="small-muted">Lê as planilhas da pasta compartilhada com a conta de serviço configurada neste app.</div>',
-                unsafe_allow_html=True,
-            )
-            drive_option_col, drive_date_col = st.columns(2)
-            with drive_option_col:
-                drive_csv_origin = st.selectbox(
-                    "Origem dos arquivos CSV no Drive",
-                    [PROD, GPON],
-                    key="drive_csv_origin",
-                )
-            with drive_date_col:
-                drive_default_date = st.date_input(
-                    "Competência padrão para o Drive",
-                    value=None,
-                    key="drive_default_date",
-                    help="Usada quando o arquivo não tiver data e o nome não indicar ano e mês.",
-                )
-            if st.button(
-                "Importar da pasta do Drive",
-                type="primary",
-                width="stretch",
-            ):
-                if "gcp_service_account" not in st.secrets:
-                    st.session_state["import_feedback"] = {
-                        "type": "warning",
-                        "message": (
-                            "Configure as credenciais da conta de serviço em "
-                            ".streamlit/secrets.toml e compartilhe a pasta do Drive com ela."
-                        ),
-                        "issues": [],
-                    }
-                    st.rerun()
-                try:
-                    result = import_drive_folder_snapshot(
-                        st.secrets["gcp_service_account"],
-                        DRIVE_FOLDER_ID,
-                        csv_origin=drive_csv_origin,
-                        default_date=drive_default_date,
-                    )
-                except DriveImportError as error:
-                    st.session_state["import_feedback"] = {
-                        "type": "warning",
-                        "message": f"Falha ao importar do Google Drive: {error}",
-                        "issues": [],
-                    }
-                    st.rerun()
-                count = sync_drive_records(
-                    result.records,
-                    result.file_ids,
-                    result.refreshed_file_ids,
-                )
-                st.session_state["import_feedback"] = {
-                    "type": "success",
-                    "message": (
-                        f"Drive sincronizado: {count} registros em "
-                        f"{result.successful_files} arquivo(s)."
-                    ),
-                    "issues": result.issues[:40],
-                }
-                st.rerun()
-
-            st.divider()
-            st.markdown("**1. Selecione os arquivos**")
-            st.markdown(
-                '<div class="small-muted">Envie um ou mais arquivos. Ao reenviar um arquivo com o mesmo nome, seus registros serão substituídos sem duplicar o histórico.</div>',
-                unsafe_allow_html=True,
-            )
-            files = st.file_uploader(
-                "Planilhas de produção",
-                type=["xlsx", "xls", "csv"],
-                accept_multiple_files=True,
-                label_visibility="collapsed",
-            )
-            option_col, date_col = st.columns(2)
-            with option_col:
-                csv_origin = st.selectbox(
-                    "Origem para arquivos CSV",
-                    [PROD, GPON],
-                    help="Arquivos Excel usam automaticamente o nome das abas.",
-                )
-            with date_col:
-                default_date = st.date_input(
-                    "Competência padrão (opcional)",
-                    value=None,
-                    help="Usada somente quando o arquivo não tiver coluna de data/competência.",
-                )
-            if st.button(
-                "Processar e importar",
-                type="primary",
-                disabled=not files,
-                width="stretch",
-            ):
-                all_records = []
-                issues = []
-                successful_files = 0
-                for uploaded in files:
-                    try:
-                        records, file_issues = process_upload(
-                            uploaded.name,
-                            uploaded.getvalue(),
-                            csv_origin=csv_origin,
-                            default_date=default_date,
-                        )
-                        if records:
-                            all_records.extend(records)
-                            successful_files += 1
-                        issues.extend(f"{uploaded.name} · {issue}" for issue in file_issues[:20])
-                    except ValueError as error:
-                        issues.append(f"{uploaded.name} · {error}")
-                finish_import(all_records, issues, successful_files)
-
-    with help_col:
-        with st.container(border=True):
-            st.markdown("**2. Confira o formato**")
-            st.markdown(
-                """
-                <div class="small-muted">
-                Cada planilha Excel deve conter as abas <b>Prod</b> e/ou <b>Gpon</b>, com:
-                <ul>
-                    <li><b>Técnico:</b> nome do colaborador</li>
-                    <li><b>Projeto (opcional):</b> nome do projeto</li>
-                    <li><b>Pontos:</b> valor produzido</li>
-                    <li><b>Data:</b> dia ou competência mensal</li>
-                </ul>
-                Também reconhecemos Competência, Mês, Colaborador, Projeto e Pontuação.
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-            st.markdown(
-                '<div class="formula"><b>Pontos Totais = Pontos em Prod + Pontos em Gpon</b></div>',
-                unsafe_allow_html=True,
-            )
-            st.download_button(
-                "Baixar planilha modelo",
-                data=template_file(),
-                file_name="modelo_producao.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                width="stretch",
-            )
-            st.link_button("Abrir pasta no Google Drive", DRIVE_FOLDER_URL, width="stretch")
-
-    section_heading("Arquivos na base", "Reenvios com o mesmo nome substituem apenas a origem correspondente")
-    batches = import_batches()
-    if not batches.empty:
-        batches = batches.rename(
-            columns={
-                "source_file": "Arquivo",
-                "origins": "Abas",
-                "rows_count": "Registros",
-                "points": "Soma de pontos",
-                "imported_at": "Importado em",
-            }
-        )
-        batches["Arquivo"] = batches["Arquivo"].replace(DEMO_SOURCE, "Base de demonstração")
-        batches["Importado em"] = pd.to_datetime(batches["Importado em"]).dt.strftime("%d/%m/%Y %H:%M")
-        st.dataframe(batches, width="stretch", hide_index=True)
-
-    stats = database_stats()
-    first_date = pd.Timestamp(stats["first_date"]).strftime("%d/%m/%Y") if stats["first_date"] else "—"
-    last_date = pd.Timestamp(stats["last_date"]).strftime("%d/%m/%Y") if stats["last_date"] else "—"
-    st.markdown(
-        f'<div class="small-muted">A base contém <b>{stats["records"]}</b> linhas de {stats["technicians"]} técnicos, com produção entre <b>{first_date}</b> e <b>{last_date}</b>.</div>',
-        unsafe_allow_html=True,
-    )
-
-    with st.expander("Limpar dados"):
-        if is_demo:
-            st.markdown("Remova a demonstração para começar com uma base vazia.")
-            if st.button("Remover dados de demonstração"):
-                clear_demonstration()
-                st.session_state.pop("period_filter", None)
-                st.session_state.pop("project_filter", None)
-                st.session_state.pop("technician_filter", None)
-                st.rerun()
-        st.warning("A limpeza completa apaga todos os registros importados. Essa ação não pode ser desfeita.")
-        confirmation = st.checkbox("Confirmo que desejo apagar toda a base de produção")
-        if st.button("Apagar toda a base", disabled=not confirmation):
-            clear_database()
-            for key in (
-                "period_filter", "project_filter", "technician_filter", "custom_start", "custom_end"
-            ):
-                st.session_state.pop(key, None)
-            st.rerun()
+@st.cache_resource(show_spinner=False)
+def _initialize_demo_once() -> None:
+    """Cria a base de demonstração uma vez por processo do app."""
+    create_demonstration()
 
 
-# Inicialização e navegação ---------------------------------------------------
+@st.cache_data(ttl=15, show_spinner=False)
+def _load_dashboard_snapshot() -> tuple[pd.DataFrame, dict]:
+    """Mantém a consulta da base em cache curto para navegação mais fluida."""
+    return load_dashboard_snapshot()
+
+
+def _drive_service_account():
+    try:
+        return st.secrets["gcp_service_account"]
+    except (KeyError, StreamlitSecretNotFoundError):
+        return None
+
+
+# Preserva a sincronização automática da pasta do Drive: ela ocorre ao abrir uma
+# nova sessão, antes da leitura/cache do painel. A UI não expõe importação manual.
 init_database()
 if "drive_auto_sync_attempted" not in st.session_state:
     st.session_state["drive_auto_sync_attempted"] = True
-    if "gcp_service_account" in st.secrets:
+    drive_service_account = _drive_service_account()
+    if drive_service_account is not None:
         try:
             drive_result = import_drive_folder_snapshot(
-                st.secrets["gcp_service_account"],
-                DRIVE_FOLDER_ID,
+                drive_service_account, DRIVE_FOLDER_ID
             )
         except DriveImportError as error:
             st.session_state["drive_auto_sync_status"] = {
@@ -974,6 +761,7 @@ if "drive_auto_sync_attempted" not in st.session_state:
                 drive_result.file_ids,
                 drive_result.refreshed_file_ids,
             )
+            _load_dashboard_snapshot.clear()
             st.session_state["drive_auto_sync_status"] = {
                 "type": "warning" if drive_result.issues else "success",
                 "message": (
@@ -991,114 +779,132 @@ if "drive_auto_sync_attempted" not in st.session_state:
             ),
             "issues": [],
         }
-create_demonstration()
-records = load_records()
-stats = database_stats()
-is_demo = bool(stats["records"] and stats["demo_rows"] == stats["records"])
+
+_initialize_demo_once()
+records, stats = _load_dashboard_snapshot()
 
 with st.sidebar:
-    st.markdown(
-        """
-        <div class="brand">
-            <div class="brand-mark">T</div>
-            <div><div class="brand-name">totale</div><div class="brand-sub">Gestão de produção</div></div>
-        </div>
-        <div class="nav-caption">ACOMPANHAMENTO</div>
-        """,
-        unsafe_allow_html=True,
+    render_sidebar_brand(
+        nome="TOTALE",
+        subtitulo="Gestão de produção",
+        icone="T",
+        tema="azul",
     )
+    render_sidebar_section("Acompanhamento", tema="azul")
+    nav_labels = {
+        "Visão geral": "▦  Visão geral",
+        "Quantidade de O.S.": "▤  Quantidade de O.S.",
+        "Histórico": "◷  Histórico",
+        "Técnicos": "♙  Técnicos",
+    }
     navigation = st.radio(
         "Navegação",
-        ["Visão geral", "Prod", "Histórico", "Técnicos", "Importar dados"],
+        list(nav_labels),
+        format_func=nav_labels.get,
         label_visibility="collapsed",
         key="navigation",
     )
-    st.divider()
-    st.markdown(
-        """
-        <div class="sidebar-foot">
-            <strong>Regra de consolidação</strong><br>
-            Pontos Totais = Prod + Gpon<br><br>
-            Os dados permanecem separados por origem e são consolidados nos relatórios.
-        </div>
-        """,
-        unsafe_allow_html=True,
+    render_sidebar_divider(label="Sincronização", estilo="gradiente", tema="azul")
+    render_sidebar_footer_info(
+        itens={"Registros": stats["records"], "Técnicos": stats["technicians"]},
+        unidade="Consulta automática a cada 30s",
+        ambiente="Produção",
+        copyright="Totale · Histórico de produção",
+        tema="azul",
     )
 
-page_titles = {
-    "Visão geral": ("Histórico de produção", "Acompanhe a evolução e os resultados da equipe técnica."),
-    "Prod": ("Quantidade de O.S. · Prod", "Acompanhe o volume de ordens de serviço da aba Prod."),
-    "Histórico": ("Histórico de produção", "Detalhamento mensal da produção por técnico."),
-    "Técnicos": ("Produção por técnico", "Analise a evolução individual e compare com a equipe."),
-    "Importar dados": ("Base de produção", "Importação, validação e gestão das planilhas."),
-}
-title, subtitle = page_titles[navigation]
-title_col, meta_col = st.columns([3.4, 1])
-with title_col:
-    st.markdown(f"<h1>{title}</h1><div class='page-subtitle'>{subtitle}</div>", unsafe_allow_html=True)
-with meta_col:
-    updated = "Sem importações"
-    if stats["last_import"]:
-        updated = pd.Timestamp(stats["last_import"]).strftime("Atualizado em %d/%m/%Y<br>%H:%M")
-    st.markdown(
-        f"<div class='header-meta'><strong>Base de produção</strong><br>{updated}</div>",
-        unsafe_allow_html=True,
+
+@st.fragment(run_every="30s")
+def render_dashboard() -> None:
+    """Painel principal, atualizado em segundo plano sem recarregar a página toda."""
+    current_records, current_stats = _load_dashboard_snapshot()
+    is_demo = bool(
+        current_stats["records"]
+        and current_stats["demo_rows"] == current_stats["records"]
+    )
+    page_titles = {
+        "Visão geral": (
+            "Histórico de produção",
+            "Acompanhe a evolução e os resultados da equipe técnica.",
+        ),
+        "Quantidade de O.S.": (
+            "Quantidade de O.S.",
+            "Ordens de serviço registradas na aba Prod, por competência e técnico.",
+        ),
+        "Histórico": (
+            "Histórico de produção",
+            "Detalhamento mensal da produção por técnico.",
+        ),
+        "Técnicos": (
+            "Produção por técnico",
+            "Analise a evolução individual e compare com a equipe.",
+        ),
+    }
+    title, subtitle = page_titles[navigation]
+    updated = "Aguardando dados da produção"
+    if current_stats["last_import"]:
+        updated = pd.Timestamp(current_stats["last_import"]).strftime(
+            "Atualizado em %d/%m/%Y às %H:%M"
+        )
+    drive_status = st.session_state.get("drive_auto_sync_status")
+    if drive_status:
+        if drive_status["type"] == "warning":
+            st.warning(drive_status["message"])
+        elif drive_status["type"] == "success":
+            st.success(drive_status["message"])
+        else:
+            st.info(drive_status["message"])
+        for issue in drive_status["issues"]:
+            st.caption(issue)
+
+    render_hero_totale_1(
+        titulo=title,
+        subtitulo=subtitle,
+        badge="TOTALE · PRODUÇÃO",
+        icone="monitoring",
+        meta_info=updated,
     )
 
-drive_status = st.session_state.get("drive_auto_sync_status")
-if drive_status:
-    if drive_status["type"] == "warning":
-        st.warning(drive_status["message"])
-    elif drive_status["type"] == "success":
-        st.success(drive_status["message"])
+    if is_demo:
+        st.markdown(
+            """
+            <div class="demo-banner">
+                <strong>Dados de demonstração.</strong>
+                Explore os indicadores. Esta amostra será substituída quando os dados de produção estiverem sincronizados na base.
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    if current_records.empty:
+        st.markdown(
+            """
+            <div class="empty-state">
+                <div class="empty-icon">↻</div>
+                <h2>Nenhum registro disponível</h2>
+                <p>O painel consulta a base automaticamente a cada 30 segundos e exibirá os dados assim que estiverem disponíveis.</p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
     else:
-        st.info(drive_status["message"])
-    for issue in drive_status["issues"]:
-        st.caption(issue)
+        filtered, technicians, months, projects = apply_filters(current_records)
+        if filtered.empty:
+            st.info("Não há produção para os filtros selecionados. Ajuste o período, projeto ou técnico.")
+        elif navigation == "Visão geral":
+            render_overview(filtered, current_records, technicians, months, projects)
+        elif navigation == "Quantidade de O.S.":
+            render_prod_orders(filtered)
+        elif navigation == "Histórico":
+            render_history(filtered)
+        elif navigation == "Técnicos":
+            render_technicians(filtered)
 
-if is_demo:
     st.markdown(
-        """
-        <div class="demo-banner">
-            <strong>Dados de demonstração.</strong> Explore o painel à vontade. Ao importar a primeira planilha real, esta base será substituída automaticamente.
-        </div>
-        """,
+        '<div class="footer">Totale · Histórico de produção &nbsp;•&nbsp; '
+        'Pontos Totais = Prod + Gpon · Sincronização automática</div>',
         unsafe_allow_html=True,
     )
 
-if navigation == "Importar dados":
-    render_import(is_demo)
-elif records.empty:
-    st.markdown(
-        """
-        <div class="empty-state">
-            <div class="empty-icon">↥</div>
-            <h2>Comece importando sua produção</h2>
-            <p>Envie os arquivos Excel com as abas Prod e Gpon. O sistema calculará os Pontos Totais e montará o histórico automaticamente.</p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-    st.download_button(
-        "Baixar planilha modelo",
-        data=template_file(),
-        file_name="modelo_producao.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    )
-else:
-    filtered, technicians, months, projects = apply_filters(records)
-    if filtered.empty:
-        st.info("Não há produção para os filtros selecionados. Ajuste o período ou os técnicos.")
-    elif navigation == "Visão geral":
-        render_overview(filtered, records, technicians, months, projects)
-    elif navigation == "Prod":
-        render_prod_orders(filtered)
-    elif navigation == "Histórico":
-        render_history(filtered)
-    elif navigation == "Técnicos":
-        render_technicians(filtered)
 
-st.markdown(
-    '<div class="footer">Totale · Histórico de produção &nbsp;•&nbsp; Pontos Totais = Prod + Gpon</div>',
-    unsafe_allow_html=True,
-)
+render_dashboard()

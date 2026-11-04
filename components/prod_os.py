@@ -6,10 +6,11 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from components.componentes import Cores, Fontes, formatar_numero_br
 from production import PROD, month_label, summarize_os
 
-AZUL_TOTALE = "#012869"
-LARANJA_TOTALE = "#F37C04"
+AZUL_TOTALE = Cores.PRIMARIA
+LARANJA_TOTALE = Cores.SECUNDARIA
 CHART_CONFIG = {"displayModeBar": False, "responsive": True}
 
 
@@ -43,7 +44,7 @@ def _chart_layout(fig: go.Figure, height: int = 320) -> go.Figure:
         margin=dict(l=8, r=12, t=15, b=8),
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(family="Inter, Segoe UI, Arial, sans-serif", color="#64748b", size=11),
+        font=dict(family=Fontes.TEXTO, color=Cores.TEXTO_3, size=11),
         bargap=0.35,
     )
     fig.update_xaxes(showgrid=False, zeroline=False, fixedrange=True, tickfont=dict(size=10))
@@ -71,22 +72,26 @@ def render_prod_orders(filtered: pd.DataFrame) -> None:
     total_os = len(prod)
     active_technicians = prod["technician"].nunique()
     monthly = summarize_os(prod, "period").sort_values("period")
-    ranking = summarize_os(prod, "technician").sort_values("os_count", ascending=True)
+    ranking = (
+        summarize_os(prod, "technician")
+        .nlargest(15, "os_count")
+        .sort_values("os_count", ascending=True)
+    )
     detail = summarize_os(prod, ["period", "technician"])
     detail = detail.sort_values(["period", "os_count"], ascending=[False, False])
 
     columns = st.columns(3)
     with columns[0]:
         _metric_card(
-            "TOTAL DE O.S. · PROD",
-            f"{total_os:,}".replace(",", "."),
+            "TOTAL DE O.S.",
+            formatar_numero_br(total_os),
             "Linhas válidas da aba Prod no período",
             "O.S.",
         )
     with columns[1]:
         _metric_card(
             "TÉCNICOS COM O.S.",
-            f"{active_technicians:,}".replace(",", "."),
+            formatar_numero_br(active_technicians),
             "Técnicos com produção Prod",
             "P",
         )
@@ -101,7 +106,7 @@ def render_prod_orders(filtered: pd.DataFrame) -> None:
         )
 
     _section_heading(
-        "Quantidade de O.S. · Prod",
+        "Quantidade de O.S.",
         "Cada linha válida importada da aba Prod é contabilizada como uma O.S.",
     )
     monthly["label"] = monthly["period"].map(month_label)
@@ -109,7 +114,7 @@ def render_prod_orders(filtered: pd.DataFrame) -> None:
     monthly_fig.add_bar(
         x=monthly["label"],
         y=monthly["os_count"],
-        name="O.S. Prod",
+        name="O.S.",
         marker_color=AZUL_TOTALE,
         text=monthly["os_count"],
         textposition="outside",
@@ -145,7 +150,7 @@ def render_prod_orders(filtered: pd.DataFrame) -> None:
             st.plotly_chart(monthly_fig, width="stretch", config=CHART_CONFIG)
     with ranking_col:
         with st.container(border=True):
-            st.markdown("**O.S. por técnico**")
+            st.markdown("**O.S. por técnico · Top 15**")
             st.plotly_chart(ranking_fig, width="stretch", config=CHART_CONFIG)
 
     _section_heading("O.S. por técnico e competência", "Detalhamento das linhas válidas da aba Prod")

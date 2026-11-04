@@ -628,6 +628,36 @@ def database_stats() -> dict:
     return dict(row)
 
 
+def load_dashboard_snapshot() -> tuple[pd.DataFrame, dict]:
+    """Carrega os registros e seus metadados numa única conexão SQLite."""
+    init_database()
+    with connect() as connection:
+        frame = pd.read_sql_query(
+            """
+            SELECT id, technician, reference_date, source_sheet, project, points,
+                   source_file, source_row, is_demo, imported_at
+            FROM production_records
+            ORDER BY reference_date, technician, source_sheet
+            """,
+            connection,
+        )
+        stats = dict(
+            connection.execute(
+                """
+                SELECT COUNT(*) AS records, COUNT(DISTINCT technician) AS technicians,
+                       MIN(reference_date) AS first_date, MAX(reference_date) AS last_date,
+                       MAX(imported_at) AS last_import,
+                       COALESCE(SUM(is_demo), 0) AS demo_rows
+                FROM production_records
+                """
+            ).fetchone()
+        )
+    if not frame.empty:
+        frame["reference_date"] = pd.to_datetime(frame["reference_date"])
+        frame["period"] = frame["reference_date"].dt.to_period("M").dt.to_timestamp()
+    return frame, stats
+
+
 def import_batches() -> pd.DataFrame:
     init_database()
     with connect() as connection:
@@ -771,8 +801,6 @@ def month_label(value: object, include_year: bool = True) -> str:
 
 
 def format_points(value: object) -> str:
+    """Formata pontos sempre com duas casas decimais no padrão pt-BR."""
     number = float(value or 0)
-    if abs(number - round(number)) < 0.001:
-        return f"{number:,.0f}".replace(",", ".")
-    formatted = f"{number:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-    return formatted
+    return f"{number:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")

@@ -7,15 +7,13 @@ Painel em Streamlit para acompanhar a produção dos técnicos ao longo do tempo
 ## Funcionalidades
 
 - Visão geral com Pontos Totais, Prod, Gpon e média por técnico.
-- Aba Prod com quantidade de O.S. por competência e técnico (cada linha válida importada da aba Prod conta como uma O.S.).
-- Filtros compartilhados por período, projeto e técnico.
+- Página **Quantidade de O.S.** com evolução por competência e ranking dos 15 técnicos com mais ordens (cada linha válida da aba `Prod` conta como uma O.S.).
+- Filtros compartilhados por período, projeto e técnico; a página de técnicos permite escolher o projeto e o perfil individual.
 - Evolução mensal e ranking da equipe.
 - Histórico mensal detalhado, mapa de produção e exportação em CSV.
 - Perfil individual com melhor competência e comparação com a média da equipe.
-- Importação de vários arquivos `.xlsx`, `.xls` e `.csv`.
-- Importação direta da pasta do Google Drive, incluindo Planilhas Google.
-- Persistência local em SQLite e substituição sem duplicidade ao reenviar um arquivo.
-- Dados de demonstração identificados, removidos automaticamente na primeira importação real.
+- Persistência local em SQLite.
+- Dados de demonstração identificados.
 
 ## Formato das planilhas
 
@@ -28,11 +26,9 @@ Arquivos Excel devem ter uma aba chamada **Prod** e/ou **Gpon**. Cada aba precis
 | Projeto | Não | `Rede Metropolitana` |
 | Pontos | Sim | `125,50` |
 
-\* Quando não houver data, é possível selecionar uma competência padrão na tela de importação ou informar ano/mês no nome do arquivo (por exemplo, `producao_2026-11.xlsx`).
+\* Quando não houver data, a rotina de sincronização pode usar o ano/mês informado no nome do arquivo (por exemplo, `producao_2026-11.xlsx`).
 
-O importador também reconhece variações como `Colaborador`, `Funcionário`, `Nome`, `Projeto`, `Pontuação`, `Mês/Ano` e `Período`. Sem coluna ou valor preenchido, o registro fica classificado como **Sem projeto**. Valores vazios e erros de conversão são informados por linha, sem interromper os demais registros válidos.
-
-Para arquivos CSV, selecione na interface se a origem é **Prod** ou **Gpon**. O CSV pode usar vírgula ou ponto e vírgula e codificação UTF-8 ou Latin-1.
+A rotina de sincronização reconhece variações como `Colaborador`, `Funcionário`, `Nome`, `Projeto`, `Pontuação`, `Mês/Ano` e `Período`. Sem coluna ou valor preenchido, o registro fica classificado como **Sem projeto**. Para arquivos CSV, a origem deve ser indicada como `Prod` ou `Gpon`; são aceitos separadores vírgula ou ponto e vírgula e codificações UTF-8 ou Latin-1.
 
 ## Como executar
 
@@ -43,34 +39,29 @@ pip install -r requirements.txt
 streamlit run streamlit_app.py
 ```
 
-Abra o endereço exibido pelo Streamlit. Na opção **Importar dados**, baixe a planilha modelo ou envie os arquivos baixados da [pasta de produção no Google Drive](https://drive.google.com/drive/folders/1P0ComfPrfZiq-bHfOi8fWJeAE4GAEkBq).
 
-### Importação direta do Google Drive
+O painel relê a base SQLite automaticamente a cada 30 segundos. Com as credenciais configuradas, o app também sincroniza a pasta de produção do Google Drive ao abrir uma nova sessão; não há etapa manual de importação na interface. Arquivos processados substituem sua versão anterior, arquivos removidos da pasta saem do histórico e arquivos que não puderem ser lidos mantêm os dados locais existentes.
 
-Para habilitar o botão **Importar da pasta do Drive**:
+### Sincronização automática do Google Drive
 
-1. Habilite a Google Drive API no projeto Google Cloud associado à conta de serviço.
-2. Compartilhe a pasta com o endereço `client_email` da conta de serviço, com permissão de leitor.
-3. Configure as credenciais localmente em `.streamlit/secrets.toml` (não versione esse arquivo):
+Habilite a Google Drive API, compartilhe a pasta de produção com a conta de serviço e configure suas credenciais em `.streamlit/secrets.toml` (não versione esse arquivo):
 
 ```toml
 [gcp_service_account]
 type = "service_account"
 project_id = "seu-projeto"
 private_key_id = "..."
-private_key = "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
+private_key = "-----BEGIN PRIVATE KEY-----\\n...\\n-----END PRIVATE KEY-----\\n"
 client_email = "conta-de-servico@seu-projeto.iam.gserviceaccount.com"
 client_id = "..."
 token_uri = "https://oauth2.googleapis.com/token"
 ```
 
-O importador lê arquivos XLSX, XLS, CSV e Planilhas Google diretamente na pasta compartilhada. Cada planilha Excel deve ter abas `Prod` e/ou `Gpon`; os arquivos CSV usam `Prod` como origem. A soma de pontos aparece no histórico por técnico e mês.
-
-Com as credenciais configuradas, o app sincroniza automaticamente os dados da pasta ao abrir uma nova sessão. A sincronização substitui os dados dos arquivos processados e remove do histórico os registros dos arquivos excluídos da pasta. Arquivos que não puderem ser lidos são informados e seus dados locais são preservados. O botão de importação manual também executa essa sincronização.
+Os arquivos Excel devem conter as abas `Prod` e/ou `Gpon`; arquivos CSV são lidos como `Prod` por padrão.
 
 ### Persistência
 
-Os registros ficam em `data/producao.db`, ignorado pelo Git. Em hospedagens com disco temporário, configure um volume persistente ou envie os arquivos novamente após uma reinicialização.
+Os registros ficam em `data/producao.db`, ignorado pelo Git. Em hospedagens com disco temporário, configure um volume persistente para preservar os dados entre reinicializações.
 
 Para iniciar sem dados de demonstração:
 
