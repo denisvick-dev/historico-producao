@@ -85,6 +85,30 @@ class DriveImportTests(unittest.TestCase):
         ).iloc[0]
         self.assertEqual(total["points_total"], 135.5)
 
+    def test_snapshot_tracks_files_and_successfully_refreshed_ids(self):
+        session = FakeSession(
+            [
+                FakeResponse(
+                    data={
+                        "files": [
+                            {
+                                "id": "file-id",
+                                "name": "producao.csv",
+                                "mimeType": "text/csv",
+                            }
+                        ]
+                    }
+                ),
+                FakeResponse(content=b"Tecnico;Data;Pontos\nAna;11/2026;10\n"),
+            ]
+        )
+        with patch("drive_import.create_drive_session", return_value=session):
+            result = drive_import.import_drive_folder_snapshot({}, "folder-id")
+
+        self.assertEqual(result.file_ids, {"file-id"})
+        self.assertEqual(result.refreshed_file_ids, {"file-id"})
+        self.assertEqual(result.successful_files, 1)
+
     def test_unsupported_file_is_not_downloaded(self):
         session = FakeSession([])
 

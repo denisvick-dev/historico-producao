@@ -23,8 +23,9 @@ from production import (
     process_upload,
     save_records,
     summarize,
+    sync_drive_records,
 )
-from drive_import import DriveImportError, import_drive_folder
+from drive_import import DriveImportError, import_drive_folder_snapshot
 from components.prod_os import render_prod_orders
 
 DRIVE_FOLDER_URL = "https://drive.google.com/drive/folders/1P0ComfPrfZiq-bHfOi8fWJeAE4GAEkBq"
@@ -798,7 +799,7 @@ def render_import(is_demo: bool) -> None:
                     }
                     st.rerun()
                 try:
-                    records, issues, successful_files = import_drive_folder(
+                    result = import_drive_folder_snapshot(
                         st.secrets["gcp_service_account"],
                         DRIVE_FOLDER_ID,
                         csv_origin=drive_csv_origin,
@@ -811,7 +812,20 @@ def render_import(is_demo: bool) -> None:
                         "issues": [],
                     }
                     st.rerun()
-                finish_import(records, issues, successful_files)
+                count = sync_drive_records(
+                    result.records,
+                    result.file_ids,
+                    result.refreshed_file_ids,
+                )
+                st.session_state["import_feedback"] = {
+                    "type": "success",
+                    "message": (
+                        f"Drive sincronizado: {count} registros em "
+                        f"{result.successful_files} arquivo(s)."
+                    ),
+                    "issues": result.issues[:40],
+                }
+                st.rerun()
 
             st.divider()
             st.markdown("**1. Selecione os arquivos**")
@@ -940,6 +954,43 @@ def render_import(is_demo: bool) -> None:
 
 # Inicialização e navegação ---------------------------------------------------
 init_database()
+if "drive_auto_sync_attempted" not in st.session_state:
+    st.session_state["drive_auto_sync_attempted"] = True
+    if "gcp_service_account" in st.secrets:
+        try:
+            drive_result = import_drive_folder_snapshot(
+                st.secrets["gcp_service_account"],
+                DRIVE_FOLDER_ID,
+            )
+        except DriveImportError as error:
+            st.session_state["drive_auto_sync_status"] = {
+                "type": "warning",
+                "message": f"Falha ao atualizar os dados do Drive: {error}",
+                "issues": [],
+            }
+        else:
+            count = sync_drive_records(
+                drive_result.records,
+                drive_result.file_ids,
+                drive_result.refreshed_file_ids,
+            )
+            st.session_state["drive_auto_sync_status"] = {
+                "type": "warning" if drive_result.issues else "success",
+                "message": (
+                    f"Drive sincronizado: {count} registros em "
+                    f"{drive_result.successful_files} arquivo(s)."
+                ),
+                "issues": drive_result.issues[:10],
+            }
+    else:
+        st.session_state["drive_auto_sync_status"] = {
+            "type": "info",
+            "message": (
+                "Atualização automática do Drive não configurada. "
+                "Configure a conta de serviço para habilitá-la."
+            ),
+            "issues": [],
+        }
 create_demonstration()
 records = load_records()
 stats = database_stats()
@@ -993,6 +1044,17 @@ with meta_col:
         f"<div class='header-meta'><strong>Base de produção</strong><br>{updated}</div>",
         unsafe_allow_html=True,
     )
+
+drive_status = st.session_state.get("drive_auto_sync_status")
+if drive_status:
+    if drive_status["type"] == "warning":
+        st.warning(drive_status["message"])
+    elif drive_status["type"] == "success":
+        st.success(drive_status["message"])
+    else:
+        st.info(drive_status["message"])
+    for issue in drive_status["issues"]:
+        st.caption(issue)
 
 if is_demo:
     st.markdown(

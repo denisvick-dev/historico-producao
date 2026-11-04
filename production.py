@@ -12,9 +12,10 @@ import os
 import re
 import sqlite3
 import unicodedata
+from contextlib import contextmanager
 from datetime import date, datetime
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Iterator
 
 import pandas as pd
 
@@ -431,11 +432,16 @@ def process_upload(
     return records, issues
 
 
-def connect() -> sqlite3.Connection:
+@contextmanager
+def connect() -> Iterator[sqlite3.Connection]:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(DB_PATH, timeout=30)
     connection.row_factory = sqlite3.Row
-    return connection
+    try:
+        with connection:
+            yield connection
+    finally:
+        connection.close()
 
 
 def init_database() -> None:
@@ -532,6 +538,56 @@ def save_records(records: Iterable[dict], is_demo: bool = False) -> int:
                     row["source_file"],
                     row["source_row"],
                     1 if is_demo else 0,
+                )
+                for row in rows
+            ],
+        )
+    return len(rows)
+
+
+def sync_drive_records(
+    records: Iterable[dict],
+    live_file_ids: set[str],
+    refreshed_file_ids: set[str],
+) -> int:
+    rows = list(records)
+    init_database()
+    with connect() as connection:
+        connection.execute("DELETE FROM production_records WHERE is_demo = 1")
+        connection.execute(
+            "INSERT INTO app_settings(key, value) VALUES ('demo_disabled', '1') "
+            "ON CONFLICT(key) DO UPDATE SET value = '1'"
+        )
+        source_files = connection.execute(
+            "SELECT DISTINCT source_file FROM production_records"
+        ).fetchall()
+        for row in source_files:
+            source_file = row["source_file"]
+            match = re.search(r" \[([^\]]+)\]\.[^.]+$", source_file)
+            if not match:
+                continue
+            file_id = match.group(1)
+            if file_id not in live_file_ids or file_id in refreshed_file_ids:
+                connection.execute(
+                    "DELETE FROM production_records WHERE source_file = ?",
+                    (source_file,),
+                )
+        connection.executemany(
+            """
+            INSERT INTO production_records (
+                technician, reference_date, source_sheet, project, points,
+                source_file, source_row, is_demo
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, 0)
+            """,
+            [
+                (
+                    row["technician"],
+                    row["reference_date"],
+                    row["source_sheet"],
+                    clean_project(row.get("project", "Sem projeto")),
+                    row["points"],
+                    row["source_file"],
+                    row["source_row"],
                 )
                 for row in rows
             ],

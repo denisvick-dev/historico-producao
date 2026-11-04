@@ -66,6 +66,8 @@ token_uri = "https://oauth2.googleapis.com/token"
 
 O importador lê arquivos XLSX, XLS, CSV e Planilhas Google diretamente na pasta compartilhada. Cada planilha Excel deve ter abas `Prod` e/ou `Gpon`; os arquivos CSV usam `Prod` como origem. A soma de pontos aparece no histórico por técnico e mês.
 
+Com as credenciais configuradas, o app sincroniza automaticamente os dados da pasta ao abrir uma nova sessão. A sincronização substitui os dados dos arquivos processados e remove do histórico os registros dos arquivos excluídos da pasta. Arquivos que não puderem ser lidos são informados e seus dados locais são preservados. O botão de importação manual também executa essa sincronização.
+
 ### Persistência
 
 Os registros ficam em `data/producao.db`, ignorado pelo Git. Em hospedagens com disco temporário, configure um volume persistente ou envie os arquivos novamente após uma reinicialização.

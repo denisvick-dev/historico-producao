@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Mapping
@@ -21,6 +22,15 @@ SUPPORTED_SUFFIXES = {".csv", ".xls", ".xlsx"}
 
 class DriveImportError(RuntimeError):
     """Erro ao autenticar ou consultar arquivos no Google Drive."""
+
+
+@dataclass(frozen=True)
+class DriveFolderImport:
+    records: list[dict]
+    issues: list[str]
+    successful_files: int
+    file_ids: set[str]
+    refreshed_file_ids: set[str]
 
 
 def create_drive_session(
@@ -125,18 +135,24 @@ def download_file(
     return filename, response.content
 
 
-def import_drive_folder(
+def import_drive_folder_snapshot(
     service_account_info: Mapping[str, Any],
     folder_id: str,
     *,
     csv_origin: str = PROD,
     default_date: date | datetime | pd.Timestamp | None = None,
-) -> tuple[list[dict], list[str], int]:
+) -> DriveFolderImport:
     session = create_drive_session(service_account_info)
     files = list_folder_files(session, folder_id)
     records: list[dict] = []
     issues: list[str] = []
     successful_files = 0
+    file_ids = {
+        file_id
+        for drive_file in files
+        if (file_id := drive_file.get("id", "").strip())
+    }
+    refreshed_file_ids: set[str] = set()
 
     for drive_file in files:
         drive_name = drive_file.get("name", "Arquivo sem nome")
@@ -160,6 +176,10 @@ def import_drive_folder(
         except ValueError as error:
             issues.append(f"{drive_name} · {error}")
             continue
+        if file_records or not file_issues:
+            file_id = drive_file.get("id", "").strip()
+            if file_id:
+                refreshed_file_ids.add(file_id)
         if file_records:
             records.extend(file_records)
             successful_files += 1
@@ -167,4 +187,26 @@ def import_drive_folder(
 
     if not files:
         issues.append("A pasta do Google Drive não contém arquivos.")
-    return records, issues, successful_files
+    return DriveFolderImport(
+        records=records,
+        issues=issues,
+        successful_files=successful_files,
+        file_ids=file_ids,
+        refreshed_file_ids=refreshed_file_ids,
+    )
+
+
+def import_drive_folder(
+    service_account_info: Mapping[str, Any],
+    folder_id: str,
+    *,
+    csv_origin: str = PROD,
+    default_date: date | datetime | pd.Timestamp | None = None,
+) -> tuple[list[dict], list[str], int]:
+    result = import_drive_folder_snapshot(
+        service_account_info,
+        folder_id,
+        csv_origin=csv_origin,
+        default_date=default_date,
+    )
+    return result.records, result.issues, result.successful_files
