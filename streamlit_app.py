@@ -245,33 +245,6 @@ st.markdown(
     .stButton > button[kind="primary"]:hover { background:#011838; border-color:#F37C04; box-shadow:0 0 0 3px rgba(243,124,4,.12); }
     .stTextInput input, .stSelectbox > div > div, .stMultiSelect > div > div, .stDateInput > div > div { border-radius:8px; }
     [data-testid="stFileUploader"] { background:#f8faff; border:1px dashed #b9cae3; border-radius:12px; padding:.4rem; }
-    [data-testid="stDataFrame"] {
-        --gdg-accent-color:#F37C04;
-        --gdg-bg-cell:#ffffff;
-        --gdg-bg-cell-medium:#f8faff;
-        --gdg-bg-header:#edf3fb;
-        --gdg-bg-header-hover:#e5edf8;
-        --gdg-bg-header-has-focus:#dce8f7;
-        --gdg-text-dark:#122033;
-        --gdg-text-medium:#52657d;
-        --gdg-text-light:#718198;
-        --gdg-text-header:#012869;
-        --gdg-border-color:#e2eaf4;
-        --gdg-horizontal-border-color:#edf1f7;
-        overflow:hidden; border:1px solid #e2eaf4; border-radius:13px;
-        background:#fff; box-shadow:0 6px 20px rgba(1,40,105,.06);
-    }
-    [data-testid="stDataFrame"] [data-testid="stDataFrameResizable"] { border-radius:12px; }
-    [data-testid="stTable"] { overflow:hidden; border:1px solid #e2eaf4; border-radius:13px; box-shadow:0 6px 20px rgba(1,40,105,.06); }
-    [data-testid="stTable"] table { border-collapse:separate; border-spacing:0; font-size:13px; }
-    [data-testid="stTable"] thead th {
-        background:#edf3fb !important; color:#012869 !important; font-family:'Inter',sans-serif;
-        font-size:10px !important; font-weight:750 !important; letter-spacing:.075em;
-        text-transform:uppercase; border-bottom:1px solid #dce6f3 !important;
-    }
-    [data-testid="stTable"] tbody tr:nth-child(even) { background:#f8faff; }
-    [data-testid="stTable"] tbody tr:hover { background:#fff7ed; }
-    [data-testid="stTable"] tbody td { border-bottom:1px solid #edf1f7 !important; color:#26384f; }
     .small-muted { color:var(--muted); font-size:12px; line-height:1.5; }
     .formula { background:#E8EEF8; border-radius:9px; padding:.8rem 1rem; color:#012869; font-size:13px; border:1px solid #e0ece5; }
     .technician-hero { display:flex; align-items:center; gap:1rem; padding:.25rem 0 .8rem; }

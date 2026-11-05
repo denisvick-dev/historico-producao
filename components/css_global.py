@@ -54,7 +54,7 @@ from components.kpi_cards import css_kpi_avancado
 
 logger = logging.getLogger(__name__)
 
-VERSAO_CSS_GLOBAL = "1.0.1"
+VERSAO_CSS_GLOBAL = "1.0.2"
 ID_NO_HEAD = "totale-css-global-v1"
 _CHAVE_SESSAO = "_totale_css_global_versao"
 
@@ -488,13 +488,32 @@ def css_containers() -> str:
         font-size: 12px !important;
         font-weight: 700 !important;
     }}
-    /* Tabelas e dataframes */
-    {_MAIN} [data-testid="stDataFrame"],
-    {_MAIN} [data-testid="stTable"] {{
+    /* DataFrames: um único tema corporativo para todas as tabelas interativas. */
+    {_MAIN} [data-testid="stDataFrame"] {{
+        --gdg-accent-color: var(--totale-laranja);
+        --gdg-bg-cell: #FFFFFF;
+        --gdg-bg-cell-medium: #F8FAFC;
+        --gdg-bg-header: var(--totale-azul);
+        --gdg-bg-header-hover: var(--totale-azul-claro);
+        --gdg-bg-header-has-focus: var(--totale-azul-claro);
+        --gdg-text-dark: var(--totale-texto);
+        --gdg-text-medium: var(--totale-texto-2);
+        --gdg-text-light: var(--totale-texto-3);
+        --gdg-text-header: #FFFFFF;
+        --gdg-border-color: var(--totale-borda);
+        --gdg-horizontal-border-color: #EDF1F7;
+        --gdg-font-family: var(--font-texto, 'Inter', 'Segoe UI', Arial, sans-serif);
+        --gdg-header-font-style: 700 11px;
         border: 1px solid var(--totale-borda);
         border-radius: var(--totale-raio-md);
         overflow: hidden;
+        background: #FFFFFF;
         box-shadow: var(--totale-sombra-sm);
+        transition: border-color var(--totale-transicao), box-shadow var(--totale-transicao);
+    }}
+    {_MAIN} [data-testid="stDataFrame"]:hover {{
+        border-color: #C7D5E8;
+        box-shadow: var(--totale-sombra-md);
     }}
     {_MAIN} [data-testid="stDataFrame"],
     {_MAIN} [data-testid="stDataEditor"] {{
@@ -507,21 +526,42 @@ def css_containers() -> str:
     {_MAIN} [data-testid="stDataEditor"] [role="columnheader"] {{
         font-family: var(--font-texto, 'Inter', 'Segoe UI', Arial, sans-serif) !important;
     }}
+    {_MAIN} [data-testid="stDataFrameResizable"] {{
+        border-radius: var(--totale-raio-md);
+    }}
+    /* Tabelas HTML estáticas seguem a mesma paleta e hierarquia visual. */
+    {_MAIN} [data-testid="stTable"] {{
+        border: 1px solid var(--totale-borda);
+        border-radius: var(--totale-raio-md);
+        overflow: hidden;
+        background: #FFFFFF;
+        box-shadow: var(--totale-sombra-sm);
+    }}
     {_MAIN} [data-testid="stTable"] table {{
+        border-collapse: separate;
+        border-spacing: 0;
         font-family: var(--font-texto, 'Inter', 'Segoe UI', Arial, sans-serif) !important;
         font-size: 12.5px;
     }}
     {_MAIN} [data-testid="stTable"] thead th {{
-        background: var(--totale-azul-suave) !important;
-        color: var(--totale-azul) !important;
+        background: var(--totale-azul) !important;
+        color: #FFFFFF !important;
         font-family: var(--font-texto, 'Inter', 'Segoe UI', Arial, sans-serif) !important;
         font-weight: 750;
         text-transform: uppercase;
         font-size: 10.5px;
         letter-spacing: 0.06em;
+        border-bottom: 3px solid var(--totale-laranja) !important;
     }}
-    {_MAIN} [data-testid="stDataFrameResizable"] {{
-        border-radius: var(--totale-raio-md);
+    {_MAIN} [data-testid="stTable"] tbody tr:nth-child(even) {{
+        background: #F8FAFC;
+    }}
+    {_MAIN} [data-testid="stTable"] tbody tr:hover {{
+        background: var(--totale-laranja-suave);
+    }}
+    {_MAIN} [data-testid="stTable"] tbody td {{
+        color: var(--totale-texto-2);
+        border-bottom: 1px solid #EDF1F7 !important;
     }}
     /* Gráficos Plotly: moldura de cartão */
     {_MAIN} [data-testid="stPlotlyChart"] {{

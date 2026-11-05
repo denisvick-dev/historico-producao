@@ -38,6 +38,22 @@ class CssGlobalTests(unittest.TestCase):
             css,
         )
 
+    def test_todos_os_dataframes_usam_a_paleta_corporativa(self):
+        """O tema comum deve alcançar cada st.dataframe pelo CSS global."""
+        css = css_containers()
+        regras = (
+            "--gdg-accent-color: var(--totale-laranja)",
+            "--gdg-bg-cell-medium: #F8FAFC",
+            "--gdg-bg-header: var(--totale-azul)",
+            "--gdg-text-header: #FFFFFF",
+            'stDataFrame"]:hover',
+            "tbody tr:nth-child(even)",
+            "tbody tr:hover",
+        )
+        for regra in regras:
+            with self.subTest(regra=regra):
+                self.assertIn(regra, css)
+
     def test_table_header_usa_inter(self):
         """O cabeçalho de stTable deve usar Inter (--font-texto), não Oscine/Manrope."""
         css = css_containers()
