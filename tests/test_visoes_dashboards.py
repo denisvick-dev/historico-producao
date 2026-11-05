@@ -6,7 +6,9 @@ import pandas as pd
 
 from components.visoes_dashboards import (
     comparar_tecnicos,
+    matriz_sazonalidade,
     resumir_projetos,
+    resumir_regularidade,
     resumir_saude_dados,
     rotulo_janelas_comparacao,
     selecionar_periodo_anterior,
@@ -75,6 +77,113 @@ class ProjectDashboardTests(unittest.TestCase):
                 "share_pct",
             ],
         )
+
+
+class ProductionRegularityTests(unittest.TestCase):
+    def test_regularidade_conta_lacunas_e_destaca_um_pico(self):
+        frame = pd.DataFrame(
+            [
+                {"technician": "Ana", "period": "2026-01-01", "points": 100},
+                {"technician": "Ana", "period": "2026-02-01", "points": 100},
+                {"technician": "Ana", "period": "2026-04-01", "points": 300},
+                {"technician": "Bia", "period": "2026-01-01", "points": 50},
+            ]
+        )
+
+        resumo = resumir_regularidade(
+            frame, pd.Timestamp("2026-01-01"), pd.Timestamp("2026-04-30")
+        ).set_index("technician")
+
+        ana = resumo.loc["Ana"]
+        self.assertEqual(ana["active_months"], 3)
+        self.assertEqual(ana["months_without_records"], 1)
+        self.assertEqual(ana["missing_periods"], "mar/26")
+        self.assertAlmostEqual(ana["mean_active_monthly_points"], 500 / 3)
+        self.assertEqual(ana["median_active_monthly_points"], 100)
+        self.assertEqual(ana["peak_month"], "abr/26")
+        self.assertAlmostEqual(ana["peak_vs_median_pct"], 200)
+        self.assertEqual(ana["regularity"], "Alta oscilação")
+
+        bia = resumo.loc["Bia"]
+        self.assertEqual(bia["months_without_records"], 3)
+        self.assertEqual(bia["regularity"], "Base curta")
+
+    def test_regularidade_vazia_mantem_colunas(self):
+        resumo = resumir_regularidade(pd.DataFrame())
+        self.assertIn("missing_periods", resumo.columns)
+        self.assertIn("coefficient_variation_pct", resumo.columns)
+        self.assertTrue(resumo.empty)
+
+
+class SeasonalityDashboardTests(unittest.TestCase):
+    def test_heatmap_preenche_competencias_e_ordena_entidades(self):
+        frame = pd.DataFrame(
+            [
+                {
+                    "technician": "Ana",
+                    "project": "Projeto A",
+                    "period": "2026-01-01",
+                    "points": 10,
+                },
+                {
+                    "technician": "Ana",
+                    "project": "Projeto A",
+                    "period": "2026-03-01",
+                    "points": 30,
+                },
+                {
+                    "technician": "Bia",
+                    "project": "Projeto B",
+                    "period": "2026-01-01",
+                    "points": 40,
+                },
+                {
+                    "technician": "Bia",
+                    "project": "Projeto B",
+                    "period": "2026-02-01",
+                    "points": 20,
+                },
+            ]
+        )
+
+        matrix = matriz_sazonalidade(
+            frame,
+            "technician",
+            pd.Timestamp("2026-01-01"),
+            pd.Timestamp("2026-04-30"),
+            top_n=1,
+        )
+
+        self.assertEqual(matrix.index.tolist(), ["Bia"])
+        self.assertEqual(
+            matrix.columns.tolist(),
+            list(pd.date_range("2026-01-01", "2026-04-01", freq="MS")),
+        )
+        self.assertEqual(matrix.loc["Bia"].tolist(), [40, 20, 0, 0])
+
+    def test_heatmap_aceita_projeto_e_valida_dimensao(self):
+        frame = pd.DataFrame(
+            [
+                {
+                    "technician": "Ana",
+                    "project": "Projeto A",
+                    "period": "2026-01-01",
+                    "points": 10,
+                },
+                {
+                    "technician": "Bia",
+                    "project": "Projeto B",
+                    "period": "2026-01-01",
+                    "points": 20,
+                },
+            ]
+        )
+
+        matrix = matriz_sazonalidade(frame, "project")
+        self.assertEqual(matrix.index.name, "project")
+        self.assertEqual(matrix.index.tolist(), ["Projeto B", "Projeto A"])
+        with self.assertRaises(ValueError):
+            matriz_sazonalidade(frame, "period")
 
 
 class ExecutiveDashboardTests(unittest.TestCase):

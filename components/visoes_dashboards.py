@@ -57,6 +57,223 @@ def resumir_projetos(frame: pd.DataFrame) -> pd.DataFrame:
     )
 
 
+def _serie_competencias(frame: pd.DataFrame) -> pd.Series:
+    """Devolve o mês de cada linha, aceitando o campo derivado ou a data original."""
+    coluna = "period" if "period" in frame.columns else "reference_date"
+    if coluna not in frame.columns:
+        return pd.Series(pd.NaT, index=frame.index, dtype="datetime64[ns]")
+    return (
+        pd.to_datetime(frame[coluna], errors="coerce")
+        .dt.to_period("M")
+        .dt.to_timestamp()
+    )
+
+
+def _janela_mensal(
+    frame: pd.DataFrame,
+    inicio: pd.Timestamp | None = None,
+    fim: pd.Timestamp | None = None,
+) -> tuple[pd.DatetimeIndex, pd.Series]:
+    """Retorna a sequência contínua de meses do recorte e os meses por registro."""
+    competencias = _serie_competencias(frame)
+    validas = competencias.dropna()
+    if validas.empty:
+        return pd.DatetimeIndex([]), competencias
+
+    inicio_mes = (
+        pd.Timestamp(inicio).to_period("M").to_timestamp()
+        if inicio is not None
+        else validas.min()
+    )
+    fim_mes = (
+        pd.Timestamp(fim).to_period("M").to_timestamp()
+        if fim is not None
+        else validas.max()
+    )
+    if inicio_mes > fim_mes:
+        return pd.DatetimeIndex([]), competencias
+    return pd.date_range(inicio_mes, fim_mes, freq="MS"), competencias
+
+
+def resumir_regularidade(
+    frame: pd.DataFrame,
+    inicio: pd.Timestamp | None = None,
+    fim: pd.Timestamp | None = None,
+) -> pd.DataFrame:
+    """Compara médias/medianas ativas, oscilações e meses sem registro por técnico.
+
+    A média, mediana e variação usam apenas competências com registros; lacunas
+    são contabilizadas separadamente para não confundir ausência de dados com
+    produção igual a zero.
+    """
+    colunas = [
+        "technician",
+        "active_months",
+        "months_without_records",
+        "missing_periods",
+        "mean_active_monthly_points",
+        "median_active_monthly_points",
+        "coefficient_variation_pct",
+        "peak_month",
+        "peak_points",
+        "peak_vs_median_pct",
+        "regularity",
+    ]
+    if (
+        frame.empty
+        or "technician" not in frame.columns
+        or "points" not in frame.columns
+    ):
+        return pd.DataFrame(columns=colunas)
+
+    periods, competencias = _janela_mensal(frame, inicio, fim)
+    if periods.empty:
+        return pd.DataFrame(columns=colunas)
+
+    work = frame.copy()
+    work["_competencia"] = competencias
+    work["_tecnico"] = work["technician"].fillna("Sem técnico").astype(str).str.strip()
+    work["_pontos"] = pd.to_numeric(work["points"], errors="coerce").fillna(0.0)
+    work = work[work["_competencia"].isin(periods)]
+    if work.empty:
+        return pd.DataFrame(columns=colunas)
+
+    monthly_points = (
+        work.groupby(["_tecnico", "_competencia"])["_pontos"]
+        .sum()
+        .unstack(fill_value=0.0)
+    )
+    monthly_records = (
+        work.groupby(["_tecnico", "_competencia"]).size().unstack(fill_value=0)
+    )
+    technicians = sorted(monthly_points.index.astype(str).tolist())
+    monthly_points = monthly_points.reindex(
+        index=technicians, columns=periods, fill_value=0.0
+    )
+    monthly_records = monthly_records.reindex(
+        index=technicians, columns=periods, fill_value=0
+    )
+
+    summaries: list[dict[str, object]] = []
+    for technician in technicians:
+        recorded = monthly_records.loc[technician].gt(0)
+        active_values = monthly_points.loc[technician, recorded].astype(float)
+        active_months = int(recorded.sum())
+        missing = periods[~recorded.to_numpy()]
+        mean_points = float(active_values.mean()) if active_months else 0.0
+        median_points = float(active_values.median()) if active_months else 0.0
+        std_points = float(active_values.std(ddof=0)) if active_months else 0.0
+        if active_months >= 2 and mean_points > 0:
+            variation = std_points / mean_points * 100.0
+        elif active_months >= 2 and std_points == 0:
+            variation = 0.0
+        else:
+            variation = float("nan")
+
+        if active_months:
+            peak_month_value = active_values.idxmax()
+            peak_points = float(active_values.loc[peak_month_value])
+            peak_month = month_label(peak_month_value)
+        else:
+            peak_points = 0.0
+            peak_month = "—"
+        peak_vs_median = (
+            (peak_points / median_points - 1.0) * 100.0
+            if median_points > 0
+            else float("nan")
+        )
+
+        if active_months < 3:
+            regularity = "Base curta"
+        elif mean_points <= 0:
+            regularity = "Sem pontos"
+        elif pd.isna(variation):
+            regularity = "Base insuficiente"
+        elif variation <= 25:
+            regularity = "Regular"
+        elif variation <= 50:
+            regularity = "Oscilação moderada"
+        else:
+            regularity = "Alta oscilação"
+
+        summaries.append(
+            {
+                "technician": technician,
+                "active_months": active_months,
+                "months_without_records": len(missing),
+                "missing_periods": " · ".join(month_label(period) for period in missing)
+                or "—",
+                "mean_active_monthly_points": mean_points,
+                "median_active_monthly_points": median_points,
+                "coefficient_variation_pct": variation,
+                "peak_month": peak_month,
+                "peak_points": peak_points,
+                "peak_vs_median_pct": peak_vs_median,
+                "regularity": regularity,
+            }
+        )
+
+    return (
+        pd.DataFrame(summaries, columns=colunas)
+        .sort_values(
+            ["months_without_records", "coefficient_variation_pct", "technician"],
+            ascending=[False, False, True],
+            na_position="last",
+        )
+        .reset_index(drop=True)
+    )
+
+
+def matriz_sazonalidade(
+    frame: pd.DataFrame,
+    dimensao: str = "technician",
+    inicio: pd.Timestamp | None = None,
+    fim: pd.Timestamp | None = None,
+    top_n: int = 12,
+) -> pd.DataFrame:
+    """Monta uma matriz de Pontos Totais por competência e técnico ou projeto."""
+    if dimensao not in {"technician", "project"}:
+        raise ValueError("A dimensão deve ser 'technician' ou 'project'.")
+    if frame.empty or dimensao not in frame.columns or "points" not in frame.columns:
+        return pd.DataFrame()
+
+    periods, competencias = _janela_mensal(frame, inicio, fim)
+    if periods.empty:
+        return pd.DataFrame()
+
+    work = frame.copy()
+    work["_competencia"] = competencias
+    placeholder = "Sem técnico" if dimensao == "technician" else "Sem projeto"
+    work["_entidade"] = (
+        work[dimensao]
+        .fillna(placeholder)
+        .astype(str)
+        .str.strip()
+        .replace("", placeholder)
+    )
+    work["_pontos"] = pd.to_numeric(work["points"], errors="coerce").fillna(0.0)
+    work = work[work["_competencia"].isin(periods)]
+    if work.empty:
+        return pd.DataFrame()
+
+    monthly = work.groupby(["_entidade", "_competencia"])["_pontos"].sum()
+    totals = monthly.groupby(level=0).sum()
+    ranking = (
+        totals.rename("points_total")
+        .rename_axis("entity")
+        .reset_index()
+        .sort_values(["points_total", "entity"], ascending=[False, True])
+    )
+    entities = ranking.head(max(int(top_n), 1))["entity"].tolist()
+    matrix = (
+        monthly.unstack(fill_value=0.0)
+        .reindex(index=entities, columns=periods, fill_value=0.0)
+        .fillna(0.0)
+    )
+    matrix.index.name = dimensao
+    return matrix
+
+
 def comparar_tecnicos(atual: pd.DataFrame, anterior: pd.DataFrame) -> pd.DataFrame:
     """Compara pontos por técnico e identifica novos/sem produção no recorte."""
     colunas = [
@@ -303,6 +520,13 @@ def _estilizar_figura(fig: go.Figure, *, altura: int = 340) -> go.Figure:
         separatethousands=True,
     )
     return fig
+
+
+def _section_heading(title: str, subtitle: str = "") -> None:
+    st.markdown(
+        f'<div class="section-heading"><div><h2>{title}</h2><p>{subtitle}</p></div></div>',
+        unsafe_allow_html=True,
+    )
 
 
 def _grafico_ranking_projetos(resumo: pd.DataFrame) -> go.Figure:
@@ -799,12 +1023,279 @@ def render_saude_dados(
     )
 
 
+def render_regularidade_producao(
+    frame: pd.DataFrame,
+    inicio: pd.Timestamp | None = None,
+    fim: pd.Timestamp | None = None,
+) -> None:
+    """Exibe médias, medianas, oscilações e lacunas mensais por técnico."""
+    if frame.empty:
+        st.info("Não há produção para calcular a regularidade no recorte selecionado.")
+        return
+
+    resumo = resumir_regularidade(frame, inicio, fim)
+    periods, competencias = _janela_mensal(frame, inicio, fim)
+    if resumo.empty or periods.empty:
+        st.info("Não há competências válidas para calcular a regularidade.")
+        return
+
+    work = frame.copy()
+    work["_competencia"] = competencias
+    work["_pontos"] = pd.to_numeric(work["points"], errors="coerce").fillna(0.0)
+    mensal_equipe = (
+        work.groupby("_competencia")["_pontos"].sum().reindex(periods, fill_value=0.0)
+    )
+    media_equipe = float(mensal_equipe.mean())
+    mediana_equipe = float(mensal_equipe.median())
+    lacunas = int(resumo["months_without_records"].sum())
+    oscilacao_alta = int(resumo["regularity"].eq("Alta oscilação").sum())
+
+    _section_heading(
+        "Regularidade da produção",
+        "Compare média e mediana, identifique oscilações e competências sem registros.",
+    )
+    cards = st.columns(4)
+    with cards[0]:
+        st.metric(
+            "Média mensal da equipe",
+            f"{format_points(media_equipe)} pontos",
+            help="Inclui competências sem produção no período selecionado.",
+        )
+    with cards[1]:
+        st.metric(
+            "Mediana mensal da equipe",
+            f"{format_points(mediana_equipe)} pontos",
+            help="Inclui competências sem produção no período selecionado.",
+        )
+    with cards[2]:
+        st.metric("Técnicos com alta oscilação", str(oscilacao_alta))
+    with cards[3]:
+        st.metric("Lacunas técnico-mês", str(lacunas))
+
+    labels = [month_label(period) for period in periods]
+    fig = go.Figure()
+    fig.add_scatter(
+        x=labels,
+        y=mensal_equipe.to_numpy(),
+        mode="lines+markers",
+        name="Pontos da equipe",
+        line={"color": AZUL_TOTALE, "width": 3},
+        marker={"size": 7},
+        hovertemplate="<b>%{x}</b><br>%{y:,.2f} pontos<extra></extra>",
+    )
+    fig.add_hline(
+        y=media_equipe,
+        line_color=LARANJA_TOTALE,
+        line_dash="dash",
+        annotation_text="Média",
+        annotation_position="top left",
+    )
+    fig.add_hline(
+        y=mediana_equipe,
+        line_color=VERDE_TOTALE,
+        line_dash="dot",
+        annotation_text="Mediana",
+        annotation_position="bottom left",
+    )
+    fig.update_layout(hovermode="x unified")
+    fig.update_yaxes(title="Pontos Totais", rangemode="tozero", separatethousands=True)
+    with st.container(border=True):
+        st.markdown("**Pontos da equipe por competência**")
+        st.plotly_chart(
+            _estilizar_figura(fig),
+            width="stretch",
+            config={"displayModeBar": False, "responsive": True},
+        )
+
+    display = resumo.rename(
+        columns={
+            "technician": "Técnico",
+            "active_months": "Meses com registros",
+            "months_without_records": "Meses sem registro",
+            "missing_periods": "Competências sem registro",
+            "mean_active_monthly_points": "Média nos meses ativos",
+            "median_active_monthly_points": "Mediana nos meses ativos",
+            "coefficient_variation_pct": "Oscilação (CV %)",
+            "peak_month": "Competência de pico",
+            "peak_points": "Pontos no pico",
+            "peak_vs_median_pct": "Pico vs mediana (%)",
+            "regularity": "Classificação",
+        }
+    )
+    display = display[
+        [
+            "Técnico",
+            "Classificação",
+            "Meses com registros",
+            "Meses sem registro",
+            "Competências sem registro",
+            "Média nos meses ativos",
+            "Mediana nos meses ativos",
+            "Oscilação (CV %)",
+            "Competência de pico",
+            "Pontos no pico",
+            "Pico vs mediana (%)",
+        ]
+    ]
+    styled = display.style.map(
+        lambda value: {
+            "Regular": "background-color: #DCFCE7; color: #166534; font-weight: 600;",
+            "Oscilação moderada": "background-color: #FEF3C7; color: #92400E; font-weight: 600;",
+            "Alta oscilação": "background-color: #FEE2E2; color: #991B1B; font-weight: 600;",
+            "Base curta": "background-color: #E2E8F0; color: #334155;",
+            "Sem pontos": "background-color: #E2E8F0; color: #334155;",
+        }.get(value, ""),
+        subset=["Classificação"],
+    ).map(
+        lambda value: (
+            "background-color: #FEF3C7; color: #92400E; font-weight: 600;"
+            if value > 0
+            else ""
+        ),
+        subset=["Meses sem registro"],
+    )
+    st.caption(
+        "Na tabela, média e mediana consideram apenas competências com registros; "
+        "as lacunas são listadas à parte. A oscilação é o coeficiente de variação "
+        "(desvio-padrão ÷ média) e só recebe classificação a partir de três meses ativos."
+    )
+    st.dataframe(
+        styled,
+        width="stretch",
+        hide_index=True,
+        alt="Média, mediana, oscilação e competências sem registro por técnico",
+        column_config={
+            "Técnico": st.column_config.TextColumn(width="medium"),
+            "Classificação": st.column_config.TextColumn(width="medium"),
+            "Meses com registros": st.column_config.NumberColumn(format="%d"),
+            "Meses sem registro": st.column_config.NumberColumn(format="%d"),
+            "Competências sem registro": st.column_config.TextColumn(width="large"),
+            "Média nos meses ativos": st.column_config.NumberColumn(format="%.2f"),
+            "Mediana nos meses ativos": st.column_config.NumberColumn(format="%.2f"),
+            "Oscilação (CV %)": st.column_config.NumberColumn(format="%.1f%%"),
+            "Competência de pico": st.column_config.TextColumn(width="small"),
+            "Pontos no pico": st.column_config.NumberColumn(format="%.2f"),
+            "Pico vs mediana (%)": st.column_config.NumberColumn(format="%+.1f%%"),
+        },
+    )
+
+
+def render_sazonalidade(
+    frame: pd.DataFrame,
+    inicio: pd.Timestamp | None = None,
+    fim: pd.Timestamp | None = None,
+) -> None:
+    """Exibe mapa de calor mensal de Pontos Totais por técnico ou projeto."""
+    if frame.empty:
+        st.info("Não há produção para exibir no mapa de sazonalidade.")
+        return
+
+    _section_heading(
+        "Sazonalidade da produção",
+        "Compare a intensidade dos Pontos Totais por competência, técnico ou projeto.",
+    )
+    dimension_col, count_col = st.columns([1, 1])
+    with dimension_col:
+        dimension_label = st.selectbox(
+            "Agrupar por",
+            ["Técnico", "Projeto"],
+            key="seasonality_dimension",
+        )
+    dimension = "technician" if dimension_label == "Técnico" else "project"
+    with count_col:
+        top_n = st.slider(
+            "Máximo de entidades exibidas",
+            min_value=1,
+            max_value=20,
+            value=12,
+            key="seasonality_top_n",
+        )
+
+    matrix = matriz_sazonalidade(
+        frame,
+        dimension,
+        inicio,
+        fim,
+        top_n=top_n,
+    )
+    if matrix.empty:
+        st.info("Não há dados suficientes para montar o mapa de calor.")
+        return
+
+    month_labels = [month_label(period) for period in matrix.columns]
+    values = matrix.to_numpy(dtype=float)
+    maximum = float(values.max()) if values.size else 0.0
+    entity_label = "Técnico" if dimension == "technician" else "Projeto"
+    fig = go.Figure(
+        data=go.Heatmap(
+            z=values,
+            x=month_labels,
+            y=matrix.index.astype(str).tolist(),
+            zmin=0,
+            zmax=maximum if maximum > 0 else 1,
+            colorscale=[
+                [0.0, "#F8FAFC"],
+                [0.12, "#DBEAFE"],
+                [0.55, "#60A5FA"],
+                [1.0, AZUL_TOTALE],
+            ],
+            colorbar={"title": {"text": "Pontos"}},
+            hovertemplate="<b>%{y}</b><br>%{x}<br>%{z:,.2f} pontos<extra></extra>",
+        )
+    )
+    fig.update_xaxes(title="Competência", tickangle=0)
+    fig.update_yaxes(title=entity_label, autorange="reversed")
+    with st.container(border=True):
+        st.markdown("**Pontos Totais por competência**")
+        st.plotly_chart(
+            _estilizar_figura(fig, altura=max(380, min(800, 150 + len(matrix) * 32))),
+            width="stretch",
+            config={"displayModeBar": False, "responsive": True},
+        )
+    entity_plural = entity_label.lower() + ("s" if len(matrix) != 1 else "")
+    st.caption(
+        f"Exibindo {len(matrix)} {entity_plural} com mais pontos no recorte. "
+        "As competências sem pontos aparecem na escala mínima; passe o cursor sobre "
+        "uma célula para consultar o valor exato."
+    )
+
+    export = matrix.copy()
+    export.columns = month_labels
+    export.index.name = entity_label
+    export = export.reset_index()
+    with st.expander("Ver tabela de valores"):
+        st.dataframe(
+            export,
+            width="stretch",
+            hide_index=True,
+            alt=f"Pontos Totais por competência e {entity_label.lower()}",
+            column_config={
+                entity_label: st.column_config.TextColumn(width="medium"),
+                **{
+                    label: st.column_config.NumberColumn(format="%.2f")
+                    for label in month_labels
+                },
+            },
+        )
+        st.download_button(
+            "Baixar mapa de sazonalidade em CSV",
+            data=export.to_csv(index=False, sep=";", decimal=",").encode("utf-8-sig"),
+            file_name=f"sazonalidade_{dimension}.csv",
+            mime="text/csv",
+            key="seasonality_csv_download",
+        )
+
+
 __all__ = [
     "comparar_tecnicos",
+    "matriz_sazonalidade",
     "render_projetos",
+    "render_regularidade_producao",
     "render_resumo_executivo",
     "render_saude_dados",
+    "render_sazonalidade",
     "resumir_projetos",
+    "resumir_regularidade",
     "resumir_saude_dados",
     "rotulo_janelas_comparacao",
     "selecionar_periodo_anterior",

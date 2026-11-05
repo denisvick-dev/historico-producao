@@ -9,6 +9,8 @@ Painel em Streamlit para acompanhar a produção dos técnicos ao longo do tempo
 - Visão geral com Pontos Totais, Prod, Gpon e média por técnico.
 - **Resumo executivo** com comparação contra competências anteriores, distribuição por técnico e variações individuais.
 - **Produção por projeto** com ranking, evolução mensal, participação, O.S. e detalhamento por técnico.
+- **Regularidade da produção** com média e mediana mensal, coeficiente de variação, destaques de oscilação e competências sem registros por técnico.
+- **Sazonalidade** com mapa de calor de Pontos Totais por competência e técnico ou projeto, além de tabela exportável em CSV.
 - Página **Quantidade de O.S.** com evolução por competência e ranking dos 15 técnicos com mais ordens (cada linha válida da aba `Prod` conta como uma O.S.).
 - **Saúde dos dados** com cobertura de projetos, dados de demonstração, status de sincronização e histórico de arquivos importados.
 - Filtros compartilhados por período, projeto e técnico; a página de técnicos permite escolher o projeto e o perfil individual.
