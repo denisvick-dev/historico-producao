@@ -54,7 +54,7 @@ from components.kpi_cards import css_kpi_avancado
 
 logger = logging.getLogger(__name__)
 
-VERSAO_CSS_GLOBAL = "1.0.2"
+VERSAO_CSS_GLOBAL = "1.0.3"
 ID_NO_HEAD = "totale-css-global-v1"
 _CHAVE_SESSAO = "_totale_css_global_versao"
 
@@ -488,7 +488,7 @@ def css_containers() -> str:
         font-size: 12px !important;
         font-weight: 700 !important;
     }}
-    /* DataFrames: tema visual único e acessível em todas as visões. */
+    /* O Glide desenha as células em canvas; GDG font vars controlam a tipografia real. */
     {_MAIN} [data-testid="stDataFrame"],
     {_MAIN} [data-testid="stDataEditor"],
     {_MAIN} [data-testid="stTable"] {{
@@ -521,15 +521,15 @@ def css_containers() -> str:
         --gdg-text-header-selected: #FFFFFF;
         --gdg-border-color: var(--totale-borda);
         --gdg-horizontal-border-color: #EDF1F7;
-        --gdg-font-family: var(--font-texto, 'Inter', 'Segoe UI', Arial, sans-serif);
-        --gdg-base-font-style: 12px var(--font-texto, 'Inter', 'Segoe UI', Arial, sans-serif);
-        --gdg-header-font-style: 700 11px var(--font-texto, 'Inter', 'Segoe UI', Arial, sans-serif);
+        --gdg-font-family: 'Inter', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        --gdg-base-font-style: 12px 'Inter', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        --gdg-header-font-style: 700 11px 'Inter', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
     }}
     {_MAIN} [data-testid="stDataFrame"] [data-testid="stColumnHeader"],
     {_MAIN} [data-testid="stDataFrame"] [role="columnheader"],
     {_MAIN} [data-testid="stDataEditor"] [data-testid="stColumnHeader"],
     {_MAIN} [data-testid="stDataEditor"] [role="columnheader"] {{
-        font-family: var(--font-texto, 'Inter', 'Segoe UI', Arial, sans-serif) !important;
+        font-family: 'Inter', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif !important;
     }}
     {_MAIN} [data-testid="stDataFrameResizable"] {{
         border-radius: var(--totale-raio-md);
@@ -538,13 +538,13 @@ def css_containers() -> str:
     {_MAIN} [data-testid="stTable"] table {{
         border-collapse: separate;
         border-spacing: 0;
-        font-family: var(--font-texto, 'Inter', 'Segoe UI', Arial, sans-serif) !important;
+        font-family: 'Inter', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif !important;
         font-size: 12.5px;
     }}
     {_MAIN} [data-testid="stTable"] thead th {{
         background: var(--totale-azul) !important;
         color: #FFFFFF !important;
-        font-family: var(--font-texto, 'Inter', 'Segoe UI', Arial, sans-serif) !important;
+        font-family: 'Inter', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif !important;
         font-weight: 750;
         text-transform: uppercase;
         font-size: 10.5px;
