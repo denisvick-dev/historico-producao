@@ -49,11 +49,24 @@ Bruno Oliveira;98,30;11/2026;Fibra Norte
 
 ### Localmente
 
+O projeto requer **Python 3.12**. Use o mesmo interpretador para instalar dependências e iniciar o Streamlit.
+
+**Windows PowerShell:**
+
+```powershell
+py -3.12 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install --upgrade pip
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m streamlit run streamlit_app.py
+```
+
+**Linux/macOS:**
+
 ```bash
-python -m venv .venv
-source .venv/bin/activate       # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-streamlit run streamlit_app.py
+python3.12 -m venv .venv
+.venv/bin/python -m pip install --upgrade pip
+.venv/bin/python -m pip install -r requirements.txt
+.venv/bin/python -m streamlit run streamlit_app.py
 ```
 
 ### Com Docker
@@ -177,7 +190,8 @@ historico-producao/
 
 | Problema | Causa provável | Solução |
 | --- | --- | --- |
-| `pip install` falha | `requirements.txt` com encoding inválido | Verifique que o arquivo está em UTF-8 |
+| `pip install` falha | Python abaixo de 3.12 ou ambiente virtual usando outro interpretador | Use Python 3.12, recrie `.venv` e execute `python -m pip install -r requirements.txt` com o mesmo Python do Streamlit |
+| Erro ao abrir XLSX: `openpyxl` parcialmente inicializado | Pacote incompleto ou conflito local de importação | Reinstale com `python -m pip install --force-reinstall --no-cache-dir openpyxl==3.1.5` no `.venv` do app e verifique se o projeto não contém `openpyxl.py` nem pasta `openpyxl` |
 | Sem dados no painel | Banco vazio ou sem sincronização | Verifique `PRODUCAO_DB_PATH` e credenciais do Drive |
 | Erro de autenticação Drive | Credenciais inválidas ou pasta não compartilhada | Confirme `.streamlit/secrets.toml` e compartilhamento da pasta |
 | Health check falha | App ainda inicializando | Aguarde o start-period do Docker (40s) |
