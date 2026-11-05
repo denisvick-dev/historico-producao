@@ -6,7 +6,9 @@ dos dataframes estão padronizadas na família Inter (--font-texto).
 
 from __future__ import annotations
 
+import tomllib
 import unittest
+from pathlib import Path
 
 from components.css_global import (
     css_componentes_nativos,
@@ -30,13 +32,23 @@ class CssGlobalTests(unittest.TestCase):
         self.assertIn("stDataFrame", css)
         self.assertIn("stTable", css)
 
-    def test_dataframe_body_usa_inter(self):
-        """O corpo dos dataframes deve usar --font-texto (Inter)."""
+    def test_dataframe_body_define_inter_na_fonte_do_canvas(self):
+        """O texto do canvas do DataFrame usa Inter, não só o CSS da página."""
         css = css_containers()
-        self.assertIn(
-            "var(--font-texto, 'Inter', 'Segoe UI', Arial, sans-serif)",
-            css,
+        font_family = "'Inter', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+        self.assertIn(f"--gdg-font-family: {font_family}", css)
+        self.assertIn(f"--gdg-base-font-style: 12px {font_family}", css)
+
+    def test_tema_nativo_do_streamlit_define_inter(self):
+        """O tema do Streamlit também seleciona Inter para componentes canvas."""
+        config_path = (
+            Path(__file__).resolve().parents[1] / ".streamlit" / "config.toml"
         )
+        with config_path.open("rb") as config_file:
+            config = tomllib.load(config_file)
+        font = config["theme"]["font"]
+        self.assertIn("Inter:https://fonts.googleapis.com/css2?family=Inter", font)
+        self.assertTrue(font.endswith(", sans-serif"))
 
     def test_dataframes_usam_tema_visual_corporativo(self):
         """Todas as grades herdam a paleta, tipografia, bordas e estados do tema."""
@@ -59,19 +71,19 @@ class CssGlobalTests(unittest.TestCase):
                 self.assertIn(regra, css)
 
     def test_table_header_usa_inter(self):
-        """O cabeçalho de stTable deve usar Inter (--font-texto), não Oscine/Manrope."""
+        """O cabeçalho de stTable deve usar a fonte Inter, não Oscine/Manrope."""
         css = css_containers()
         self.assertIn(
-            "var(--font-texto, 'Inter', 'Segoe UI', Arial, sans-serif) !important",
+            "font-family: 'Inter', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif !important",
             css,
         )
-        # Na linha do thead th, deve usar --font-texto, não --font-titulo
+        # A regra do cabeçalho deve usar Inter, não a fonte de títulos.
         linhas = css.splitlines()
         for i, linha in enumerate(linhas):
             if "thead th" in linha:
                 # Verifica as próximas linhas até encontrar font-family
                 bloco = "\n".join(linhas[i : i + 8])
-                self.assertIn("var(--font-texto", bloco)
+                self.assertIn("font-family: 'Inter'", bloco)
                 self.assertNotIn("--font-titulo", bloco)
                 self.assertNotIn("Oscine", bloco)
                 self.assertNotIn("Manrope", bloco)
@@ -83,7 +95,7 @@ class CssGlobalTests(unittest.TestCase):
         """O cabeçalho de stDataFrame/stDataEditor deve usar Inter."""
         css = css_containers()
         self.assertIn(
-            "var(--font-texto, 'Inter', 'Segoe UI', Arial, sans-serif) !important",
+            "font-family: 'Inter', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif !important",
             css,
         )
 
