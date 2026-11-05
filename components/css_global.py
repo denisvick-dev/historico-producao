@@ -488,34 +488,42 @@ def css_containers() -> str:
         font-size: 12px !important;
         font-weight: 700 !important;
     }}
-    /* Tabelas e dataframes */
+    /* DataFrames: tema visual único e acessível em todas as visões. */
     {_MAIN} [data-testid="stDataFrame"],
     {_MAIN} [data-testid="stDataEditor"],
     {_MAIN} [data-testid="stTable"] {{
         border: 1px solid var(--totale-borda);
         border-radius: var(--totale-raio-md);
         overflow: hidden;
+        background: #FFFFFF;
         box-shadow: var(--totale-sombra-sm);
+        transition: border-color var(--totale-transicao), box-shadow var(--totale-transicao);
+    }}
+    {_MAIN} [data-testid="stDataFrame"]:hover,
+    {_MAIN} [data-testid="stDataEditor"]:hover,
+    {_MAIN} [data-testid="stTable"]:hover {{
+        border-color: #C7D5E8;
+        box-shadow: var(--totale-sombra-md);
     }}
     {_MAIN} [data-testid="stDataFrame"],
     {_MAIN} [data-testid="stDataEditor"] {{
-        --gdg-bg-cell: #F3F6FB;
-        --gdg-bg-cell-medium: #EEF2F8;
-        --gdg-bg-header: #F8FAFC;
-        --gdg-bg-header-hover: #EDF3FB;
-        --gdg-bg-header-has-focus: #E8EEF8;
+        --gdg-accent-color: var(--totale-laranja);
+        --gdg-accent-light: var(--totale-laranja-suave);
+        --gdg-bg-cell: #FFFFFF;
+        --gdg-bg-cell-medium: #F8FAFC;
+        --gdg-bg-header: var(--totale-azul);
+        --gdg-bg-header-hover: var(--totale-azul-claro);
+        --gdg-bg-header-has-focus: var(--totale-azul-claro);
         --gdg-text-dark: var(--totale-texto);
-        --gdg-text-medium: var(--totale-texto-3);
-        --gdg-text-light: #94A3B8;
-        --gdg-text-header: var(--totale-texto-3);
-        --gdg-text-header-selected: var(--totale-azul);
-        --gdg-border-color: #D9E0EA;
-        --gdg-horizontal-border-color: #D9E0EA;
-        --gdg-accent-color: var(--totale-azul);
-        --gdg-accent-light: #DBEAFE;
+        --gdg-text-medium: var(--totale-texto-2);
+        --gdg-text-light: var(--totale-texto-3);
+        --gdg-text-header: #FFFFFF;
+        --gdg-text-header-selected: #FFFFFF;
+        --gdg-border-color: var(--totale-borda);
+        --gdg-horizontal-border-color: #EDF1F7;
         --gdg-font-family: var(--font-texto, 'Inter', 'Segoe UI', Arial, sans-serif);
         --gdg-base-font-style: 12px var(--font-texto, 'Inter', 'Segoe UI', Arial, sans-serif);
-        --gdg-header-font-style: 600 11px var(--font-texto, 'Inter', 'Segoe UI', Arial, sans-serif);
+        --gdg-header-font-style: 700 11px var(--font-texto, 'Inter', 'Segoe UI', Arial, sans-serif);
     }}
     {_MAIN} [data-testid="stDataFrame"] [data-testid="stColumnHeader"],
     {_MAIN} [data-testid="stDataFrame"] [role="columnheader"],
@@ -523,21 +531,35 @@ def css_containers() -> str:
     {_MAIN} [data-testid="stDataEditor"] [role="columnheader"] {{
         font-family: var(--font-texto, 'Inter', 'Segoe UI', Arial, sans-serif) !important;
     }}
+    {_MAIN} [data-testid="stDataFrameResizable"] {{
+        border-radius: var(--totale-raio-md);
+    }}
+    /* Tabelas HTML estáticas seguem a mesma paleta e hierarquia visual. */
     {_MAIN} [data-testid="stTable"] table {{
+        border-collapse: separate;
+        border-spacing: 0;
         font-family: var(--font-texto, 'Inter', 'Segoe UI', Arial, sans-serif) !important;
         font-size: 12.5px;
     }}
     {_MAIN} [data-testid="stTable"] thead th {{
-        background: var(--totale-azul-suave) !important;
-        color: var(--totale-azul) !important;
+        background: var(--totale-azul) !important;
+        color: #FFFFFF !important;
         font-family: var(--font-texto, 'Inter', 'Segoe UI', Arial, sans-serif) !important;
         font-weight: 750;
         text-transform: uppercase;
         font-size: 10.5px;
         letter-spacing: 0.06em;
+        border-bottom: 3px solid var(--totale-laranja) !important;
     }}
-    {_MAIN} [data-testid="stDataFrameResizable"] {{
-        border-radius: var(--totale-raio-md);
+    {_MAIN} [data-testid="stTable"] tbody tr:nth-child(even) {{
+        background: #F8FAFC;
+    }}
+    {_MAIN} [data-testid="stTable"] tbody tr:hover {{
+        background: var(--totale-laranja-suave);
+    }}
+    {_MAIN} [data-testid="stTable"] tbody td {{
+        color: var(--totale-texto-2);
+        border-bottom: 1px solid #EDF1F7 !important;
     }}
     /* Gráficos Plotly: moldura de cartão */
     {_MAIN} [data-testid="stPlotlyChart"] {{

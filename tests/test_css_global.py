@@ -38,19 +38,25 @@ class CssGlobalTests(unittest.TestCase):
             css,
         )
 
-    def test_dataframes_usam_estilo_visual_padronizado(self):
-        """As grades exibidas no app compartilham cores, bordas e hover."""
+    def test_dataframes_usam_tema_visual_corporativo(self):
+        """Todas as grades herdam a paleta, tipografia, bordas e estados do tema."""
         css = css_containers()
-        for token in (
-            "--gdg-bg-cell: #F3F6FB",
-            "--gdg-bg-header: #F8FAFC",
-            "--gdg-bg-header-hover: #EDF3FB",
-            "--gdg-border-color: #D9E0EA",
-            "--gdg-horizontal-border-color: #D9E0EA",
-        ):
-            with self.subTest(token=token):
-                self.assertIn(token, css)
-        self.assertIn('[data-testid="stDataEditor"]', css)
+        regras = (
+            "--gdg-accent-color: var(--totale-laranja)",
+            "--gdg-bg-cell: #FFFFFF",
+            "--gdg-bg-cell-medium: #F8FAFC",
+            "--gdg-bg-header: var(--totale-azul)",
+            "--gdg-text-header: #FFFFFF",
+            "--gdg-base-font-style: 12px",
+            "--gdg-horizontal-border-color: #EDF1F7",
+            'stDataFrame"]:hover',
+            'stDataEditor"]',
+            "tbody tr:nth-child(even)",
+            "tbody tr:hover",
+        )
+        for regra in regras:
+            with self.subTest(regra=regra):
+                self.assertIn(regra, css)
 
     def test_table_header_usa_inter(self):
         """O cabeçalho de stTable deve usar Inter (--font-texto), não Oscine/Manrope."""
