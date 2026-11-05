@@ -488,9 +488,27 @@ def css_containers() -> str:
         font-size: 12px !important;
         font-weight: 700 !important;
     }}
-    /* DataFrames: um único tema corporativo para todas as tabelas interativas. */
-    {_MAIN} [data-testid="stDataFrame"] {{
+    /* DataFrames: tema visual único e acessível em todas as visões. */
+    {_MAIN} [data-testid="stDataFrame"],
+    {_MAIN} [data-testid="stDataEditor"],
+    {_MAIN} [data-testid="stTable"] {{
+        border: 1px solid var(--totale-borda);
+        border-radius: var(--totale-raio-md);
+        overflow: hidden;
+        background: #FFFFFF;
+        box-shadow: var(--totale-sombra-sm);
+        transition: border-color var(--totale-transicao), box-shadow var(--totale-transicao);
+    }}
+    {_MAIN} [data-testid="stDataFrame"]:hover,
+    {_MAIN} [data-testid="stDataEditor"]:hover,
+    {_MAIN} [data-testid="stTable"]:hover {{
+        border-color: #C7D5E8;
+        box-shadow: var(--totale-sombra-md);
+    }}
+    {_MAIN} [data-testid="stDataFrame"],
+    {_MAIN} [data-testid="stDataEditor"] {{
         --gdg-accent-color: var(--totale-laranja);
+        --gdg-accent-light: var(--totale-laranja-suave);
         --gdg-bg-cell: #FFFFFF;
         --gdg-bg-cell-medium: #F8FAFC;
         --gdg-bg-header: var(--totale-azul);
@@ -500,25 +518,12 @@ def css_containers() -> str:
         --gdg-text-medium: var(--totale-texto-2);
         --gdg-text-light: var(--totale-texto-3);
         --gdg-text-header: #FFFFFF;
+        --gdg-text-header-selected: #FFFFFF;
         --gdg-border-color: var(--totale-borda);
         --gdg-horizontal-border-color: #EDF1F7;
         --gdg-font-family: var(--font-texto, 'Inter', 'Segoe UI', Arial, sans-serif);
-        --gdg-header-font-style: 700 11px;
-        border: 1px solid var(--totale-borda);
-        border-radius: var(--totale-raio-md);
-        overflow: hidden;
-        background: #FFFFFF;
-        box-shadow: var(--totale-sombra-sm);
-        transition: border-color var(--totale-transicao), box-shadow var(--totale-transicao);
-    }}
-    {_MAIN} [data-testid="stDataFrame"]:hover {{
-        border-color: #C7D5E8;
-        box-shadow: var(--totale-sombra-md);
-    }}
-    {_MAIN} [data-testid="stDataFrame"],
-    {_MAIN} [data-testid="stDataEditor"] {{
-        --gdg-font-family: var(--font-texto, 'Inter', 'Segoe UI', Arial, sans-serif);
-        --gdg-header-font-style: 700 11px;
+        --gdg-base-font-style: 12px var(--font-texto, 'Inter', 'Segoe UI', Arial, sans-serif);
+        --gdg-header-font-style: 700 11px var(--font-texto, 'Inter', 'Segoe UI', Arial, sans-serif);
     }}
     {_MAIN} [data-testid="stDataFrame"] [data-testid="stColumnHeader"],
     {_MAIN} [data-testid="stDataFrame"] [role="columnheader"],
@@ -530,13 +535,6 @@ def css_containers() -> str:
         border-radius: var(--totale-raio-md);
     }}
     /* Tabelas HTML estáticas seguem a mesma paleta e hierarquia visual. */
-    {_MAIN} [data-testid="stTable"] {{
-        border: 1px solid var(--totale-borda);
-        border-radius: var(--totale-raio-md);
-        overflow: hidden;
-        background: #FFFFFF;
-        box-shadow: var(--totale-sombra-sm);
-    }}
     {_MAIN} [data-testid="stTable"] table {{
         border-collapse: separate;
         border-spacing: 0;

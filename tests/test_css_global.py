@@ -38,15 +38,19 @@ class CssGlobalTests(unittest.TestCase):
             css,
         )
 
-    def test_todos_os_dataframes_usam_a_paleta_corporativa(self):
-        """O tema comum deve alcançar cada st.dataframe pelo CSS global."""
+    def test_dataframes_usam_tema_visual_corporativo(self):
+        """Todas as grades herdam a paleta, tipografia, bordas e estados do tema."""
         css = css_containers()
         regras = (
             "--gdg-accent-color: var(--totale-laranja)",
+            "--gdg-bg-cell: #FFFFFF",
             "--gdg-bg-cell-medium: #F8FAFC",
             "--gdg-bg-header: var(--totale-azul)",
             "--gdg-text-header: #FFFFFF",
+            "--gdg-base-font-style: 12px",
+            "--gdg-horizontal-border-color: #EDF1F7",
             'stDataFrame"]:hover',
+            'stDataEditor"]',
             "tbody tr:nth-child(even)",
             "tbody tr:hover",
         )
