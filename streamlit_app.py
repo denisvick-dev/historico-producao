@@ -41,6 +41,7 @@ from components.componentes import (
     render_sidebar_footer_info,
     render_sidebar_section,
     render_ticker,
+    render_sidebar_theme_selector,
 )
 from components.prod_os import render_prod_orders
 from components.visoes_dashboards import (
@@ -80,8 +81,9 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# Ativa tipografia, tokens, componentes nativos e tema corporativo do Design System.
-aplicar_estilo_corp(tema_sidebar="azul")
+# Preserva o tema escolhido durante a sessão; azul segue como padrão inicial.
+st.session_state.setdefault("_totale_sidebar_theme", "azul")
+aplicar_estilo_corp()
 
 st.markdown(
     """
@@ -314,7 +316,10 @@ st.markdown(
         to { transform: translateX(-50%); }
     }
     @media (prefers-reduced-motion: reduce) {
-        .ticker-track { animation: none; }
+        .ticker-viewport .ticker-track {
+            animation-duration: 30s !important;
+            animation-iteration-count: infinite !important;
+        }
     }
     @media (max-width: 700px) {
         [data-testid="stMainBlockContainer"] { padding:1rem; }
@@ -704,18 +709,6 @@ def render_overview(
 
         render_ticker(ticker_items, label="Indicadores da visão geral")
 
-    # Card de destaque com o principal indicador
-    if not totals.empty:
-        st.markdown(
-            f"""
-            <div class="highlight-card highlight-card--laranja">
-                <h3>Pontos Totais do Período</h3>
-                <h2 class="big-number">{format_points(current_total)}</h2>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
     section_heading(
         "Produção da equipe", "Pontos consolidados por competência e por técnico"
     )
@@ -1079,9 +1072,13 @@ with st.sidebar:
         nome="TOTALE",
         subtitulo="Gestão de produção",
         icone="T",
-        tema="azul",
     )
-    render_sidebar_section("Acompanhamento", tema="azul")
+    render_sidebar_theme_selector(
+        label="Tema da barra lateral",
+        help="Escolha entre os temas claro, azul e laranja.",
+        mostrar_icone=False,
+    )
+    render_sidebar_section("Acompanhamento")
     nav_labels = {
         "Visão geral": "▦  Visão geral",
         "Resumo executivo": "◷  Resumo executivo",
@@ -1097,13 +1094,12 @@ with st.sidebar:
         label_visibility="collapsed",
         key="navigation",
     )
-    render_sidebar_divider(label="Sincronização", estilo="gradiente", tema="azul")
+    render_sidebar_divider(label="Sincronização", estilo="gradiente")
     render_sidebar_footer_info(
         itens={"Registros": stats["records"], "Técnicos": stats["technicians"]},
         unidade="Consulta automática a cada 120s",
         ambiente="Produção",
         copyright="Totale · Histórico de produção",
-        tema="azul",
     )
 
 
