@@ -7,7 +7,6 @@ renderiza as seções principais e responde a filtros sem erros.
 from __future__ import annotations
 
 import unittest
-
 from pathlib import Path
 
 from streamlit.testing.v1 import AppTest
@@ -54,12 +53,22 @@ class StreamlitAppTests(unittest.TestCase):
         self.assertGreaterEqual(len(dataframes), 0)
 
     def test_novas_visoes_carregam_sem_erro(self):
-        """Projetos, resumo executivo e saúde dos dados devem abrir."""
+        """As páginas complementares devem abrir sem exceções."""
         app = AppTest.from_file(_APP_PATH).run(timeout=30)
-        for pagina in ("Projetos", "Resumo executivo", "Saúde dos dados"):
+        for pagina in (
+            "Projetos",
+            "Resumo executivo",
+            "Regularidade",
+            "Sazonalidade",
+            "Saúde dos dados",
+        ):
             with self.subTest(pagina=pagina):
                 app.radio(key="navigation").set_value(pagina).run(timeout=30)
                 self.assertFalse(app.exception)
+
+        app.radio(key="navigation").set_value("Sazonalidade").run(timeout=30)
+        app.selectbox(key="seasonality_dimension").set_value("Projeto").run(timeout=30)
+        self.assertFalse(app.exception)
 
 
 if __name__ == "__main__":

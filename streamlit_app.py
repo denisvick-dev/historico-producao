@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import os
-import structlog
+from collections.abc import Mapping
+from typing import Any
 
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+import structlog
 from streamlit.errors import StreamlitSecretNotFoundError
 
 structlog.configure(
@@ -21,16 +23,6 @@ structlog.configure(
 
 logger = structlog.get_logger(__name__)
 
-from production import (
-    create_demonstration,
-    format_points,
-    init_database,
-    import_batches,
-    load_dashboard_snapshot,
-    month_label,
-    summarize,
-    sync_drive_records,
-)
 from components.componentes import (
     Cores,
     Fontes,
@@ -46,11 +38,23 @@ from components.componentes import (
 from components.prod_os import render_prod_orders
 from components.visoes_dashboards import (
     render_projetos,
+    render_regularidade_producao,
     render_resumo_executivo,
     render_saude_dados,
+    render_sazonalidade,
     selecionar_periodo_anterior,
 )
 from drive_import import DriveImportError, import_drive_folder_snapshot
+from production import (
+    create_demonstration,
+    format_points,
+    import_batches,
+    init_database,
+    load_dashboard_snapshot,
+    month_label,
+    summarize,
+    sync_drive_records,
+)
 
 try:
     _drive_folder_secret = st.secrets.get("drive_folder_id")
@@ -999,7 +1003,7 @@ def _load_dashboard_snapshot() -> tuple[pd.DataFrame, dict]:
     return load_dashboard_snapshot()
 
 
-def _drive_service_account():
+def _drive_service_account() -> Mapping[str, Any] | None:
     try:
         return st.secrets["gcp_service_account"]
     except (KeyError, StreamlitSecretNotFoundError):
@@ -1084,6 +1088,8 @@ with st.sidebar:
         "Resumo executivo": "◷  Resumo executivo",
         "Projetos": "◈  Projetos",
         "Quantidade de O.S.": "▤  Quantidade de O.S.",
+        "Regularidade": "◌  Regularidade",
+        "Sazonalidade": "▧  Sazonalidade",
         "Técnicos": "♙  Técnicos",
         "Saúde dos dados": "◉  Saúde dos dados",
     }
@@ -1127,6 +1133,14 @@ def render_dashboard() -> None:
         "Quantidade de O.S.": (
             "Quantidade de O.S.",
             "Ordens de serviço registradas na aba Prod, por competência e técnico.",
+        ),
+        "Regularidade": (
+            "Regularidade da produção",
+            "Compare médias, medianas, oscilações e competências sem registros.",
+        ),
+        "Sazonalidade": (
+            "Sazonalidade da produção",
+            "Explore os Pontos Totais por competência e técnico ou projeto.",
         ),
         "Técnicos": (
             "Produção por técnico",
@@ -1229,6 +1243,10 @@ def render_dashboard() -> None:
             render_projetos(filtered)
         elif navigation == "Quantidade de O.S.":
             render_prod_orders(filtered)
+        elif navigation == "Regularidade":
+            render_regularidade_producao(filtered, period_start, period_end)
+        elif navigation == "Sazonalidade":
+            render_sazonalidade(filtered, period_start, period_end)
         elif navigation == "Técnicos":
             render_technicians(filtered)
 
