@@ -25,6 +25,7 @@ from production import (
     create_demonstration,
     format_points,
     init_database,
+    import_batches,
     load_dashboard_snapshot,
     month_label,
     summarize,
@@ -42,6 +43,12 @@ from components.componentes import (
     render_ticker,
 )
 from components.prod_os import render_prod_orders
+from components.visoes_dashboards import (
+    render_projetos,
+    render_resumo_executivo,
+    render_saude_dados,
+    selecionar_periodo_anterior,
+)
 from drive_import import DriveImportError, import_drive_folder_snapshot
 
 try:
@@ -459,7 +466,14 @@ def initials(name: str) -> str:
     return "".join(part[0] for part in (parts[0], parts[-1])).upper()
 
 
-def metric_card(label: str, value: str, note: str, symbol: str, note_class: str = "", card_class: str = "") -> None:
+def metric_card(
+    label: str,
+    value: str,
+    note: str,
+    symbol: str,
+    note_class: str = "",
+    card_class: str = "",
+) -> None:
     st.markdown(
         f"""
         <div class="kpi-card {card_class}">
@@ -479,13 +493,19 @@ def section_heading(title: str, subtitle: str = "") -> None:
     )
 
 
-
 def apply_filters(
     records: pd.DataFrame,
     *,
     show_technicians: bool = True,
-) -> tuple[pd.DataFrame, list[str], int | None, list[str]]:
-    """Renderiza filtros compartilhados e devolve também a janela em meses."""
+) -> tuple[
+    pd.DataFrame,
+    list[str],
+    int | None,
+    list[str],
+    pd.Timestamp,
+    pd.Timestamp,
+]:
+    """Renderiza filtros e devolve o recorte, dimensões e limites temporais."""
     all_technicians = sorted(records["technician"].unique())
     all_projects = sorted(records["project"].dropna().unique())
     with st.container(border=True):
@@ -496,7 +516,13 @@ def apply_filters(
         with period_col:
             period_choice = st.selectbox(
                 "Período de análise",
-                ["Todo o período", "Últimos 3 meses", "Últimos 6 meses", "Últimos 12 meses", "Personalizado"],
+                [
+                    "Todo o período",
+                    "Últimos 3 meses",
+                    "Últimos 6 meses",
+                    "Últimos 12 meses",
+                    "Personalizado",
+                ],
                 index=3,
                 key="period_filter",
             )
@@ -523,9 +549,12 @@ def apply_filters(
     months: int | None = None
     last_date = records["reference_date"].max()
     first_date = records["reference_date"].min()
+    window_start = pd.Timestamp(first_date)
+    window_end = pd.Timestamp(last_date)
     if period_choice.startswith("Últimos"):
         months = int(period_choice.split()[1])
         cutoff = (last_date.to_period("M") - (months - 1)).to_timestamp()
+        window_start = pd.Timestamp(cutoff)
         filtered = filtered[filtered["reference_date"] >= cutoff]
     elif period_choice == "Personalizado":
         start_col, end_col, _ = st.columns([1, 1, 3])
@@ -548,8 +577,10 @@ def apply_filters(
         if start > end:
             st.warning("A data inicial deve ser anterior à data final.")
             start, end = end, start
+        window_start = pd.Timestamp(start)
+        window_end = pd.Timestamp(end)
         filtered = filtered[
-            filtered["reference_date"].between(pd.Timestamp(start), pd.Timestamp(end))
+            filtered["reference_date"].between(window_start, window_end)
         ]
     if selected_projects:
         filtered = filtered[filtered["project"].isin(selected_projects)]
@@ -560,30 +591,9 @@ def apply_filters(
         selected_technicians or all_technicians,
         months,
         selected_projects or all_projects,
+        window_start,
+        window_end,
     )
-
-
-def previous_period(
-    records: pd.DataFrame,
-    filtered: pd.DataFrame,
-    technicians: list[str],
-    months: int | None,
-    projects: list[str],
-) -> pd.DataFrame:
-    if filtered.empty or months is None:
-        return filtered.iloc[0:0]
-    periods = sorted(filtered["period"].unique())
-    count = len(periods)
-    if not count:
-        return filtered.iloc[0:0]
-    first = pd.Timestamp(periods[0])
-    previous_start = first - pd.DateOffset(months=count)
-    previous_end = first - pd.Timedelta(days=1)
-    return records[
-        records["technician"].isin(technicians)
-        & records["project"].isin(projects)
-        & records["reference_date"].between(previous_start, previous_end)
-    ]
 
 
 def render_metrics(
@@ -592,6 +602,8 @@ def render_metrics(
     technicians: list[str],
     months: int | None,
     projects: list[str],
+    period_start: pd.Timestamp,
+    period_end: pd.Timestamp,
 ) -> None:
     totals = summarize(filtered, [])
     if totals.empty:
@@ -603,31 +615,58 @@ def render_metrics(
     active = filtered["technician"].nunique()
     average = current_total / active if active else 0
 
-    previous = previous_period(records, filtered, technicians, months, projects)
+    previous = selecionar_periodo_anterior(
+        records, filtered, technicians, months, projects, period_start, period_end
+    )
     previous_total = previous["points"].sum()
-    if previous_total:
+    if previous_total > 0:
         variation = (current_total / previous_total - 1) * 100
-        note = f"{'↑' if variation >= 0 else '↓'} {abs(variation):.1f}% vs. período anterior".replace(".", ",")
+        arrow = "↑" if variation >= 0 else "↓"
+        variation_label = f"{abs(variation):.1f}%".replace(".", ",")
+        note = f"{arrow} {variation_label} vs. período anterior"
         note_class = "positive" if variation >= 0 else "negative"
     else:
-        note = "Soma de Prod + Gpon"
+        note = "Sem base histórica comparável"
         note_class = ""
 
     columns = st.columns(4)
     with columns[0]:
-        metric_card("PONTOS TOTAIS", format_points(current_total), note, "Σ", note_class, "kpi-card--azul")
+        metric_card(
+            "PONTOS TOTAIS",
+            format_points(current_total),
+            note,
+            "Σ",
+            note_class,
+            "kpi-card--azul",
+        )
     with columns[1]:
         share = current_prod / current_total * 100 if current_total else 0
-        metric_card("PONTOS EM PROD", format_points(current_prod), f"{share:.1f}% do total".replace(".", ","), "P", "", "kpi-card--laranja")
+        metric_card(
+            "PONTOS EM PROD",
+            format_points(current_prod),
+            f"{share:.1f}% do total".replace(".", ","),
+            "P",
+            "",
+            "kpi-card--laranja",
+        )
     with columns[2]:
         share = current_gpon / current_total * 100 if current_total else 0
-        metric_card("PONTOS EM GPON", format_points(current_gpon), f"{share:.1f}% do total".replace(".", ","), "G", "", "kpi-card--verde")
+        metric_card(
+            "PONTOS EM GPON",
+            format_points(current_gpon),
+            f"{share:.1f}% do total".replace(".", ","),
+            "G",
+            "",
+            "kpi-card--verde",
+        )
     with columns[3]:
         metric_card(
             "MÉDIA POR TÉCNICO",
             format_points(average),
             f"{active} {'técnicos ativos' if active != 1 else 'técnico ativo'} no recorte",
-            "Ø", "", "kpi-card--roxo",
+            "Ø",
+            "",
+            "kpi-card--roxo",
         )
 
 
@@ -637,8 +676,18 @@ def render_overview(
     technicians: list[str],
     months: int | None,
     projects: list[str],
+    period_start: pd.Timestamp,
+    period_end: pd.Timestamp,
 ) -> None:
-    render_metrics(filtered, records, technicians, months, projects)
+    render_metrics(
+        filtered,
+        records,
+        technicians,
+        months,
+        projects,
+        period_start,
+        period_end,
+    )
 
     # Ticker animado com destaques da visão geral
     totals = summarize(filtered, [])
@@ -652,7 +701,7 @@ def render_overview(
         )
         top_tech = ""
         if not ranking.empty:
-            top_tech = f'{ranking.iloc[0]["technician"]} · {format_points(ranking.iloc[0]["points_total"])} pontos'
+            top_tech = f"{ranking.iloc[0]['technician']} · {format_points(ranking.iloc[0]['points_total'])} pontos"
 
         periods_count = max(filtered["period"].nunique(), 1)
         latest_period = filtered["period"].max()
@@ -663,12 +712,12 @@ def render_overview(
         if not latest.empty:
             best_tech = str(latest["points_total"].idxmax())
             best_points = latest["points_total"].loc[best_tech]
-            best_competence = f'{best_tech} · {format_points(best_points)} pontos em {month_label(latest_period)}'
+            best_competence = f"{best_tech} · {format_points(best_points)} pontos em {month_label(latest_period)}"
 
         ticker_items = [
             ("Pontos totais", format_points(current_total)),
-            ("Prod", f'{format_points(current_prod)} pontos'),
-            ("Gpon", f'{format_points(current_gpon)} pontos'),
+            ("Prod", f"{format_points(current_prod)} pontos"),
+            ("Gpon", f"{format_points(current_gpon)} pontos"),
         ]
         if top_tech:
             ticker_items.append(("Destaque da equipe", top_tech))
@@ -689,25 +738,39 @@ def render_overview(
             unsafe_allow_html=True,
         )
 
-    section_heading("Produção da equipe", "Pontos consolidados por competência e por técnico")
+    section_heading(
+        "Produção da equipe", "Pontos consolidados por competência e por técnico"
+    )
     chart_col, ranking_col = st.columns([1.65, 1])
     monthly = summarize(filtered, "period").sort_values("period")
-    ranking = summarize(filtered, "technician").sort_values("points_total", ascending=False)
+    ranking = summarize(filtered, "technician").sort_values(
+        "points_total", ascending=False
+    )
     with chart_col:
         with st.container(border=True):
             st.markdown("**Evolução mensal**")
-            st.plotly_chart(production_chart(monthly), width="stretch", config=CHART_CONFIG)
+            st.plotly_chart(
+                production_chart(monthly), width="stretch", config=CHART_CONFIG
+            )
     with ranking_col:
         with st.container(border=True):
             st.markdown("**Ranking de técnicos**")
-            st.plotly_chart(ranking_chart(ranking), width="stretch", config=CHART_CONFIG)
+            st.plotly_chart(
+                ranking_chart(ranking), width="stretch", config=CHART_CONFIG
+            )
 
-    section_heading("Desempenho por técnico", "O total é sempre a soma dos pontos de Prod e Gpon")
+    section_heading(
+        "Desempenho por técnico", "O total é sempre a soma dos pontos de Prod e Gpon"
+    )
     periods_count = max(filtered["period"].nunique(), 1)
     latest_period = filtered["period"].max()
-    latest = summarize(filtered[filtered["period"].eq(latest_period)], "technician").set_index("technician")
+    latest = summarize(
+        filtered[filtered["period"].eq(latest_period)], "technician"
+    ).set_index("technician")
     previous_month = latest_period - pd.DateOffset(months=1)
-    previous = summarize(filtered[filtered["period"].eq(previous_month)], "technician").set_index("technician")
+    previous = summarize(
+        filtered[filtered["period"].eq(previous_month)], "technician"
+    ).set_index("technician")
 
     table = ranking.copy()
     table["Média mensal"] = table["points_total"] / periods_count
@@ -731,7 +794,16 @@ def render_overview(
         }
     )
     display_table = table[
-        ["Posição", "Técnico", "Prod", "Gpon", "Pontos Totais", "Média mensal", "Variação no último mês", "Status"]
+        [
+            "Posição",
+            "Técnico",
+            "Prod",
+            "Gpon",
+            "Pontos Totais",
+            "Média mensal",
+            "Variação no último mês",
+            "Status",
+        ]
     ]
     st.dataframe(
         display_table.style.map(_monthly_average_style, subset=["Média mensal"]).map(
@@ -826,8 +898,13 @@ def _status_badge_style(value: object) -> str:
 
 
 def render_technicians(filtered: pd.DataFrame) -> None:
-    section_heading("Perfil do técnico", "Filtre por projeto e selecione o técnico para ver seu desempenho.")
-    ranking = summarize(filtered, "technician").sort_values("points_total", ascending=False)
+    section_heading(
+        "Perfil do técnico",
+        "Filtre por projeto e selecione o técnico para ver seu desempenho.",
+    )
+    ranking = summarize(filtered, "technician").sort_values(
+        "points_total", ascending=False
+    )
     names = ranking["technician"].tolist()
     if not names:
         st.info("Nenhum técnico disponível no recorte atual.")
@@ -853,11 +930,20 @@ def render_technicians(filtered: pd.DataFrame) -> None:
     average = monthly["points_total"].mean()
     columns = st.columns(4)
     with columns[0]:
-        metric_card("PONTOS TOTAIS", format_points(totals["points_total"]), "Prod + Gpon no período", "Σ")
+        metric_card(
+            "PONTOS TOTAIS",
+            format_points(totals["points_total"]),
+            "Prod + Gpon no período",
+            "Σ",
+        )
     with columns[1]:
-        metric_card("PROD", format_points(totals["points_prod"]), "Pontos acumulados", "P")
+        metric_card(
+            "PROD", format_points(totals["points_prod"]), "Pontos acumulados", "P"
+        )
     with columns[2]:
-        metric_card("GPON", format_points(totals["points_gpon"]), "Pontos acumulados", "G")
+        metric_card(
+            "GPON", format_points(totals["points_gpon"]), "Pontos acumulados", "G"
+        )
     with columns[3]:
         metric_card(
             "MELHOR COMPETÊNCIA",
@@ -904,7 +990,11 @@ def render_technicians(filtered: pd.DataFrame) -> None:
     detail = monthly.sort_values("period", ascending=False).copy()
     detail["Competência"] = detail["period"].map(month_label)
     detail = detail.rename(
-        columns={"points_prod": "Prod", "points_gpon": "Gpon", "points_total": "Pontos Totais"}
+        columns={
+            "points_prod": "Prod",
+            "points_gpon": "Gpon",
+            "points_total": "Pontos Totais",
+        }
     )
     st.caption(
         "Critérios da média mensal de Pontos Totais: "
@@ -922,6 +1012,7 @@ def render_technicians(filtered: pd.DataFrame) -> None:
             "Pontos Totais": st.column_config.NumberColumn(format="%.2f"),
         },
     )
+
 
 @st.cache_resource(show_spinner=False)
 def _initialize_demo_once() -> None:
@@ -1013,8 +1104,11 @@ with st.sidebar:
     render_sidebar_section("Acompanhamento", tema="azul")
     nav_labels = {
         "Visão geral": "▦  Visão geral",
+        "Resumo executivo": "◷  Resumo executivo",
+        "Projetos": "◈  Projetos",
         "Quantidade de O.S.": "▤  Quantidade de O.S.",
         "Técnicos": "♙  Técnicos",
+        "Saúde dos dados": "◉  Saúde dos dados",
     }
     navigation = st.radio(
         "Navegação",
@@ -1046,6 +1140,14 @@ def render_dashboard() -> None:
             "Histórico de produção",
             "Acompanhe a evolução e os resultados da equipe técnica.",
         ),
+        "Resumo executivo": (
+            "Resumo executivo comparativo",
+            "Compare a produção e a distribuição da equipe com a janela anterior.",
+        ),
+        "Projetos": (
+            "Produção por projeto",
+            "Compare pontos, ordens de serviço e participação por projeto.",
+        ),
         "Quantidade de O.S.": (
             "Quantidade de O.S.",
             "Ordens de serviço registradas na aba Prod, por competência e técnico.",
@@ -1053,6 +1155,11 @@ def render_dashboard() -> None:
         "Técnicos": (
             "Produção por técnico",
             "Analise a evolução individual e compare com a equipe.",
+        ),
+        "Saúde dos dados": (
+            "Saúde dos dados e importações",
+            "Confira a cobertura dos registros, a sincronização "
+            "e os arquivos importados.",
         ),
     }
     title, subtitle = page_titles[navigation]
@@ -1069,7 +1176,7 @@ def render_dashboard() -> None:
         meta_info=updated,
     )
 
-    if is_demo:
+    if is_demo and navigation != "Saúde dos dados":
         st.markdown(
             """
             <div class="demo-banner">
@@ -1080,7 +1187,14 @@ def render_dashboard() -> None:
             unsafe_allow_html=True,
         )
 
-    if current_records.empty:
+    if navigation == "Saúde dos dados":
+        render_saude_dados(
+            current_records,
+            current_stats,
+            import_batches(),
+            st.session_state.get("drive_auto_sync_status"),
+        )
+    elif current_records.empty:
         st.markdown(
             """
             <div class="empty-state">
@@ -1092,13 +1206,51 @@ def render_dashboard() -> None:
             unsafe_allow_html=True,
         )
     else:
-        filtered, technicians, months, projects = apply_filters(
-            current_records, show_technicians=navigation != "Técnicos"
+        (
+            filtered,
+            technicians,
+            months,
+            projects,
+            period_start,
+            period_end,
+        ) = apply_filters(
+            current_records,
+            show_technicians=navigation not in {"Técnicos", "Resumo executivo"},
         )
         if filtered.empty:
-            st.info("Não há produção para os filtros selecionados. Ajuste o período, projeto ou técnico.")
+            st.info(
+                "Não há produção para os filtros selecionados. "
+                "Ajuste o período, projeto ou técnico."
+            )
         elif navigation == "Visão geral":
-            render_overview(filtered, current_records, technicians, months, projects)
+            render_overview(
+                filtered,
+                current_records,
+                technicians,
+                months,
+                projects,
+                period_start,
+                period_end,
+            )
+        elif navigation == "Resumo executivo":
+            previous = selecionar_periodo_anterior(
+                current_records,
+                filtered,
+                technicians,
+                months,
+                projects,
+                period_start,
+                period_end,
+            )
+            render_resumo_executivo(
+                filtered,
+                previous,
+                meses=months,
+                periodo_inicio=period_start,
+                periodo_fim=period_end,
+            )
+        elif navigation == "Projetos":
+            render_projetos(filtered)
         elif navigation == "Quantidade de O.S.":
             render_prod_orders(filtered)
         elif navigation == "Técnicos":
@@ -1106,7 +1258,7 @@ def render_dashboard() -> None:
 
     st.markdown(
         '<div class="footer">Totale · Histórico de produção &nbsp;•&nbsp; '
-        'Pontos Totais = Prod + Gpon · Sincronização automática</div>',
+        "Pontos Totais = Prod + Gpon · Sincronização automática</div>",
         unsafe_allow_html=True,
     )
 

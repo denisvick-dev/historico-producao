@@ -7,10 +7,13 @@ Painel em Streamlit para acompanhar a produção dos técnicos ao longo do tempo
 ## Funcionalidades
 
 - Visão geral com Pontos Totais, Prod, Gpon e média por técnico.
+- **Resumo executivo** com comparação contra competências anteriores, distribuição por técnico e variações individuais.
+- **Produção por projeto** com ranking, evolução mensal, participação, O.S. e detalhamento por técnico.
 - Página **Quantidade de O.S.** com evolução por competência e ranking dos 15 técnicos com mais ordens (cada linha válida da aba `Prod` conta como uma O.S.).
+- **Saúde dos dados** com cobertura de projetos, dados de demonstração, status de sincronização e histórico de arquivos importados.
 - Filtros compartilhados por período, projeto e técnico; a página de técnicos permite escolher o projeto e o perfil individual.
 - Evolução mensal e ranking da equipe.
-- Histórico mensal detalhado, mapa de produção e exportação em CSV.
+- Histórico mensal detalhado e exportação em CSV.
 - Perfil individual com melhor competência e comparação com a média da equipe.
 - Persistência local em SQLite.
 - Dados de demonstração identificados.
@@ -159,13 +162,15 @@ historico-producao/
 │   ├── metricas_executivas.py    # Cálculos de tendências executivas
 │   ├── prod_os.py                # Página de quantidade de O.S.
 │   ├── saude_dados.py            # Avaliação de frescor e consistência
-│   └── sidebar.py                # Sidebar corporativa
+│   ├── sidebar.py                # Sidebar corporativa
+│   └── visoes_dashboards.py      # Projetos, resumo executivo e saúde da base
 └── tests/
     ├── test_css_global.py        # Testes de fonte em dataframes
     ├── test_drive_import.py      # Testes de importação do Drive
     ├── test_prod_os.py           # Testes da página de O.S.
     ├── test_production.py        # Testes de regras de negócio
-    └── test_streamlit_app.py     # Testes de integração da UI
+    ├── test_streamlit_app.py     # Testes de integração da UI
+    └── test_visoes_dashboards.py # Testes das novas visões
 ```
 
 ## Troubleshooting
