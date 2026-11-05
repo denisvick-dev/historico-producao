@@ -6,7 +6,6 @@ renderiza as seções principais e responde a filtros sem erros.
 
 from __future__ import annotations
 
-import os
 import unittest
 
 from pathlib import Path
@@ -53,6 +52,14 @@ class StreamlitAppTests(unittest.TestCase):
         """Os dataframes devem ser renderizados."""
         dataframes = self.at.get("dataframe")
         self.assertGreaterEqual(len(dataframes), 0)
+
+    def test_novas_visoes_carregam_sem_erro(self):
+        """Projetos, resumo executivo e saúde dos dados devem abrir."""
+        app = AppTest.from_file(_APP_PATH).run(timeout=30)
+        for pagina in ("Projetos", "Resumo executivo", "Saúde dos dados"):
+            with self.subTest(pagina=pagina):
+                app.radio(key="navigation").set_value(pagina).run(timeout=30)
+                self.assertFalse(app.exception)
 
 
 if __name__ == "__main__":
