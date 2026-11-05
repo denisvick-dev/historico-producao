@@ -194,18 +194,15 @@ st.markdown(
     }
     .highlight-card:hover { transform:translateY(-2px); }
     .highlight-card::before {
-        content:""; position:absolute; z-index:0; inset:-20% -20% -20% -20%;
-        background:conic-gradient(from 45deg, #012869 0%, #1E40AF 25%, #012869 50%, #0A48AA 75%, #012869 100%);
-        opacity:.85; animation:rotate-gradient 8s linear infinite;
+        content:""; position:absolute; z-index:0; inset:0;
+        background:linear-gradient(115deg, #012869, #1E40AF);
     }
     .highlight-card > * { position:relative; z-index:1; }
-    .highlight-card--azul::before { background:conic-gradient(from 45deg, #012869 0%, #1E40AF 33%, #012869 66%, #0A48AA 100%); }
-    .highlight-card--laranja::before { background:conic-gradient(from 45deg, #F37C04 0%, #FB923C 33%, #F37C04 66%, #C2410C 100%); }
-    .highlight-card--verde::before { background:conic-gradient(from 45deg, #047857 0%, #10B981 33%, #047857 66%, #0F766E 100%); }
+    .highlight-card--azul::before { background:linear-gradient(115deg, #012869, #1E40AF); }
+    .highlight-card--laranja::before { background:linear-gradient(115deg, #F37C04, #FB923C); }
+    .highlight-card--verde::before { background:linear-gradient(115deg, #047857, #10B981); }
     .highlight-card h3 { color:#fff !important; margin:0 0 .5rem; font-size:1rem; font-weight:750; opacity:.95; }
-    .highlight-card .big-number { font-size:2.2rem; font-weight:800; letter-spacing:-.03em; margin:0; }
-
-    @keyframes rotate-gradient { to { transform:rotate(360deg); } }
+    .highlight-card .big-number { color:#fff !important; font-size:2.2rem; font-weight:800; letter-spacing:-.03em; margin:0; }
 
     /* Barra de progresso colorida */
     .progress-track {
@@ -259,19 +256,22 @@ st.markdown(
     .stTabs [data-baseweb="tab-list"] { gap:1.5rem; }
     .stTabs [data-baseweb="tab"] { font-weight:600; }
 
-    /* Ticker animado — Indicadores da visão geral */
+    /* Faixa de indicadores no estilo de um ticker de mercado */
     .ticker-viewport {
         overflow: hidden;
         margin: 1rem 0 1.5rem;
-        border: 1px solid #dce6f3;
-        border-radius: 12px;
-        background: linear-gradient(110deg, #fff, #f8faff);
-        box-shadow: 0 4px 14px rgba(1, 40, 105, 0.045);
+        border: 1px solid #183b62;
+        border-radius: 8px;
+        background: #071a33;
+        box-shadow: 0 4px 14px rgba(1, 20, 45, 0.14);
     }
     .ticker-track {
         display: flex;
         width: max-content;
-        animation: ticker-scroll 25s linear infinite;
+        animation: ticker-scroll 30s linear infinite;
+    }
+    .ticker-viewport:hover .ticker-track {
+        animation-play-state: paused;
     }
     .ticker-group {
         display: flex;
@@ -286,7 +286,8 @@ st.markdown(
         gap: 0.55rem;
         flex: 0 0 auto;
         padding: 0.78rem 1.25rem;
-        color: #012869;
+        border-right: 1px solid rgba(148, 173, 204, 0.22);
+        color: #f8fafc;
         font-size: 12px;
         white-space: nowrap;
     }
@@ -295,10 +296,11 @@ st.markdown(
         width: 6px;
         height: 6px;
         border-radius: 50%;
-        background: #F37C04;
+        background: #22c55e;
+        box-shadow: 0 0 7px rgba(34, 197, 94, 0.55);
     }
     .ticker-label {
-        color: #718198;
+        color: #9fb3cc;
         font-size: 10px;
         font-weight: 750;
         letter-spacing: 0.07em;
@@ -306,11 +308,14 @@ st.markdown(
     }
     .ticker-item strong {
         font-weight: 750;
+        font-variant-numeric: tabular-nums;
     }
     @keyframes ticker-scroll {
         to { transform: translateX(-50%); }
     }
-
+    @media (prefers-reduced-motion: reduce) {
+        .ticker-track { animation: none; }
+    }
     @media (max-width: 700px) {
         [data-testid="stMainBlockContainer"] { padding:1rem; }
         .header-meta { display:none; }
@@ -1095,14 +1100,14 @@ with st.sidebar:
     render_sidebar_divider(label="Sincronização", estilo="gradiente", tema="azul")
     render_sidebar_footer_info(
         itens={"Registros": stats["records"], "Técnicos": stats["technicians"]},
-        unidade="Consulta automática a cada 30s",
+        unidade="Consulta automática a cada 120s",
         ambiente="Produção",
         copyright="Totale · Histórico de produção",
         tema="azul",
     )
 
 
-@st.fragment(run_every="30s")
+@st.fragment(run_every="120s")
 def render_dashboard() -> None:
     """Painel principal, atualizado em segundo plano sem recarregar a página toda."""
     current_records, current_stats = _load_dashboard_snapshot()
@@ -1175,7 +1180,7 @@ def render_dashboard() -> None:
             <div class="empty-state">
                 <div class="empty-icon">↻</div>
                 <h2>Nenhum registro disponível</h2>
-                <p>O painel consulta a base automaticamente a cada 30 segundos e exibirá os dados assim que estiverem disponíveis.</p>
+                <p>O painel consulta a base automaticamente a cada 120 segundos e exibirá os dados assim que estiverem disponíveis.</p>
             </div>
             """,
             unsafe_allow_html=True,
