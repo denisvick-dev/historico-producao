@@ -38,6 +38,20 @@ class CssGlobalTests(unittest.TestCase):
             css,
         )
 
+    def test_dataframes_usam_estilo_visual_padronizado(self):
+        """As grades exibidas no app compartilham cores, bordas e hover."""
+        css = css_containers()
+        for token in (
+            "--gdg-bg-cell: #F3F6FB",
+            "--gdg-bg-header: #F8FAFC",
+            "--gdg-bg-header-hover: #EDF3FB",
+            "--gdg-border-color: #D9E0EA",
+            "--gdg-horizontal-border-color: #D9E0EA",
+        ):
+            with self.subTest(token=token):
+                self.assertIn(token, css)
+        self.assertIn('[data-testid="stDataEditor"]', css)
+
     def test_table_header_usa_inter(self):
         """O cabeçalho de stTable deve usar Inter (--font-texto), não Oscine/Manrope."""
         css = css_containers()

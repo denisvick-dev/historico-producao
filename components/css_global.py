@@ -54,7 +54,7 @@ from components.kpi_cards import css_kpi_avancado
 
 logger = logging.getLogger(__name__)
 
-VERSAO_CSS_GLOBAL = "1.0.1"
+VERSAO_CSS_GLOBAL = "1.0.2"
 ID_NO_HEAD = "totale-css-global-v1"
 _CHAVE_SESSAO = "_totale_css_global_versao"
 
@@ -490,6 +490,7 @@ def css_containers() -> str:
     }}
     /* Tabelas e dataframes */
     {_MAIN} [data-testid="stDataFrame"],
+    {_MAIN} [data-testid="stDataEditor"],
     {_MAIN} [data-testid="stTable"] {{
         border: 1px solid var(--totale-borda);
         border-radius: var(--totale-raio-md);
@@ -498,8 +499,23 @@ def css_containers() -> str:
     }}
     {_MAIN} [data-testid="stDataFrame"],
     {_MAIN} [data-testid="stDataEditor"] {{
+        --gdg-bg-cell: #F3F6FB;
+        --gdg-bg-cell-medium: #EEF2F8;
+        --gdg-bg-header: #F8FAFC;
+        --gdg-bg-header-hover: #EDF3FB;
+        --gdg-bg-header-has-focus: #E8EEF8;
+        --gdg-text-dark: var(--totale-texto);
+        --gdg-text-medium: var(--totale-texto-3);
+        --gdg-text-light: #94A3B8;
+        --gdg-text-header: var(--totale-texto-3);
+        --gdg-text-header-selected: var(--totale-azul);
+        --gdg-border-color: #D9E0EA;
+        --gdg-horizontal-border-color: #D9E0EA;
+        --gdg-accent-color: var(--totale-azul);
+        --gdg-accent-light: #DBEAFE;
         --gdg-font-family: var(--font-texto, 'Inter', 'Segoe UI', Arial, sans-serif);
-        --gdg-header-font-style: 700 11px;
+        --gdg-base-font-style: 12px var(--font-texto, 'Inter', 'Segoe UI', Arial, sans-serif);
+        --gdg-header-font-style: 600 11px var(--font-texto, 'Inter', 'Segoe UI', Arial, sans-serif);
     }}
     {_MAIN} [data-testid="stDataFrame"] [data-testid="stColumnHeader"],
     {_MAIN} [data-testid="stDataFrame"] [role="columnheader"],

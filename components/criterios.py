@@ -489,7 +489,12 @@ def render_lista_colunas(df: pd.DataFrame, expanded: bool = False) -> None:
                 "Tipo": [str(df[c].dtype) for c in df.columns],
             }
         )
-        st.dataframe(df_cols, hide_index=True, width="stretch")
+        st.dataframe(
+            df_cols,
+            hide_index=True,
+            width="stretch",
+            alt="Colunas, nomes e tipos da base de produção",
+        )
 
 
 def detectar_col_capacidade(df: pd.DataFrame) -> str | None:

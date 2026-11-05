@@ -487,6 +487,7 @@ def render_projetos(frame: pd.DataFrame) -> None:
         tabela,
         width="stretch",
         hide_index=True,
+        alt="Resumo da produção, ordens de serviço e participação por projeto",
         column_config={
             "Projeto": st.column_config.TextColumn(width="medium"),
             "Prod": st.column_config.NumberColumn(format="%.2f"),
@@ -526,6 +527,7 @@ def render_projetos(frame: pd.DataFrame) -> None:
             detalhe,
             width="stretch",
             hide_index=True,
+            alt="Pontos e ordens de serviço por técnico e projeto",
             column_config={
                 "Prod": st.column_config.NumberColumn(format="%.2f"),
                 "Gpon": st.column_config.NumberColumn(format="%.2f"),
@@ -664,6 +666,7 @@ def render_resumo_executivo(
             comparativo,
             width="stretch",
             hide_index=True,
+            alt="Comparação de pontos e variação por técnico",
             column_config={
                 "Técnico": st.column_config.TextColumn(width="medium"),
                 "Pontos atuais": st.column_config.NumberColumn(format="%.2f"),
@@ -778,6 +781,7 @@ def render_saude_dados(
         tabela,
         width="stretch",
         hide_index=True,
+        alt="Arquivos importados, origem, registros e pontos somados",
         column_config={
             "Arquivo": st.column_config.TextColumn(width="large"),
             "Origem": st.column_config.TextColumn(width="small"),

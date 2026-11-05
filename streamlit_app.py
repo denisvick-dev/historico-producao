@@ -811,6 +811,7 @@ def render_overview(
         ),
         width="stretch",
         hide_index=True,
+        alt="Ranking mensal de produção, GPON e pontos por técnico",
         column_config={
             "Posição": st.column_config.NumberColumn(format="%dº", width="small"),
             "Técnico": st.column_config.TextColumn(width="medium"),
@@ -1006,6 +1007,7 @@ def render_technicians(filtered: pd.DataFrame) -> None:
         ),
         width="stretch",
         hide_index=True,
+        alt="Produção e pontos GPON por competência no período selecionado",
         column_config={
             "Prod": st.column_config.NumberColumn(format="%.2f"),
             "Gpon": st.column_config.NumberColumn(format="%.2f"),
