@@ -49,6 +49,7 @@ from production import (
     count_active_months_by_technician,
     create_demonstration,
     format_points,
+    get_drive_file_fingerprints,
     import_batches,
     init_database,
     load_dashboard_snapshot,
@@ -1046,8 +1047,11 @@ if "drive_auto_sync_attempted" not in st.session_state:
     drive_service_account = _drive_service_account()
     if drive_service_account is not None:
         try:
+            known_file_fingerprints = get_drive_file_fingerprints(DRIVE_FOLDER_ID)
             drive_result = import_drive_folder_snapshot(
-                drive_service_account, DRIVE_FOLDER_ID
+                drive_service_account,
+                DRIVE_FOLDER_ID,
+                known_file_fingerprints=known_file_fingerprints,
             )
         except DriveImportError as error:
             logger.error("falha_sincronizacao_drive", erro=str(error))
@@ -1061,13 +1065,16 @@ if "drive_auto_sync_attempted" not in st.session_state:
                 drive_result.records,
                 drive_result.file_ids,
                 drive_result.refreshed_file_ids,
+                folder_id=DRIVE_FOLDER_ID,
+                file_fingerprints=drive_result.file_fingerprints,
             )
             _load_dashboard_snapshot.clear()
             st.session_state["drive_auto_sync_status"] = {
                 "type": "warning" if drive_result.issues else "success",
                 "message": (
-                    f"Drive sincronizado: {count} registros em "
-                    f"{drive_result.successful_files} arquivo(s)."
+                    f"Drive sincronizado: {count} registros atualizados; "
+                    f"{drive_result.successful_files} arquivo(s) processado(s) "
+                    f"de {len(drive_result.file_ids)}."
                 ),
                 "issues": drive_result.issues[:10],
             }

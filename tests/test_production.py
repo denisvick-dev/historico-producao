@@ -353,6 +353,42 @@ class PersistenceTests(unittest.TestCase):
         self.assertEqual(len(loaded), 1)
         self.assertEqual(loaded.iloc[0]["points"], 70)
 
+    def test_drive_sync_persists_fingerprints_and_removes_deleted_files(self):
+        production.sync_drive_records(
+            [],
+            live_file_ids={"live-id"},
+            refreshed_file_ids={"live-id"},
+            folder_id="folder-id",
+            file_fingerprints={"live-id": "fingerprint-v1"},
+        )
+
+        self.assertEqual(
+            production.get_drive_file_fingerprints("folder-id"),
+            {"live-id": "fingerprint-v1"},
+        )
+
+        production.sync_drive_records(
+            [],
+            live_file_ids=set(),
+            refreshed_file_ids=set(),
+            folder_id="folder-id",
+        )
+
+        self.assertEqual(production.get_drive_file_fingerprints("folder-id"), {})
+
+    def test_clear_database_invalidates_drive_file_fingerprints(self):
+        production.sync_drive_records(
+            [],
+            live_file_ids={"live-id"},
+            refreshed_file_ids={"live-id"},
+            folder_id="folder-id",
+            file_fingerprints={"live-id": "fingerprint-v1"},
+        )
+
+        production.clear_database()
+
+        self.assertEqual(production.get_drive_file_fingerprints("folder-id"), {})
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -96,6 +96,7 @@ class DriveImportTests(unittest.TestCase):
                                 "id": "file-id",
                                 "name": "producao.csv",
                                 "mimeType": "text/csv",
+                                "modifiedTime": "2026-11-06T12:00:00Z",
                             }
                         ]
                     }
@@ -109,6 +110,33 @@ class DriveImportTests(unittest.TestCase):
         self.assertEqual(result.file_ids, {"file-id"})
         self.assertEqual(result.refreshed_file_ids, {"file-id"})
         self.assertEqual(result.successful_files, 1)
+        self.assertIn("file-id", result.file_fingerprints)
+
+    def test_snapshot_skips_unchanged_files(self):
+        drive_file = {
+            "id": "file-id",
+            "name": "producao.csv",
+            "mimeType": "text/csv",
+            "modifiedTime": "2026-11-06T12:00:00Z",
+        }
+        session = FakeSession([FakeResponse(data={"files": [drive_file]})])
+        fingerprint = drive_import._file_fingerprint(drive_file)
+        self.assertIsNotNone(fingerprint)
+
+        with (
+            patch("drive_import.create_drive_session", return_value=session),
+            patch("drive_import.download_file") as download,
+        ):
+            result = drive_import.import_drive_folder_snapshot(
+                {},
+                "folder-id",
+                known_file_fingerprints={"file-id": fingerprint},
+            )
+
+        download.assert_not_called()
+        self.assertEqual(result.file_ids, {"file-id"})
+        self.assertEqual(result.refreshed_file_ids, set())
+        self.assertEqual(result.successful_files, 0)
 
     def test_snapshot_downloads_files_in_parallel(self):
         files = [
