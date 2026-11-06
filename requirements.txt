@@ -1,4 +1,4 @@
-altair==6.3.0
+o dealtair==6.3.0
 anyio==4.16.0
 attrs==26.1.0
 beautifulsoup4==4.15.0

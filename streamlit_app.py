@@ -46,6 +46,7 @@ from components.visoes_dashboards import (
 )
 from drive_import import DriveImportError, import_drive_folder_snapshot
 from production import (
+    count_active_months_by_technician,
     create_demonstration,
     format_points,
     import_batches,
@@ -337,6 +338,17 @@ st.markdown(
 )
 
 CHART_CONFIG = {"displayModeBar": False, "responsive": True}
+
+
+def best_month_by_technician(records: pd.DataFrame) -> dict[str, str]:
+    """Retorna a competência de maior produção total para cada técnico."""
+    monthly = summarize(records, ["technician", "period"])
+    if monthly.empty:
+        return {}
+    best = monthly.sort_values(["points_total", "period"]).drop_duplicates(
+        "technician", keep="last"
+    )
+    return dict(zip(best["technician"], best["period"].map(month_label)))
 
 
 def chart_layout(fig: go.Figure, height: int = 340) -> go.Figure:
@@ -737,7 +749,8 @@ def render_overview(
     section_heading(
         "Desempenho por técnico", "O total é sempre a soma dos pontos de Prod e Gpon"
     )
-    periods_count = max(filtered["period"].nunique(), 1)
+    active_months = count_active_months_by_technician(filtered)
+    best_months = best_month_by_technician(filtered)
     latest_period = filtered["period"].max()
     latest = summarize(
         filtered[filtered["period"].eq(latest_period)], "technician"
@@ -748,17 +761,20 @@ def render_overview(
     ).set_index("technician")
 
     table = ranking.copy()
-    table["Média mensal"] = table["points_total"] / periods_count
+    table["Meses com produção"] = (
+        table["technician"].map(active_months).fillna(0).astype(int)
+    )
+    table["Melhor mês"] = table["technician"].map(best_months)
+    table["Média mensal"] = table["points_total"].div(
+        table["Meses com produção"].where(table["Meses com produção"].gt(0), 1)
+    )
     variations = []
-    status_values = []
     for technician in table["technician"]:
         current_value = latest["points_total"].get(technician, 0)
         previous_value = previous["points_total"].get(technician, 0)
         var = (current_value / previous_value - 1) * 100 if previous_value else None
-        variations.append(var)
-        status_values.append(_status_value(var))
+        variations.append(_status_value(var))
     table["Variação no último mês"] = variations
-    table["Status"] = status_values
     table.insert(0, "Posição", range(1, len(table) + 1))
     table = table.rename(
         columns={
@@ -775,14 +791,17 @@ def render_overview(
             "Prod",
             "Gpon",
             "Pontos Totais",
+            "Meses com produção",
+            "Melhor mês",
             "Média mensal",
             "Variação no último mês",
-            "Status",
         ]
     ]
     st.dataframe(
-        display_table.style.map(_monthly_average_style, subset=["Média mensal"]).map(
-            _status_badge_style, subset=["Status"]
+        display_table.style.map(
+            _total_points_style, subset=["Pontos Totais"]
+        ).map(_monthly_average_style, subset=["Média mensal"]).map(
+            _status_badge_style, subset=["Variação no último mês"]
         ),
         width="stretch",
         hide_index=True,
@@ -793,14 +812,23 @@ def render_overview(
             "Prod": st.column_config.NumberColumn(format="%.2f"),
             "Gpon": st.column_config.NumberColumn(format="%.2f"),
             "Pontos Totais": st.column_config.NumberColumn(format="%.2f"),
+            "Meses com produção": st.column_config.NumberColumn(format="%d"),
+            "Melhor mês": st.column_config.TextColumn(width="small"),
             "Média mensal": st.column_config.NumberColumn(format="%.2f"),
-            "Variação no último mês": st.column_config.NumberColumn(format="%+.1f%%"),
-            "Status": st.column_config.TextColumn(width="small"),
+            "Variação no último mês": st.column_config.TextColumn(width="small"),
         },
     )
     st.caption(
-        "Critérios da média mensal: 275–299,99 amarelo · 300–399,99 verde · 400 ou mais azul."
+        "Média mensal = Pontos Totais ÷ meses com produção. "
+        "Melhor mês considera os maiores Pontos Totais (Prod + Gpon). "
+        "Critérios: 275–299,99 amarelo · 300–399,99 verde · 400 ou mais azul."
     )
+
+
+def _total_points_style(value: object) -> str:
+    if not isinstance(value, (int, float)):
+        return ""
+    return "background-color: #F1F5F9; color: #475569; font-weight: 600"
 
 
 def _monthly_average_style(value: object) -> str:
@@ -972,13 +1000,10 @@ def render_technicians(filtered: pd.DataFrame) -> None:
             "points_total": "Pontos Totais",
         }
     )
-    st.caption(
-        "Critérios da média mensal de Pontos Totais: "
-        "275–299,99 amarelo · 300–399,99 verde · 400 ou mais azul."
-    )
+    st.caption("Pontos Totais = Prod + Gpon; os valores são exibidos em cinza.")
     st.dataframe(
         detail[["Competência", "Prod", "Gpon", "Pontos Totais"]].style.map(
-            _monthly_average_style, subset=["Pontos Totais"]
+            _total_points_style, subset=["Pontos Totais"]
         ),
         width="stretch",
         hide_index=True,

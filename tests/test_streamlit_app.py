@@ -52,6 +52,22 @@ class StreamlitAppTests(unittest.TestCase):
         dataframes = self.at.get("dataframe")
         self.assertGreaterEqual(len(dataframes), 0)
 
+    def test_media_mensal_considera_meses_com_producao(self):
+        """A média deve usar apenas os meses com produção de cada técnico."""
+        table = self.at.get("dataframe")[0].value
+
+        self.assertIn("Meses com produção", table.columns)
+        self.assertIn("Melhor mês", table.columns)
+        self.assertIn("Variação no último mês", table.columns)
+        self.assertNotIn("Status", table.columns)
+        for _, row in table.iterrows():
+            active_months = row["Meses com produção"]
+            self.assertGreater(active_months, 0)
+            self.assertAlmostEqual(
+                row["Média mensal"],
+                row["Pontos Totais"] / active_months,
+            )
+
     def test_novas_visoes_carregam_sem_erro(self):
         """As páginas complementares devem abrir sem exceções."""
         app = AppTest.from_file(_APP_PATH).run(timeout=30)

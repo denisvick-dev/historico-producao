@@ -45,6 +45,74 @@ class ParsingTests(unittest.TestCase):
         self.assertEqual(production.clean_technician("nan"), "")
 
 
+class MonthlyProductionTests(unittest.TestCase):
+    def test_best_month_by_technician_uses_total_points_and_latest_month_for_ties(self):
+        frame = pd.DataFrame(
+            [
+                {
+                    "technician": "Ana",
+                    "period": pd.Timestamp("2026-01-01"),
+                    "source_sheet": "Prod",
+                    "points": 100,
+                },
+                {
+                    "technician": "Ana",
+                    "period": pd.Timestamp("2026-01-01"),
+                    "source_sheet": "Gpon",
+                    "points": 20,
+                },
+                {
+                    "technician": "Ana",
+                    "period": pd.Timestamp("2026-03-01"),
+                    "source_sheet": "Prod",
+                    "points": 80,
+                },
+                {
+                    "technician": "Ana",
+                    "period": pd.Timestamp("2026-03-01"),
+                    "source_sheet": "Gpon",
+                    "points": 40,
+                },
+                {
+                    "technician": "Bia",
+                    "period": pd.Timestamp("2026-02-01"),
+                    "source_sheet": "Prod",
+                    "points": 90,
+                },
+            ]
+        )
+
+        best_months = production.best_month_by_technician(frame)
+
+        self.assertEqual(best_months.to_dict(), {"Ana": "mar/26", "Bia": "fev/26"})
+
+    def test_best_month_by_technician_accepts_empty_frame(self):
+        best_months = production.best_month_by_technician(pd.DataFrame())
+
+        self.assertTrue(best_months.empty)
+        self.assertEqual(best_months.name, "best_month")
+
+    def test_count_active_months_by_technician(self):
+        frame = pd.DataFrame(
+            [
+                {"technician": "Ana", "period": pd.Timestamp("2026-01-01")},
+                {"technician": "Ana", "period": pd.Timestamp("2026-01-01")},
+                {"technician": "Ana", "period": pd.Timestamp("2026-03-01")},
+                {"technician": "Bia", "period": pd.Timestamp("2026-02-01")},
+            ]
+        )
+
+        counts = production.count_active_months_by_technician(frame)
+
+        self.assertEqual(counts.to_dict(), {"Ana": 2, "Bia": 1})
+
+    def test_count_active_months_by_technician_accepts_empty_frame(self):
+        counts = production.count_active_months_by_technician(pd.DataFrame())
+
+        self.assertTrue(counts.empty)
+        self.assertEqual(counts.name, "active_months")
+
+
 class WorkbookTests(unittest.TestCase):
     def test_process_dataframe_accepts_aliases_and_reports_bad_rows(self):
         frame = pd.DataFrame(

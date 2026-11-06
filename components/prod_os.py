@@ -201,7 +201,7 @@ def render_prod_orders(filtered: pd.DataFrame) -> None:
 
     _section_heading(
         "O.S. por técnico",
-        "Uma linha por técnico, com a quantidade de cada competência e o total do período",
+        "Maior quantidade mensal em verde; empates podem destacar mais de uma competência.",
     )
     technician_monthly = _technician_monthly_table(prod, month_labels)
     count_columns = {
@@ -210,7 +210,9 @@ def render_prod_orders(filtered: pd.DataFrame) -> None:
         if column != "Técnico"
     }
     st.dataframe(
-        technician_monthly,
+        technician_monthly.style.apply(_best_month_style, axis=1).map(
+            _total_column_style, subset=["Total"]
+        ),
         width="stretch",
         hide_index=True,
         column_config=count_columns,
@@ -222,6 +224,35 @@ def render_prod_orders(filtered: pd.DataFrame) -> None:
         file_name="quantidade_os_prod.csv",
         mime="text/csv",
     )
+
+
+def _best_month_style(row: pd.Series) -> pd.Series:
+    styles = pd.Series("", index=row.index, dtype="object")
+    if row.get("Técnico") == "Total geral":
+        return styles
+
+    month_columns = [
+        column for column in row.index if column not in {"Técnico", "Total"}
+    ]
+    if not month_columns:
+        return styles
+
+    monthly_values = pd.to_numeric(row[month_columns], errors="coerce")
+    best_value = monthly_values.max()
+    if pd.isna(best_value) or best_value <= 0:
+        return styles
+
+    best_months = monthly_values[monthly_values.eq(best_value)].index
+    styles.loc[best_months] = (
+        "background-color: #DCFCE7; color: #166534; font-weight: 600"
+    )
+    return styles
+
+
+def _total_column_style(value: object) -> str:
+    if not isinstance(value, (int, float)):
+        return ""
+    return "background-color: #E8EEF8; color: #012869; font-weight: 600"
 
 
 __all__ = [

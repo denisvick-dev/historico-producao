@@ -784,6 +784,33 @@ def summarize(frame: pd.DataFrame, keys: str | list[str]) -> pd.DataFrame:
     return result[columns]
 
 
+def count_active_months_by_technician(frame: pd.DataFrame) -> pd.Series:
+    """Conta as competências com registros de produção para cada técnico."""
+    if frame.empty:
+        return pd.Series(dtype="int64", name="active_months")
+    return (
+        frame.groupby("technician", dropna=False)["period"]
+        .nunique()
+        .rename("active_months")
+    )
+
+
+def best_month_by_technician(frame: pd.DataFrame) -> pd.Series:
+    """Retorna o mês com mais Pontos Totais por técnico no recorte."""
+    if frame.empty:
+        return pd.Series(dtype="object", name="best_month")
+
+    monthly = summarize(frame, ["technician", "period"])
+    best = (
+        monthly.sort_values(
+            ["points_total", "period"], ascending=[False, False]
+        )
+        .drop_duplicates("technician")
+        .set_index("technician")
+    )
+    return best["period"].map(month_label).rename("best_month")
+
+
 def summarize_os(frame: pd.DataFrame, keys: str | list[str]) -> pd.DataFrame:
     """Conta O.S. da aba Prod; cada linha válida importada equivale a uma O.S."""
     if isinstance(keys, str):
