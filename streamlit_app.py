@@ -35,8 +35,7 @@ from components.componentes import (
     render_ticker,
     render_sidebar_theme_selector,
 )
-from components.contratos import render_contratos
-from components.eficiencia import render_eficiencia
+from components.eficiencia import render_eficiencia, render_eficiencia_wo
 from components.prod_os import render_prod_orders
 from components.visoes_dashboards import (
     render_projetos,
@@ -1122,6 +1121,7 @@ with st.sidebar:
         "Contratos": "▤  Contratos",
         "Regularidade": "◌  Regularidade",
         "Eficiência": "▧  Eficiência por técnico",
+        "Eficiência por contrato": "◫  Eficiência por contrato",
         "Técnicos": "♙  Técnicos",
         "Saúde dos dados": "◉  Saúde dos dados",
     }
@@ -1173,6 +1173,10 @@ def render_dashboard() -> None:
         "Eficiência": (
             "Eficiência por técnico por mês",
             "Acompanhe as faixas mensais e a faixa mais frequente no período.",
+        ),
+        "Eficiência por contrato": (
+            "Eficiência por contrato",
+            "Analise a eficiência por contrato, com a faixa mensal e o contador de contratos ativos.",
         ),
         "Técnicos": (
             "Produção por técnico",
@@ -1264,6 +1268,8 @@ def render_dashboard() -> None:
             render_regularidade_producao(filtered, period_start, period_end)
         elif navigation == "Eficiência":
             render_eficiencia(filtered)
+        elif navigation == "Eficiência por contrato":
+            render_eficiencia_wo(filtered)
         elif navigation == "Técnicos":
             render_technicians(filtered)
 

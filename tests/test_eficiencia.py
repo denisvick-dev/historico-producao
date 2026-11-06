@@ -1,6 +1,10 @@
 import pandas as pd
 
-from components.eficiencia import calcular_eficiencia
+from components.eficiencia import (
+    _estilo_faixa,
+    _estilo_resumo_linha,
+    calcular_eficiencia,
+)
 
 
 def test_limites_e_soma_mensal():
@@ -27,3 +31,47 @@ def test_empate_e_meses_sem_registro():
 def test_sem_dados_validos():
     detalhes, resumo = calcular_eficiencia(pd.DataFrame())
     assert detalhes.empty and resumo.empty
+
+
+def test_cores_destacam_faixas_com_registros_e_a_mais_frequente():
+    linha = pd.Series(
+        {
+            "Técnico": "A",
+            "Meses com registros": 3,
+            "Faixa 1": 1,
+            "Faixa 2": 0,
+            "Faixa 3": 0,
+            "Faixa 4": 0,
+            "Faixa 5": 2,
+            "Faixa mais frequente": "Faixa 5",
+        }
+    )
+
+    estilos = _estilo_resumo_linha(linha)
+
+    assert estilos["Faixa 1"] == _estilo_faixa("Faixa 1")
+    assert estilos["Faixa 2"] == ""
+    assert estilos["Faixa 5"] == _estilo_faixa("Faixa 5")
+    assert estilos["Faixa mais frequente"] == _estilo_faixa("Faixa 5")
+    assert "background-color" in estilos["Meses com registros"]
+
+
+def test_empate_na_faixa_mais_frequente_recebe_destaque():
+    linha = pd.Series(
+        {
+            "Técnico": "A",
+            "Meses com registros": 2,
+            "Faixa 1": 1,
+            "Faixa 2": 0,
+            "Faixa 3": 0,
+            "Faixa 4": 0,
+            "Faixa 5": 1,
+            "Faixa mais frequente": "Faixa 1 / Faixa 5",
+        }
+    )
+
+    estilos = _estilo_resumo_linha(linha)
+
+    assert estilos["Faixa mais frequente"] == (
+        "background-color: #E0F2FE; color: #075985; font-weight: 600"
+    )
