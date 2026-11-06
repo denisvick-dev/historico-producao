@@ -35,13 +35,12 @@ from components.componentes import (
     render_ticker,
     render_sidebar_theme_selector,
 )
+from components.eficiencia import render_eficiencia
 from components.prod_os import render_prod_orders
 from components.visoes_dashboards import (
     render_projetos,
     render_regularidade_producao,
-    render_resumo_executivo,
     render_saude_dados,
-    render_sazonalidade,
     selecionar_periodo_anterior,
 )
 from drive_import import DriveImportError, import_drive_folder_snapshot
@@ -1110,11 +1109,10 @@ with st.sidebar:
     render_sidebar_section("Acompanhamento")
     nav_labels = {
         "Visão geral": "▦  Visão geral",
-        "Resumo executivo": "◷  Resumo executivo",
         "Projetos": "◈  Projetos",
         "Quantidade de O.S.": "▤  Quantidade de O.S.",
         "Regularidade": "◌  Regularidade",
-        "Sazonalidade": "▧  Sazonalidade",
+        "Eficiência": "▧  Eficiência por técnico",
         "Técnicos": "♙  Técnicos",
         "Saúde dos dados": "◉  Saúde dos dados",
     }
@@ -1147,10 +1145,6 @@ def render_dashboard() -> None:
             "Histórico de produção",
             "Acompanhe a evolução e os resultados da equipe técnica.",
         ),
-        "Resumo executivo": (
-            "Resumo executivo comparativo",
-            "Compare a produção e a distribuição da equipe com a janela anterior.",
-        ),
         "Projetos": (
             "Produção por projeto",
             "Compare pontos, ordens de serviço e participação por projeto.",
@@ -1163,9 +1157,9 @@ def render_dashboard() -> None:
             "Regularidade da produção",
             "Compare médias, medianas, oscilações e competências sem registros.",
         ),
-        "Sazonalidade": (
-            "Sazonalidade da produção",
-            "Explore os Pontos Totais por competência e técnico ou projeto.",
+        "Eficiência": (
+            "Eficiência por técnico por mês",
+            "Acompanhe as faixas mensais e a faixa mais frequente no período.",
         ),
         "Técnicos": (
             "Produção por técnico",
@@ -1230,7 +1224,7 @@ def render_dashboard() -> None:
             period_end,
         ) = apply_filters(
             current_records,
-            show_technicians=navigation not in {"Técnicos", "Resumo executivo"},
+            show_technicians=navigation != "Técnicos",
         )
         if filtered.empty:
             st.info(
@@ -1247,31 +1241,14 @@ def render_dashboard() -> None:
                 period_start,
                 period_end,
             )
-        elif navigation == "Resumo executivo":
-            previous = selecionar_periodo_anterior(
-                current_records,
-                filtered,
-                technicians,
-                months,
-                projects,
-                period_start,
-                period_end,
-            )
-            render_resumo_executivo(
-                filtered,
-                previous,
-                meses=months,
-                periodo_inicio=period_start,
-                periodo_fim=period_end,
-            )
         elif navigation == "Projetos":
             render_projetos(filtered)
         elif navigation == "Quantidade de O.S.":
             render_prod_orders(filtered)
         elif navigation == "Regularidade":
             render_regularidade_producao(filtered, period_start, period_end)
-        elif navigation == "Sazonalidade":
-            render_sazonalidade(filtered, period_start, period_end)
+        elif navigation == "Eficiência":
+            render_eficiencia(filtered)
         elif navigation == "Técnicos":
             render_technicians(filtered)
 
