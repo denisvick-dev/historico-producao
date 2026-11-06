@@ -73,18 +73,14 @@ class StreamlitAppTests(unittest.TestCase):
         app = AppTest.from_file(_APP_PATH).run(timeout=30)
         for pagina in (
             "Projetos",
-            "Resumo executivo",
             "Regularidade",
-            "Sazonalidade",
+            "Eficiência",
             "Saúde dos dados",
         ):
             with self.subTest(pagina=pagina):
                 app.radio(key="navigation").set_value(pagina).run(timeout=30)
                 self.assertFalse(app.exception)
 
-        app.radio(key="navigation").set_value("Sazonalidade").run(timeout=30)
-        app.selectbox(key="seasonality_dimension").set_value("Projeto").run(timeout=30)
-        self.assertFalse(app.exception)
 
 
 if __name__ == "__main__":
