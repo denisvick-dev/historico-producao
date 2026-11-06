@@ -35,6 +35,7 @@ from components.componentes import (
     render_ticker,
     render_sidebar_theme_selector,
 )
+from components.contratos import render_contratos
 from components.eficiencia import render_eficiencia
 from components.prod_os import render_prod_orders
 from components.visoes_dashboards import (
@@ -1118,6 +1119,7 @@ with st.sidebar:
         "Visão geral": "▦  Visão geral",
         "Projetos": "◈  Projetos",
         "Quantidade de O.S.": "▤  Quantidade de O.S.",
+        "Contratos": "▤  Contratos",
         "Regularidade": "◌  Regularidade",
         "Eficiência": "▧  Eficiência por técnico",
         "Técnicos": "♙  Técnicos",
@@ -1159,6 +1161,10 @@ def render_dashboard() -> None:
         "Quantidade de O.S.": (
             "Quantidade de O.S.",
             "Ordens de serviço registradas na aba Prod, por competência e técnico.",
+        ),
+        "Contratos": (
+            "Contratos por projeto e técnico",
+            "Acompanhe a quantidade de contratos distintos no período selecionado.",
         ),
         "Regularidade": (
             "Regularidade da produção",
@@ -1252,6 +1258,8 @@ def render_dashboard() -> None:
             render_projetos(filtered)
         elif navigation == "Quantidade de O.S.":
             render_prod_orders(filtered)
+        elif navigation == "Contratos":
+            render_contratos(filtered)
         elif navigation == "Regularidade":
             render_regularidade_producao(filtered, period_start, period_end)
         elif navigation == "Eficiência":

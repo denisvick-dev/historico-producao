@@ -30,6 +30,7 @@ RECORD_COLUMNS = [
     "reference_date",
     "source_sheet",
     "project",
+    "contract",
     "points",
     "source_file",
     "source_row",
@@ -67,6 +68,8 @@ PROJECT_ALIASES = {
     "idprojeto",
     "projetoid",
 }
+CONTRACT_ALIASES = {"contrato", "numerocontrato", "ncontrato", "idcontrato", "codigocontrato", "codcontrato"}
+
 DATE_ALIASES = {
     "data",
     "dataproducao",
@@ -163,6 +166,16 @@ def clean_project(value: object) -> str:
     if not text or normalize_text(text) in {"nan", "none", "nat", "semprojeto"}:
         return "Sem projeto"
     return text
+
+
+def clean_contract(value: object) -> str | None:
+    """Preserva identificadores de contrato e descarta valores ausentes."""
+    if value is None or pd.isna(value):
+        return None
+    if isinstance(value, float) and value.is_integer():
+        value = int(value)
+    text = str(value).strip()
+    return None if not text or text.upper() in {"NULL", "NAN", "NONE", "NAT"} else text
 
 
 def parse_points(value: object) -> float | None:
@@ -311,6 +324,7 @@ def process_dataframe(
     technician_col = find_column(frame, TECHNICIAN_ALIASES)
     points_col = find_column(frame, POINTS_ALIASES)
     project_col = find_column(frame, PROJECT_ALIASES)
+    contract_col = find_column(frame, CONTRACT_ALIASES)
     date_col = find_date_column(frame)
     available = ", ".join(str(column) for column in frame.columns)
     if technician_col is None or points_col is None:
@@ -340,12 +354,16 @@ def process_dataframe(
     selected_columns = [technician_col, points_col]
     date_position = None
     project_position = None
+    contract_position = None
     if date_col is not None:
         date_position = len(selected_columns) + 1
         selected_columns.append(date_col)
     if project_col is not None:
         project_position = len(selected_columns) + 1
         selected_columns.append(project_col)
+    if contract_col is not None:
+        contract_position = len(selected_columns) + 1
+        selected_columns.append(contract_col)
 
     for row in frame[selected_columns].itertuples(index=True, name=None):
         index = row[0]
@@ -378,6 +396,11 @@ def process_dataframe(
                     if project_position is not None
                     else "Sem projeto"
                 ),
+                "contract": (
+                    clean_contract(row[contract_position])
+                    if contract_position is not None
+                    else None
+                ),
                 "points": float(points),
                 "source_file": source_file,
                 "source_row": excel_row,
@@ -394,7 +417,10 @@ def read_csv(content: bytes) -> pd.DataFrame:
     for encoding in ("utf-8-sig", "latin-1"):
         try:
             text = content.decode(encoding)
-            return pd.read_csv(io.StringIO(text), sep=None, engine="python")
+            headers = pd.read_csv(io.StringIO(text), sep=None, engine="python", nrows=0)
+            contract_col = find_column(headers, CONTRACT_ALIASES)
+            dtype = {contract_col: str} if contract_col is not None else None
+            return pd.read_csv(io.StringIO(text), sep=None, engine="python", dtype=dtype)
         except (UnicodeDecodeError, pd.errors.ParserError) as error:
             last_error = error
     raise ValueError(f"Não foi possível ler o CSV: {last_error}")
@@ -479,6 +505,7 @@ def init_database() -> None:
                 reference_date TEXT NOT NULL,
                 source_sheet TEXT NOT NULL CHECK(source_sheet IN ('Prod', 'Gpon')),
                 project TEXT NOT NULL DEFAULT 'Sem projeto',
+                contract TEXT,
                 points REAL NOT NULL,
                 source_file TEXT NOT NULL,
                 source_row INTEGER NOT NULL,
@@ -510,6 +537,8 @@ def init_database() -> None:
             connection.execute(
                 "ALTER TABLE production_records ADD COLUMN project TEXT NOT NULL DEFAULT 'Sem projeto'"
             )
+        if "contract" not in columns:
+            connection.execute("ALTER TABLE production_records ADD COLUMN contract TEXT")
         connection.execute(
             "CREATE INDEX IF NOT EXISTS idx_production_project ON production_records(project)"
         )
@@ -565,9 +594,9 @@ def save_records(records: Iterable[dict], is_demo: bool = False) -> int:
         connection.executemany(
             """
             INSERT INTO production_records (
-                technician, reference_date, source_sheet, project, points,
+                technician, reference_date, source_sheet, project, contract, points,
                 source_file, source_row, is_demo
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 (
@@ -575,6 +604,7 @@ def save_records(records: Iterable[dict], is_demo: bool = False) -> int:
                     row["reference_date"],
                     row["source_sheet"],
                     clean_project(row.get("project", "Sem projeto")),
+                    clean_contract(row.get("contract")),
                     row["points"],
                     row["source_file"],
                     row["source_row"],
@@ -645,9 +675,9 @@ def sync_drive_records(
         connection.executemany(
             """
             INSERT INTO production_records (
-                technician, reference_date, source_sheet, project, points,
+                technician, reference_date, source_sheet, project, contract, points,
                 source_file, source_row, is_demo
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, 0)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
             """,
             [
                 (
@@ -655,6 +685,7 @@ def sync_drive_records(
                     row["reference_date"],
                     row["source_sheet"],
                     clean_project(row.get("project", "Sem projeto")),
+                    clean_contract(row.get("contract")),
                     row["points"],
                     row["source_file"],
                     row["source_row"],
@@ -670,7 +701,7 @@ def load_records() -> pd.DataFrame:
     with connect() as connection:
         frame = pd.read_sql_query(
             """
-            SELECT id, technician, reference_date, source_sheet, project, points,
+            SELECT id, technician, reference_date, source_sheet, project, contract, points,
                    source_file, source_row, is_demo, imported_at
             FROM production_records
             ORDER BY reference_date, technician, source_sheet
@@ -704,7 +735,7 @@ def load_dashboard_snapshot() -> tuple[pd.DataFrame, dict]:
     with connect() as connection:
         frame = pd.read_sql_query(
             """
-            SELECT id, technician, reference_date, source_sheet, project, points,
+            SELECT id, technician, reference_date, source_sheet, project, contract, points,
                    source_file, source_row, is_demo, imported_at
             FROM production_records
             ORDER BY reference_date, technician, source_sheet
