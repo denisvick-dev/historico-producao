@@ -15,7 +15,7 @@ import unicodedata
 from contextlib import contextmanager
 from datetime import date, datetime
 from pathlib import Path
-from typing import Generator, Iterable
+from typing import Generator, Iterable, Mapping
 
 import pandas as pd
 
@@ -337,17 +337,28 @@ def process_dataframe(
 
     records: list[dict] = []
     issues: list[str] = []
-    for index, row in frame.iterrows():
+    selected_columns = [technician_col, points_col]
+    date_position = None
+    project_position = None
+    if date_col is not None:
+        date_position = len(selected_columns) + 1
+        selected_columns.append(date_col)
+    if project_col is not None:
+        project_position = len(selected_columns) + 1
+        selected_columns.append(project_col)
+
+    for row in frame[selected_columns].itertuples(index=True, name=None):
+        index = row[0]
         excel_row = int(index) + 2 if isinstance(index, int) else len(records) + 2
-        technician = clean_technician(row[technician_col])
+        technician = clean_technician(row[1])
         if not technician:
             continue
 
-        points = parse_points(row[points_col])
+        points = parse_points(row[2])
         if points is None:
-            issues.append(f"Linha {excel_row}: pontos inválidos ({row[points_col]!r}).")
+            issues.append(f"Linha {excel_row}: pontos inválidos ({row[2]!r}).")
             continue
-        date_value = row[date_col] if date_col is not None else None
+        date_value = row[date_position] if date_position is not None else None
         reference_date = (
             parse_reference_date(date_value) if date_col is not None else fallback_date
         )
@@ -362,7 +373,11 @@ def process_dataframe(
                 "technician": technician,
                 "reference_date": reference_date.strftime("%Y-%m-%d"),
                 "source_sheet": origin,
-                "project": clean_project(row[project_col]) if project_col is not None else "Sem projeto",
+                "project": (
+                    clean_project(row[project_position])
+                    if project_position is not None
+                    else "Sem projeto"
+                ),
                 "points": float(points),
                 "source_file": source_file,
                 "source_row": excel_row,
@@ -479,6 +494,12 @@ def init_database() -> None:
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS drive_file_metadata (
+                folder_id TEXT NOT NULL,
+                file_id TEXT NOT NULL,
+                fingerprint TEXT NOT NULL,
+                PRIMARY KEY(folder_id, file_id)
+            );
             """
         )
         columns = {
@@ -511,6 +532,16 @@ def set_setting(key: str, value: str) -> None:
             "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
             (key, value),
         )
+
+
+def get_drive_file_fingerprints(folder_id: str) -> dict[str, str]:
+    init_database()
+    with connect() as connection:
+        rows = connection.execute(
+            "SELECT file_id, fingerprint FROM drive_file_metadata WHERE folder_id = ?",
+            (folder_id,),
+        ).fetchall()
+    return {row["file_id"]: row["fingerprint"] for row in rows}
 
 
 def save_records(records: Iterable[dict], is_demo: bool = False) -> int:
@@ -559,6 +590,9 @@ def sync_drive_records(
     records: Iterable[dict],
     live_file_ids: set[str],
     refreshed_file_ids: set[str],
+    *,
+    folder_id: str | None = None,
+    file_fingerprints: Mapping[str, str] | None = None,
 ) -> int:
     rows = list(records)
     init_database()
@@ -582,6 +616,32 @@ def sync_drive_records(
                     "DELETE FROM production_records WHERE source_file = ?",
                     (source_file,),
                 )
+        if folder_id is not None:
+            known_file_ids = connection.execute(
+                "SELECT file_id FROM drive_file_metadata WHERE folder_id = ?",
+                (folder_id,),
+            ).fetchall()
+            connection.executemany(
+                "DELETE FROM drive_file_metadata WHERE folder_id = ? AND file_id = ?",
+                [
+                    (folder_id, row["file_id"])
+                    for row in known_file_ids
+                    if row["file_id"] not in live_file_ids
+                ],
+            )
+            connection.executemany(
+                """
+                INSERT INTO drive_file_metadata (folder_id, file_id, fingerprint)
+                VALUES (?, ?, ?)
+                ON CONFLICT(folder_id, file_id)
+                DO UPDATE SET fingerprint = excluded.fingerprint
+                """,
+                [
+                    (folder_id, file_id, fingerprint)
+                    for file_id, fingerprint in (file_fingerprints or {}).items()
+                    if file_id in refreshed_file_ids and file_id in live_file_ids
+                ],
+            )
         connection.executemany(
             """
             INSERT INTO production_records (
@@ -697,6 +757,7 @@ def clear_database() -> None:
     init_database()
     with connect() as connection:
         connection.execute("DELETE FROM production_records")
+        connection.execute("DELETE FROM drive_file_metadata")
     set_setting("demo_disabled", "1")
 
 

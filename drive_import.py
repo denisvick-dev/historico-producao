@@ -37,6 +37,7 @@ class DriveFolderImport:
     successful_files: int
     file_ids: set[str]
     refreshed_file_ids: set[str]
+    file_fingerprints: dict[str, str]
 
 
 def create_drive_session(
@@ -86,7 +87,10 @@ def list_folder_files(session: Any, folder_id: str) -> list[dict[str, str]]:
     while True:
         params: dict[str, str | int | bool] = {
             "q": f"'{folder_id}' in parents and trashed = false",
-            "fields": "nextPageToken,files(id,name,mimeType)",
+            "fields": (
+                "nextPageToken,"
+                "files(id,name,mimeType,modifiedTime,md5Checksum,size)"
+            ),
             "pageSize": 1000,
             "supportsAllDrives": True,
             "includeItemsFromAllDrives": True,
@@ -104,6 +108,23 @@ def list_folder_files(session: Any, folder_id: str) -> list[dict[str, str]]:
         page_token = page.get("nextPageToken")
         if not page_token:
             return files
+
+
+def _file_fingerprint(drive_file: dict[str, str]) -> str | None:
+    modified_time = drive_file.get("modifiedTime", "")
+    checksum = drive_file.get("md5Checksum", "")
+    size = drive_file.get("size", "")
+    if not (modified_time or checksum or size):
+        return None
+    return "|".join(
+        (
+            drive_file.get("name", ""),
+            drive_file.get("mimeType", ""),
+            modified_time,
+            checksum,
+            size,
+        )
+    )
 
 
 def _source_filename(file: dict[str, str]) -> str | None:
@@ -198,6 +219,7 @@ def import_drive_folder_snapshot(
     *,
     csv_origin: str = PROD,
     default_date: date | datetime | pd.Timestamp | None = None,
+    known_file_fingerprints: Mapping[str, str] | None = None,
 ) -> DriveFolderImport:
     logger.info("iniciando_sincronizacao_drive", pasta_id=folder_id)
     session = create_drive_session(service_account_info)
@@ -211,11 +233,22 @@ def import_drive_folder_snapshot(
         if (file_id := drive_file.get("id", "").strip())
     }
     refreshed_file_ids: set[str] = set()
+    file_fingerprints: dict[str, str] = {}
     credentials = getattr(session, "credentials", None)
+    known_file_fingerprints = known_file_fingerprints or {}
+    changed_files: list[dict[str, str]] = []
+    for drive_file in files:
+        fingerprint = _file_fingerprint(drive_file)
+        file_id = drive_file.get("id", "")
+        if (
+            fingerprint is None
+            or fingerprint != known_file_fingerprints.get(file_id)
+        ):
+            changed_files.append(drive_file)
 
-    if files:
+    if changed_files:
         with ThreadPoolExecutor(
-            max_workers=min(MAX_PARALLEL_DOWNLOADS, len(files))
+            max_workers=min(MAX_PARALLEL_DOWNLOADS, len(changed_files))
         ) as executor:
             results = executor.map(
                 lambda drive_file: _import_drive_file(
@@ -225,15 +258,18 @@ def import_drive_folder_snapshot(
                     csv_origin=csv_origin,
                     default_date=default_date,
                 ),
-                files,
+                changed_files,
             )
             for drive_file, (file_records, file_issues, refreshed) in zip(
-                files, results
+                changed_files, results
             ):
                 if refreshed:
                     file_id = drive_file.get("id", "").strip()
                     if file_id:
                         refreshed_file_ids.add(file_id)
+                        fingerprint = _file_fingerprint(drive_file)
+                        if fingerprint is not None:
+                            file_fingerprints[file_id] = fingerprint
                 if file_records:
                     records.extend(file_records)
                     successful_files += 1
@@ -246,6 +282,7 @@ def import_drive_folder_snapshot(
         pasta_id=folder_id,
         arquivos_encontrados=len(files),
         arquivos_processados=successful_files,
+        arquivos_sem_alteracao=len(files) - len(changed_files),
         total_registros=len(records),
         total_issues=len(issues),
     )
@@ -255,6 +292,7 @@ def import_drive_folder_snapshot(
         successful_files=successful_files,
         file_ids=file_ids,
         refreshed_file_ids=refreshed_file_ids,
+        file_fingerprints=file_fingerprints,
     )
 
 

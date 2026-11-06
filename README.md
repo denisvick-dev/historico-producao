@@ -110,6 +110,7 @@ token_uri = "https://oauth2.googleapis.com/token"
 ```
 
 Os arquivos Excel devem conter as abas `Prod` e/ou `Gpon`; arquivos CSV são lidos como `Prod` por padrão.
+Para reduzir o tempo das sincronizações seguintes, os metadados dos arquivos são comparados e somente arquivos novos ou alterados são baixados e processados.
 
 ## Persistência
 
