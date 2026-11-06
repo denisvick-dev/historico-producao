@@ -73,6 +73,7 @@ class StreamlitAppTests(unittest.TestCase):
         app = AppTest.from_file(_APP_PATH).run(timeout=30)
         for pagina in (
             "Projetos",
+            "Contratos",
             "Regularidade",
             "Eficiência",
             "Saúde dos dados",
