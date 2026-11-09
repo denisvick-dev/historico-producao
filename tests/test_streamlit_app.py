@@ -69,7 +69,7 @@ class StreamlitAppTests(unittest.TestCase):
             )
 
     def test_aba_contratos_exibe_contador(self):
-        """A aba Contratos deve abrir com o contador em destaque e os gráficos."""
+        """A aba Contratos unificada deve abrir com o contador e a eficiência."""
         app = AppTest.from_file(_APP_PATH).run(timeout=30)
         app.radio(key="navigation").set_value("Contratos").run(timeout=30)
         self.assertFalse(app.exception)
@@ -77,8 +77,16 @@ class StreamlitAppTests(unittest.TestCase):
         self.assertIn("CONTRATOS NO RECORTE", markdown)
         self.assertIn("Contador por técnico", markdown)
         self.assertIn("Evolução mensal dos contratos", markdown)
-        self.assertGreaterEqual(len(app.get("plotly_chart")), 2)
-        self.assertGreaterEqual(len(app.get("dataframe")), 2)
+        self.assertIn("Eficiência por contrato", markdown)
+        self.assertIn("Resumo por contrato", markdown)
+        self.assertGreaterEqual(len(app.get("plotly_chart")), 3)
+        self.assertGreaterEqual(len(app.get("dataframe")), 3)
+
+    def test_aba_contratos_unifica_eficiencia_por_contrato(self):
+        """A navegação não deve mais separar Eficiência por contrato."""
+        app = AppTest.from_file(_APP_PATH).run(timeout=30)
+        radio = app.radio(key="navigation")
+        self.assertNotIn("Eficiência por contrato", radio.options)
 
     def test_aba_saude_dados_mostra_contratos_por_arquivo(self):
         """A lista de arquivos importados deve exibir o contador de contratos."""

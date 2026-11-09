@@ -4,6 +4,7 @@ from components.eficiencia import (
     _estilo_faixa,
     _estilo_resumo_linha,
     calcular_eficiencia,
+    resumir_eficiencia_contrato,
 )
 
 
@@ -75,3 +76,51 @@ def test_empate_na_faixa_mais_frequente_recebe_destaque():
     assert estilos["Faixa mais frequente"] == (
         "background-color: #E0F2FE; color: #075985; font-weight: 600"
     )
+
+
+def test_resumo_eficiencia_contrato_ignora_sem_contrato_e_soma_pontos():
+    frame = pd.DataFrame(
+        {
+            "technician": ["Ana", "Ana", "Ana", "Bia"],
+            "contract": ["C1", "C1", "C2", "Sem contrato"],
+            "period": pd.to_datetime(
+                ["2026-01-01", "2026-02-01", "2026-01-01", "2026-01-01"]
+            ),
+            "points": [310, 320, 450, 999],
+        }
+    )
+
+    detalhes, resumo, faixas = resumir_eficiencia_contrato(frame)
+
+    assert detalhes.to_dict("records") == [
+        {"Contrato": "C1", "Competência": pd.Timestamp("2026-01-01"), "Pontos": 310, "Faixa": "Faixa 2"},
+        {"Contrato": "C1", "Competência": pd.Timestamp("2026-02-01"), "Pontos": 320, "Faixa": "Faixa 2"},
+        {"Contrato": "C2", "Competência": pd.Timestamp("2026-01-01"), "Pontos": 450, "Faixa": "Faixa 5"},
+    ]
+    assert resumo.to_dict("records") == [
+        {
+            "Contrato": "C1",
+            "Meses com registros": 2,
+            "Pontos totais": 630,
+            "Faixa mais frequente": "Faixa 2",
+        },
+        {
+            "Contrato": "C2",
+            "Meses com registros": 1,
+            "Pontos totais": 450,
+            "Faixa mais frequente": "Faixa 5",
+        },
+    ]
+    assert faixas.to_dict() == {
+        "Faixa 1": 0,
+        "Faixa 2": 2,
+        "Faixa 3": 0,
+        "Faixa 4": 0,
+        "Faixa 5": 1,
+    }
+
+
+def test_resumo_eficiencia_contrato_frame_vazio():
+    detalhes, resumo, faixas = resumir_eficiencia_contrato(pd.DataFrame())
+    assert detalhes.empty and resumo.empty
+    assert int(faixas.sum()) == 0

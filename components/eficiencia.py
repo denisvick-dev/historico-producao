@@ -1,10 +1,12 @@
-"""Eficiência mensal por técnico no recorte selecionado."""
+"""Eficiência mensal por técnico e por contrato no recorte selecionado."""
 from __future__ import annotations
 
 import pandas as pd
+import plotly.graph_objects as go
 import streamlit as st
 
-from production import month_label
+from components.componentes import Cores, Fontes, formatar_numero_br, render_kpi_card
+from production import clean_contract, is_valid_contract, month_label
 
 FAIXAS = [f"Faixa {numero}" for numero in range(1, 6)]
 CORES_FAIXAS = {
@@ -133,84 +135,57 @@ def render_eficiencia(frame: pd.DataFrame) -> None:
     st.download_button("Baixar eficiência mensal em CSV", data=exibicao.to_csv(index=False, sep=";", decimal=",").encode("utf-8-sig"), file_name="eficiencia_mensal.csv", mime="text/csv")
 
 
-def _normalizar_coluna(frame: pd.DataFrame, aliases: tuple[str, ...]) -> str | None:
-    normalizados = {
-        str(column).strip().lower().replace(" ", "").replace("_", "").replace("-", ""): column
-        for column in frame.columns
-        if isinstance(column, str)
-    }
-    for alias in aliases:
-        chave = alias.strip().lower().replace(" ", "").replace("_", "").replace("-", "")
-        if chave in normalizados:
-            return normalizados[chave]
-    for chave, coluna in normalizados.items():
-        if any(alias in chave for alias in (a.strip().lower().replace(" ", "").replace("_", "").replace("-", "") for a in aliases)):
-            return coluna
-    return None
+def resumir_eficiencia_contrato(
+    frame: pd.DataFrame,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.Series]:
+    """Detalhamento contrato·mês, resumo por contrato e distribuição de faixas.
 
-
-def render_eficiencia_wo(frame: pd.DataFrame) -> None:
-    if frame.empty:
-        st.info("Não há registros para calcular a eficiência por contrato.")
-        return
-
-    contract_col = _normalizar_coluna(
-        frame,
-        (
-            "contrato",
-            "contract",
-            "contratocod",
-            "numero_contrato",
-            "numerocontrato",
-        ),
-    )
-
-    if contract_col is None:
-        contract_col = "contract" if "contract" in frame.columns else None
-
+    Linhas sem contrato válido ficam de fora. Faixas de pontos por contrato
+    no mês: Faixa 1 < 300; Faixa 2 [300, 350); Faixa 3 [350, 375); Faixa 4
+    [375, 400); Faixa 5 >= 400.
+    """
+    detalhes_colunas = ["Contrato", "Competência", "Pontos", "Faixa"]
+    resumo_colunas = [
+        "Contrato",
+        "Meses com registros",
+        "Pontos totais",
+        "Faixa mais frequente",
+    ]
+    faixas_zero = pd.Series(0, index=FAIXAS, name="Contratos", dtype="int64")
+    if frame.empty or "points" not in frame.columns:
+        return (
+            pd.DataFrame(columns=detalhes_colunas),
+            pd.DataFrame(columns=resumo_colunas),
+            faixas_zero,
+        )
+    fonte = "period" if "period" in frame.columns else "reference_date"
+    if fonte not in frame.columns:
+        return (
+            pd.DataFrame(columns=detalhes_colunas),
+            pd.DataFrame(columns=resumo_colunas),
+            faixas_zero,
+        )
     work = frame.copy()
-    if contract_col is None:
-        work["contract"] = "Sem contrato"
-        contract_col = "contract"
-
-    if "contract" not in work.columns:
-        work["contract"] = "Sem contrato"
-
     work["Pontos"] = pd.to_numeric(work["points"], errors="coerce")
     work["Competência"] = (
-        pd.to_datetime(work["reference_date"], errors="coerce")
+        pd.to_datetime(work[fonte], errors="coerce")
         .dt.to_period("M")
         .dt.to_timestamp()
     )
-    work["Contrato"] = (
-        work[contract_col].fillna("Sem contrato").astype(str).str.strip().replace("", "Sem contrato")
-    )
+    if "contract" not in work.columns:
+        work["contract"] = "Sem contrato"
+    work["Contrato"] = work["contract"].map(clean_contract)
+    work = work.loc[work["Contrato"].map(is_valid_contract)]
     work = work.dropna(subset=["Competência", "Pontos"])
-
     if work.empty:
-        st.info("Não há pontos válidos para calcular a eficiência por contrato.")
-        return
-
-    tecnico_col = "technician" if "technician" in work.columns else None
-    tecnicos = ["Todos"]
-    if tecnico_col:
-        tecnicos.extend(sorted(work[tecnico_col].dropna().astype(str).unique().tolist()))
-    tecnico_selecionado = st.selectbox(
-        "Filtrar por técnico",
-        tecnicos,
-        index=0,
-        help="Ajusta o recorte para um técnico específico antes da análise por contrato.",
-        key="eficiencia_contrato_tecnico_filter",
-    )
-
-    if tecnico_selecionado != "Todos" and tecnico_col:
-        work = work[work[tecnico_col].eq(tecnico_selecionado)]
-
-    if work.empty:
-        st.info("Não há registros para o técnico selecionado no recorte atual.")
-        return
+        return (
+            pd.DataFrame(columns=detalhes_colunas),
+            pd.DataFrame(columns=resumo_colunas),
+            faixas_zero,
+        )
 
     detalhes = work.groupby(["Contrato", "Competência"], as_index=False)["Pontos"].sum()
+    # Limites contínuos: 400 pertence à faixa 5, sem lacunas entre faixas.
     detalhes["Faixa"] = pd.cut(
         detalhes["Pontos"],
         bins=[float("-inf"), 300, 350, 375, 400, float("inf")],
@@ -219,10 +194,12 @@ def render_eficiencia_wo(frame: pd.DataFrame) -> None:
     ).astype(str)
 
     resumo = (
-        detalhes.groupby(["Contrato"], as_index=False)
+        detalhes.groupby("Contrato", as_index=False)
         .agg(
-            Meses_com_registros=("Competência", "nunique"),
-            Pontos_totais=("Pontos", "sum"),
+            **{
+                "Meses com registros": ("Competência", "nunique"),
+                "Pontos totais": ("Pontos", "sum"),
+            }
         )
     )
     resumo["Faixa mais frequente"] = resumo["Contrato"].map(
@@ -230,90 +207,167 @@ def render_eficiencia_wo(frame: pd.DataFrame) -> None:
             lambda faixas: faixas.value_counts().idxmax()
         )
     )
+    resumo = (
+        resumo.sort_values(["Pontos totais", "Contrato"], ascending=[False, True])
+        .reset_index(drop=True)[resumo_colunas]
+    )
+    faixas = detalhes["Faixa"].value_counts().reindex(FAIXAS, fill_value=0)
+    faixas.name = "Contratos"
+    return detalhes[detalhes_colunas], resumo, faixas.astype("int64")
 
+
+CORES_FAIXAS_BARRA = ["#1D4ED8", "#15803D", "#B45309", "#C2410C", "#6D28D9"]
+
+
+def _grafico_distribuicao_faixas(faixas: pd.Series) -> go.Figure:
+    fig = go.Figure(
+        go.Bar(
+            x=list(FAIXAS),
+            y=[int(valor) for valor in faixas.reindex(FAIXAS, fill_value=0)],
+            marker_color=CORES_FAIXAS_BARRA,
+            text=[int(valor) for valor in faixas.reindex(FAIXAS, fill_value=0)],
+            textposition="outside",
+            cliponaxis=False,
+            hovertemplate="<b>%{x}</b><br>%{y} contrato(s)·mês<extra></extra>",
+        )
+    )
+    fig.update_layout(
+        height=260,
+        margin={"l": 8, "r": 8, "t": 24, "b": 8},
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        bargap=0.4,
+        showlegend=False,
+        font={"family": Fontes.TEXTO, "color": Cores.TEXTO_3, "size": 11},
+        hoverlabel={"bgcolor": "white", "font_color": Cores.PRIMARIA},
+    )
+    fig.update_xaxes(showgrid=False, zeroline=False, fixedrange=True)
+    fig.update_yaxes(
+        gridcolor="#E6EDF5",
+        zeroline=False,
+        fixedrange=True,
+        dtick=1,
+        rangemode="tozero",
+        title="Contrato·mês",
+    )
+    return fig
+
+
+def _baixar_csv(frame: pd.DataFrame, nome: str, chave_prefixo: str) -> None:
+    st.download_button(
+        "Baixar em CSV",
+        data=frame.to_csv(index=False, sep=";", decimal=",").encode("utf-8-sig"),
+        file_name=nome,
+        mime="text/csv",
+        key=f"{chave_prefixo}_{nome}",
+    )
+
+
+def render_eficiencia_contrato(frame: pd.DataFrame) -> None:
+    """Seção enxuta de eficiência por contrato da aba unificada."""
     st.markdown("### Eficiência por contrato")
     st.caption(
-        "A tabela resume o total de pontos por contrato e mostra a contagem de contratos ativos no período."
+        "Faixa 1: menos de 300; Faixa 2: 300 a menos de 350; Faixa 3: 350 a "
+        "menos de 375; Faixa 4: 375 a menos de 400; Faixa 5: 400 ou mais "
+        "pontos por contrato·mês. Registros sem contrato válido não entram "
+        "na análise."
     )
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Contratos ativos", f"{resumo['Contrato'].nunique():,}".replace(",", "."))
-    col2.metric("Meses do período", f"{detalhes['Competência'].nunique():,}".replace(",", "."))
-    col3.metric("Pontos totais", f"{detalhes['Pontos'].sum():,.2f}".replace(",", "."))
+    if frame.empty:
+        st.info("Não há registros para calcular a eficiência por contrato.")
+        return
 
-    st.markdown("**Contagem de contratos por técnico**")
-    contagem_por_tecnico = (
-        work.groupby("technician", as_index=False)["Contrato"]
-        .nunique()
-        .rename(columns={"technician": "Técnico", "Contrato": "Contratos ativos"})
-        .sort_values("Contratos ativos", ascending=False)
+    tecnico_col = "technician" if "technician" in frame.columns else None
+    tecnicos = ["Todos"]
+    if tecnico_col:
+        tecnicos.extend(sorted(frame[tecnico_col].dropna().astype(str).unique().tolist()))
+    tecnico_selecionado = st.selectbox(
+        "Filtrar por técnico",
+        tecnicos,
+        index=0,
+        help="Ajusta o recorte para um técnico específico antes da análise por contrato.",
+        key="eficiencia_contrato_tecnico_filter",
     )
-    st.dataframe(
-        contagem_por_tecnico,
-        hide_index=True,
-        width="stretch",
-        alt="Contagem de contratos ativos por técnico",
-        column_config={
-            "Contratos ativos": st.column_config.NumberColumn(format="%d")
-        },
-    )
-
-    st.markdown("**Eficiência por contrato de cada técnico**")
-    tecnico_contrato = (
-        work.groupby(["technician", "Contrato"], as_index=False)
-        .agg(Pontos_totais=("Pontos", "sum"), Quantidade_registros=("Contrato", "size"))
-        .rename(columns={"technician": "Técnico", "Contrato": "Contrato"})
-        .sort_values(["Técnico", "Pontos_totais"], ascending=[True, False])
-    )
-    st.dataframe(
-        tecnico_contrato,
-        hide_index=True,
-        width="stretch",
-        alt="Eficiência por contrato de cada técnico",
-        column_config={
-            "Pontos_totais": st.column_config.NumberColumn(format="%.2f"),
-            "Quantidade_registros": st.column_config.NumberColumn(format="%d"),
-        },
+    recorte = (
+        frame[frame[tecnico_col].eq(tecnico_selecionado)]
+        if tecnico_selecionado != "Todos" and tecnico_col
+        else frame
     )
 
-    resumo_exibicao = resumo.rename(
-        columns={
-            "Meses_com_registros": "Meses com registros",
-            "Pontos_totais": "Pontos totais",
-            "Faixa mais frequente": "Faixa mais frequente",
-        }
-    )
-    st.dataframe(
-        resumo_exibicao.style.apply(
-            lambda row: pd.Series(
-                {
-                    "Meses com registros": "background-color: #E8EEF8; color: #012869; font-weight: 600",
-                    "Pontos totais": "background-color: #F1F5F9; color: #475569; font-weight: 600",
-                    "Faixa mais frequente": _estilo_faixa(row["Faixa mais frequente"]),
-                }
+    detalhes, resumo, faixas = resumir_eficiencia_contrato(recorte)
+    if detalhes.empty:
+        st.info("Nenhum contrato válido para o técnico selecionado no recorte atual.")
+        return
+
+    cards = st.columns(3)
+    with cards[0]:
+        render_kpi_card(
+            "CONTRATOS ATIVOS",
+            formatar_numero_br(len(resumo)),
+            "Contratos distintos com registros no recorte",
+            "CT",
+            card_class="kpi-card--azul",
+        )
+    with cards[1]:
+        render_kpi_card(
+            "MESES DO PERÍODO",
+            formatar_numero_br(detalhes["Competência"].nunique()),
+            "Competências com registros por contrato",
+            "MES",
+            card_class="kpi-card--laranja",
+        )
+    with cards[2]:
+        render_kpi_card(
+            "PONTOS TOTAIS",
+            formatar_numero_br(detalhes["Pontos"].sum(), 2),
+            "Soma dos pontos dos contratos no recorte",
+            "PTS",
+            card_class="kpi-card--verde",
+        )
+
+    grafico_col, resumo_col = st.columns([1, 1.35], gap="medium")
+    with grafico_col, st.container(border=True):
+        st.markdown("**Distribuição das faixas**")
+        st.plotly_chart(
+            _grafico_distribuicao_faixas(faixas),
+            width="stretch",
+            config={"displayModeBar": False, "responsive": True},
+        )
+    with resumo_col, st.container(border=True):
+        st.markdown("**Resumo por contrato**")
+        st.dataframe(
+            resumo.style.apply(
+                lambda row: pd.Series(
+                    {
+                        "Meses com registros": "background-color: #E8EEF8; color: #012869; font-weight: 600",
+                        "Pontos totais": "background-color: #F1F5F9; color: #475569; font-weight: 600",
+                        "Faixa mais frequente": _estilo_faixa(row["Faixa mais frequente"]),
+                    }
+                ),
+                axis=1,
             ),
-            axis=1,
-        ),
-        hide_index=True,
-        width="stretch",
-        alt="Resumo da eficiência por contrato",
-        column_config={
-            "Meses com registros": st.column_config.NumberColumn(format="%d"),
-            "Pontos totais": st.column_config.NumberColumn(format="%.2f"),
-            "Faixa mais frequente": st.column_config.TextColumn(width="small"),
-        },
-    )
+            hide_index=True,
+            width="stretch",
+            height=280,
+            alt="Resumo da eficiência por contrato",
+            column_config={
+                "Meses com registros": st.column_config.NumberColumn(format="%d"),
+                "Pontos totais": st.column_config.NumberColumn(format="%.2f"),
+                "Faixa mais frequente": st.column_config.TextColumn(width="small"),
+            },
+        )
+        _baixar_csv(resumo, "eficiencia_por_contrato.csv", "download_eficiencia_contrato")
 
-    st.markdown("**Detalhamento mensal por contrato**")
-    exibicao = detalhes.copy()
-    exibicao["Competência"] = exibicao["Competência"].map(month_label)
-    exibicao = exibicao[["Contrato", "Competência", "Pontos", "Faixa"]]
-    st.dataframe(
-        exibicao.style.map(_estilo_faixa, subset=["Faixa"]),
-        hide_index=True,
-        width="stretch",
-        alt="Detalhamento mensal de eficiência por contrato",
-        column_config={
-            "Pontos": st.column_config.NumberColumn(format="%.2f"),
-            "Faixa": st.column_config.TextColumn(width="small"),
-        },
-    )
+    with st.expander("Detalhamento mensal por contrato"):
+        exibicao = detalhes.copy()
+        exibicao["Competência"] = exibicao["Competência"].map(month_label)
+        st.dataframe(
+            exibicao.style.map(_estilo_faixa, subset=["Faixa"]),
+            hide_index=True,
+            width="stretch",
+            alt="Detalhamento mensal de eficiência por contrato",
+            column_config={
+                "Pontos": st.column_config.NumberColumn(format="%.2f"),
+                "Faixa": st.column_config.TextColumn(width="small"),
+            },
+        )
+        _baixar_csv(exibicao, "eficiencia_por_contrato_mensal.csv", "download_eficiencia_contrato_mensal")
