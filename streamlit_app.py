@@ -1326,12 +1326,4 @@ def render_dashboard() -> None:
 
 render_dashboard()
 
-# Conferência das colunas dos arquivos importados do Drive referente ao contrato
-with st.expander("Conferência de colunas dos arquivos importados do Drive"):
-    st.markdown(
-        """
-        <p>Esta seção exibe as colunas disponíveis nos registros importados do Drive.</p>
-        """,
-        unsafe_allow_html=True,
-    )
-    render_column_check(records)
+
