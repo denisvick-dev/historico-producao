@@ -22,11 +22,12 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from components.componentes import Cores, Fontes, formatar_numero_br
-from production import clean_contract, month_label, normalize_text
+from production import clean_contract, is_valid_contract, month_label
 
 COLUNAS_RESUMO = ["Projeto", "Técnico", "Contratos"]
 COLUNAS_TECNICO = ["Técnico", "Contratos", "Participação (%)"]
 COLUNAS_MENSAL = ["Competência", "Contratos ativos", "Contratos acumulados"]
+COLUNAS_ARQUIVO = ["Arquivo", "Origem", "Registros com contrato", "Contratos"]
 CHART_CONFIG = {"displayModeBar": False, "responsive": True}
 
 AZUL_TOTALE = Cores.PRIMARIA
@@ -36,16 +37,6 @@ LARANJA_TOTALE = Cores.SECUNDARIA
 # ====================================================
 # 🧮 CONTAGENS (funções puras)
 # ====================================================
-MARCADORES_SEM_CONTRATO = {
-    "semcontrato",
-    "null",
-    "na",
-    "nan",
-    "none",
-    "nat",
-}
-
-
 def _registros_com_contrato(frame: pd.DataFrame) -> tuple[pd.DataFrame, int]:
     """Separa os registros com identificador de contrato válido.
 
@@ -58,9 +49,7 @@ def _registros_com_contrato(frame: pd.DataFrame) -> tuple[pd.DataFrame, int]:
         return frame.iloc[0:0].copy(), 0
     work = frame.copy()
     work["contract"] = work["contract"].map(clean_contract)
-    ausente = work["contract"].isna() | work["contract"].map(normalize_text).isin(
-        MARCADORES_SEM_CONTRATO
-    )
+    ausente = ~work["contract"].map(is_valid_contract)
     return work.loc[~ausente].reset_index(drop=True), int(ausente.sum())
 
 
@@ -82,9 +71,11 @@ def resumir_contratos(frame: pd.DataFrame) -> tuple[pd.DataFrame, int, int]:
     if validos.empty:
         return pd.DataFrame(columns=colunas), 0, sem_contrato
     validos = validos.assign(technician=validos["technician"].map(_rotulo_tecnico))
-    resumo = validos.groupby(["project", "technician"], dropna=False)[
-        "contract"
-    ].nunique().reset_index()
+    resumo = (
+        validos.groupby(["project", "technician"], dropna=False)["contract"]
+        .nunique()
+        .reset_index()
+    )
     resumo.columns = colunas
     resumo = resumo.sort_values(
         ["Contratos distintos", "Projeto", "Técnico"],
@@ -103,16 +94,51 @@ def contar_contratos_por_tecnico(frame: pd.DataFrame) -> pd.DataFrame:
 
     work = validos.assign(Técnico=validos["technician"].map(_rotulo_tecnico))
     resumo = (
-        work.groupby("Técnico")
-        .agg(Contratos=("contract", "nunique"))
-        .reset_index()
+        work.groupby("Técnico").agg(Contratos=("contract", "nunique")).reset_index()
     )
     soma = int(resumo["Contratos"].sum())
     resumo["Participação (%)"] = (resumo["Contratos"] / soma * 100).round(1)
-    return (
-        resumo.sort_values(["Contratos", "Técnico"], ascending=[False, True])
-        .reset_index(drop=True)[COLUNAS_TECNICO]
+    return resumo.sort_values(
+        ["Contratos", "Técnico"], ascending=[False, True]
+    ).reset_index(drop=True)[COLUNAS_TECNICO]
+
+
+def contar_contratos_por_arquivo(frame: pd.DataFrame) -> pd.DataFrame:
+    """Contador de contratos distintos em cada arquivo importado.
+
+    O recorte é o mesmo da página (período e filtros); o arquivo vem de
+    ``source_file``. Registros sem contrato ficam fora do contador e da coluna
+    de registros, que por isso se chama ``Registros com contrato``.
+    """
+    if frame.empty or not {"source_file", "contract"}.issubset(frame.columns):
+        return pd.DataFrame(columns=COLUNAS_ARQUIVO)
+    validos, _ = _registros_com_contrato(frame)
+    if validos.empty:
+        return pd.DataFrame(columns=COLUNAS_ARQUIVO)
+    work = validos.assign(
+        Arquivo=validos["source_file"]
+        .fillna("Sem arquivo")
+        .astype(str)
+        .str.strip()
+        .replace("", "Sem arquivo")
     )
+    resumo = (
+        work.groupby("Arquivo", as_index=False)["contract"]
+        .agg(Registros="size", Contratos="nunique")
+        .rename(columns={"Registros": "Registros com contrato"})
+    )
+    if "source_sheet" in work.columns:
+        origens = work.groupby("Arquivo")["source_sheet"].agg(
+            lambda valores: " / ".join(
+                sorted({str(valor) for valor in valores.dropna() if str(valor).strip()})
+            )
+        )
+        resumo["Origem"] = resumo["Arquivo"].map(origens).fillna("—")
+    else:
+        resumo["Origem"] = "—"
+    return resumo.sort_values(
+        ["Contratos", "Arquivo"], ascending=[False, True]
+    ).reset_index(drop=True)[COLUNAS_ARQUIVO]
 
 
 def _competencias(frame: pd.DataFrame) -> pd.Series | None:
@@ -398,6 +424,32 @@ def render_contratos(frame: pd.DataFrame) -> None:
                 },
             )
             _baixar_csv(mensal, "contratos_por_mes.csv")
+
+    por_arquivo = contar_contratos_por_arquivo(frame)
+    st.markdown("### Contratos por arquivo importado")
+    if por_arquivo.empty:
+        st.info("Não há arquivo de origem associado aos contratos do recorte.")
+    else:
+        st.caption(
+            "Contador de contratos distintos em cada arquivo importado, dentro "
+            "do período e filtros selecionados. Registros sem contrato não "
+            "entram na contagem."
+        )
+        with st.container(border=True):
+            st.dataframe(
+                por_arquivo,
+                hide_index=True,
+                width="stretch",
+                column_config={
+                    "Arquivo": st.column_config.TextColumn(width="large"),
+                    "Origem": st.column_config.TextColumn(width="small"),
+                    "Registros com contrato": st.column_config.NumberColumn(
+                        format="%d"
+                    ),
+                    "Contratos": st.column_config.NumberColumn(format="%d"),
+                },
+            )
+            _baixar_csv(por_arquivo, "contratos_por_arquivo.csv")
 
     with st.expander("Detalhamento por projeto e técnico", expanded=False):
         st.dataframe(

@@ -1037,7 +1037,9 @@ def _load_dashboard_snapshot() -> tuple[pd.DataFrame, dict]:
     return load_dashboard_snapshot()
 
 
-def _trim_for_test_runtime(frame: pd.DataFrame, stats: dict) -> tuple[pd.DataFrame, dict]:
+def _trim_for_test_runtime(
+    frame: pd.DataFrame, stats: dict
+) -> tuple[pd.DataFrame, dict]:
     """Reduz a massa de dados em testes de UI sem alterar o comportamento em produção."""
     if os.getenv("PYTEST_CURRENT_TEST") is None or frame.empty:
         return frame, stats
@@ -1170,7 +1172,9 @@ with st.sidebar:
 def render_dashboard() -> None:
     """Painel principal, atualizado em segundo plano sem recarregar a página toda."""
     current_records, current_stats = _load_dashboard_snapshot()
-    current_records, current_stats = _trim_for_test_runtime(current_records, current_stats)
+    current_records, current_stats = _trim_for_test_runtime(
+        current_records, current_stats
+    )
     is_demo = bool(
         current_stats["records"]
         and current_stats["demo_rows"] == current_stats["records"]
@@ -1190,8 +1194,8 @@ def render_dashboard() -> None:
         ),
         "Contratos": (
             "Contratos por projeto e técnico",
-            "Acompanhe o contador de contratos distintos, a carteira por técnico "
-            "e a evolução mensal no período selecionado.",
+            "Acompanhe o contador de contratos distintos, a carteira por técnico, "
+            "a evolução mensal e os contratos de cada arquivo importado.",
         ),
         "Regularidade": (
             "Regularidade da produção",
@@ -1211,8 +1215,8 @@ def render_dashboard() -> None:
         ),
         "Saúde dos dados": (
             "Saúde dos dados e importações",
-            "Confira a cobertura dos registros, a sincronização "
-            "e os arquivos importados.",
+            "Confira a cobertura dos registros, a sincronização e o contador "
+            "de contratos de cada arquivo importado.",
         ),
     }
     title, subtitle = page_titles[navigation]
