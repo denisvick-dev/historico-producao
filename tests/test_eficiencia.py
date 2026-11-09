@@ -1,8 +1,10 @@
 import pandas as pd
+from pandas.io.formats.style import Styler
 
 from components.eficiencia import (
     _estilo_faixa,
     _estilo_resumo_linha,
+    _styled_faixa_table,
     calcular_eficiencia,
     resumir_eficiencia_contrato,
 )
@@ -76,6 +78,30 @@ def test_empate_na_faixa_mais_frequente_recebe_destaque():
     assert estilos["Faixa mais frequente"] == (
         "background-color: #E0F2FE; color: #075985; font-weight: 600"
     )
+
+
+def test_tabela_de_faixas_nao_aplica_styler_acima_do_limite():
+    frame = pd.DataFrame(
+        {
+            "Contrato": ["C1"],
+            "Competência": ["2026-01"],
+            "Pontos": [320],
+            "Faixa": ["Faixa 2"],
+        }
+    )
+
+    with pd.option_context("styler.render.max_elements", 3):
+        resultado = _styled_faixa_table(frame)
+
+    assert resultado is frame
+
+
+def test_tabela_de_faixas_mantem_styler_abaixo_do_limite():
+    frame = pd.DataFrame({"Faixa": ["Faixa 2"]})
+
+    resultado = _styled_faixa_table(frame)
+
+    assert isinstance(resultado, Styler)
 
 
 def test_resumo_eficiencia_contrato_ignora_sem_contrato_e_soma_pontos():

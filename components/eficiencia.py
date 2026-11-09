@@ -4,6 +4,7 @@ from __future__ import annotations
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+from pandas.io.formats.style import Styler
 
 from components.componentes import Cores, Fontes, formatar_numero_br, render_kpi_card
 from production import clean_contract, is_valid_contract, month_label
@@ -56,6 +57,12 @@ def _estilo_faixa(faixa: object) -> str:
         return ""
     fundo, texto = cores
     return f"background-color: {fundo}; color: {texto}; font-weight: 600"
+
+
+def _styled_faixa_table(frame: pd.DataFrame) -> pd.DataFrame | Styler:
+    if frame.size > pd.get_option("styler.render.max_elements"):
+        return frame
+    return frame.style.map(_estilo_faixa, subset=["Faixa"])
 
 
 def _estilo_resumo_linha(linha: pd.Series) -> pd.Series:
@@ -126,7 +133,7 @@ def render_eficiencia(frame: pd.DataFrame) -> None:
     exibicao = detalhes.copy()
     exibicao["Competência"] = exibicao["Competência"].map(month_label)
     st.dataframe(
-        exibicao.style.map(_estilo_faixa, subset=["Faixa"]),
+        _styled_faixa_table(exibicao),
         hide_index=True,
         width="stretch",
         alt="Pontos e faixa mensal por técnico",
@@ -361,7 +368,7 @@ def render_eficiencia_contrato(frame: pd.DataFrame) -> None:
         exibicao = detalhes.copy()
         exibicao["Competência"] = exibicao["Competência"].map(month_label)
         st.dataframe(
-            exibicao.style.map(_estilo_faixa, subset=["Faixa"]),
+            _styled_faixa_table(exibicao),
             hide_index=True,
             width="stretch",
             alt="Detalhamento mensal de eficiência por contrato",
