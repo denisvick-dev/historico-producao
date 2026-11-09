@@ -168,8 +168,8 @@ def contar_contratos_por_arquivo(frame: pd.DataFrame) -> pd.DataFrame:
         return pd.DataFrame(columns=COLUNAS_ARQUIVO)
     work = validos.assign(Arquivo=_chave_arquivo(validos["source_file"]))
     resumo = (
-        work.groupby("Arquivo", as_index=False)["contract"]
-        .agg(Registros="size")
+        work.groupby("Arquivo", as_index=False)
+        .agg(Registros=("contract", "size"))
         .rename(columns={"Registros": "Registros com contrato"})
     )
     if "contracts_qty" in work.columns:
