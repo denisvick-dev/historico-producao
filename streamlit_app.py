@@ -1162,8 +1162,8 @@ def render_dashboard() -> None:
         ),
         "Contratos": (
             "Contratos por projeto e técnico",
-            "Acompanhe o contador de contratos distintos, a carteira por técnico "
-            "e a evolução mensal no período selecionado.",
+            "Acompanhe o contador de contratos distintos, a carteira por técnico, "
+            "a evolução mensal e os contratos de cada arquivo importado.",
         ),
         "Regularidade": (
             "Regularidade da produção",
@@ -1183,8 +1183,8 @@ def render_dashboard() -> None:
         ),
         "Saúde dos dados": (
             "Saúde dos dados e importações",
-            "Confira a cobertura dos registros, a sincronização "
-            "e os arquivos importados.",
+            "Confira a cobertura dos registros, a sincronização e o contador "
+            "de contratos de cada arquivo importado.",
         ),
     }
     title, subtitle = page_titles[navigation]
