@@ -1039,7 +1039,10 @@ def create_demonstration() -> None:
                         "source_sheet": origin,
                         "contract": contract,
                         "points": float(points),
-                        "source_file": DEMO_SOURCE,
+                        # Um arquivo por competência (como as exportações reais
+                        # do Drive), para que a aba Contratos reflita a
+                        # Qtde_Contrato arquivo a arquivo.
+                        "source_file": f"{DEMO_SOURCE}_{period.strftime('%Y-%m')}",
                         "source_row": tech_index * len(periods) + month_index + 2,
                     }
                 )

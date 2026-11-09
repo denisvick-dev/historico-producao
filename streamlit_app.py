@@ -1207,8 +1207,8 @@ def render_dashboard() -> None:
         ),
         "Contratos": (
             "Contratos por projeto e técnico",
-            "Acompanhe o contador de contratos distintos, a carteira por técnico, "
-            "a evolução mensal e os contratos de cada arquivo importado.",
+            "Acompanhe a soma da Qtde_Contrato dos arquivos do recorte, a carteira por "
+            "técnico, a evolução mensal e os contratos de cada arquivo importado.",
         ),
         "Regularidade": (
             "Regularidade da produção",

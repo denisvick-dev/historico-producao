@@ -178,13 +178,15 @@ class ContadorContratosTests(unittest.TestCase):
         self.assertFalse(problemas)
         self.assertEqual(registros[0]["contract"], "00123")
 
-    def test_contador_mensal_preenche_lacunas_e_acumula_distintos(self) -> None:
+    def test_contador_mensal_preenche_lacunas_e_acumula_qtde_contrato(self) -> None:
         from components.contratos import contar_contratos_por_mes
 
         frame = pd.DataFrame(
             {
                 "technician": ["Ana"] * 6,
                 "contract": ["001", "002", "002", "003", "003", "004"],
+                "source_file": ["jan.xlsx", "jan.xlsx", "fev.xlsx", "fev.xlsx", "abr.xlsx", "abr.xlsx"],
+                "contracts_qty": [2, 2, 3, 3, 1, 1],
                 "period": pd.to_datetime(
                     [
                         "2026-01-01",
@@ -202,24 +204,47 @@ class ContadorContratosTests(unittest.TestCase):
             [
                 {
                     "Competência": "jan/26",
-                    "Contratos ativos": 2,
-                    "Contratos acumulados": 2,
+                    "Contratos no mês": 2,
+                    "Acumulado (soma)": 2,
                 },
                 {
                     "Competência": "fev/26",
-                    "Contratos ativos": 2,
-                    "Contratos acumulados": 3,
+                    "Contratos no mês": 3,
+                    "Acumulado (soma)": 5,
                 },
                 {
                     "Competência": "mar/26",
-                    "Contratos ativos": 0,
-                    "Contratos acumulados": 3,
+                    "Contratos no mês": 0,
+                    "Acumulado (soma)": 5,
                 },
                 {
                     "Competência": "abr/26",
-                    "Contratos ativos": 2,
-                    "Contratos acumulados": 4,
+                    "Contratos no mês": 1,
+                    "Acumulado (soma)": 6,
                 },
+            ],
+        )
+
+    def test_contador_mensal_soma_arquivos_na_mesma_competencia(self) -> None:
+        from components.contratos import contar_contratos_por_mes
+
+        frame = pd.DataFrame(
+            {
+                "technician": ["Ana"] * 4,
+                "contract": ["001", "002", "003", "004"],
+                "source_file": ["a.xlsx", "a.xlsx", "b.xlsx", "b.xlsx"],
+                "contracts_qty": [5, 5, 7, 7],
+                "period": pd.to_datetime(["2026-03-01"] * 4),
+            }
+        )
+        self.assertEqual(
+            contar_contratos_por_mes(frame).to_dict("records"),
+            [
+                {
+                    "Competência": "mar/26",
+                    "Contratos no mês": 12,
+                    "Acumulado (soma)": 12,
+                }
             ],
         )
 
@@ -229,6 +254,8 @@ class ContadorContratosTests(unittest.TestCase):
         frame = pd.DataFrame(
             {
                 "contract": ["001", "001"],
+                "source_file": ["mar.xlsx", "mar.xlsx"],
+                "contracts_qty": [4, 4],
                 "reference_date": pd.to_datetime(["2026-03-15", "2026-03-20"]),
             }
         )
@@ -237,8 +264,8 @@ class ContadorContratosTests(unittest.TestCase):
             [
                 {
                     "Competência": "mar/26",
-                    "Contratos ativos": 1,
-                    "Contratos acumulados": 1,
+                    "Contratos no mês": 4,
+                    "Acumulado (soma)": 4,
                 }
             ],
         )
@@ -251,6 +278,7 @@ class ContadorContratosTests(unittest.TestCase):
                 "source_file": ["a.xlsx", "a.xlsx", "b.xlsx", "b.xlsx"],
                 "source_sheet": ["Prod", "Gpon", "Prod", "Prod"],
                 "contract": ["001", "001", "002", "Sem contrato"],
+                "contracts_qty": [9, 9, 4, 4],
             }
         )
         self.assertEqual(
@@ -260,16 +288,58 @@ class ContadorContratosTests(unittest.TestCase):
                     "Arquivo": "a.xlsx",
                     "Origem": "Gpon / Prod",
                     "Registros com contrato": 2,
-                    "Contratos": 1,
+                    "Contratos": 9,
                 },
                 {
                     "Arquivo": "b.xlsx",
                     "Origem": "Prod",
                     "Registros com contrato": 1,
-                    "Contratos": 1,
+                    "Contratos": 4,
                 },
             ],
         )
+
+    def test_contador_por_arquivo_sem_coluna_qtde_cai_para_nunique(self) -> None:
+        from components.contratos import contar_contratos_por_arquivo
+
+        frame = pd.DataFrame(
+            {
+                "source_file": ["a.xlsx", "a.xlsx"],
+                "source_sheet": ["Prod", "Prod"],
+                "contract": ["001", "002"],
+            }
+        )
+        self.assertEqual(
+            contar_contratos_por_arquivo(frame).to_dict("records"),
+            [
+                {
+                    "Arquivo": "a.xlsx",
+                    "Origem": "Prod",
+                    "Registros com contrato": 2,
+                    "Contratos": 2,
+                },
+            ],
+        )
+
+    def test_somar_qtde_contrato_soma_arquivos_uma_vez_cada(self) -> None:
+        from components.contratos import somar_qtde_contrato
+
+        frame = pd.DataFrame(
+            {
+                "contract": ["001", "002", "001", "003"],
+                "source_file": ["a.xlsx", "a.xlsx", "b.xlsx", "b.xlsx"],
+                "contracts_qty": [2, 2, 1, 1],
+            }
+        )
+        soma, arquivos = somar_qtde_contrato(frame)
+        self.assertEqual((soma, arquivos), (3, 2))
+
+    def test_somar_qtde_contrato_sem_arquivos(self) -> None:
+        from components.contratos import somar_qtde_contrato
+
+        frame = pd.DataFrame({"contract": ["001"], "contracts_qty": [0]})
+        self.assertEqual(somar_qtde_contrato(frame), (0, 1))
+        self.assertEqual(somar_qtde_contrato(frame.iloc[0:0]), (0, 0))
 
     def test_contador_por_arquivo_sem_coluna_de_origem(self) -> None:
         from components.contratos import contar_contratos_por_arquivo
