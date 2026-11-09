@@ -11,7 +11,7 @@ Módulo                             Responsabilidade
 =================================  ==========================================================
 ``componentes``                    Design System base (cores, fontes, KPI, heróis, tabelas)
 ``kpi_cards``                      Cartões de KPI avançados — substituto do ``st.metric``
-``graficos``                       Fábrica minimalista de gráficos (Plotly Express)
+``graficos``                       Tokens de identidade visual (cores TOTALE)
 ``css_global``                     CSS global dos componentes nativos (uma injeção por sessão)
 ``layout_pagina``                  Hierarquia de leitura das páginas (seções, filtros, rodapé)
 ``sidebar``                        Sidebar corporativa e temas

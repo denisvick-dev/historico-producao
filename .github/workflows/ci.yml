@@ -33,12 +33,7 @@ jobs:
         run: |
           # E402 is intentional: structlog is configured before importing app modules.
           ruff check . --select E4,E7,E9,F --ignore E402
-          # Limit format checks to modified modules; legacy files have formatting drift.
-          ruff format --check \
-            streamlit_app.py \
-            components/visoes_dashboards.py \
-            tests/test_visoes_dashboards.py \
-            tests/test_streamlit_app.py
+          ruff format --check .
 
       - name: Type checking (mypy)
         run: |
@@ -47,9 +42,7 @@ jobs:
             --disable-error-code=type-arg \
             --disable-error-code=no-any-return \
             --disable-error-code=unused-ignore \
-            production.py drive_import.py components/componentes.py \
-            components/css_global.py components/prod_os.py \
-            streamlit_app.py components/visoes_dashboards.py
+            .
 
       - name: Run unit tests
         run: |
@@ -58,4 +51,4 @@ jobs:
       - name: Compile check
         run: |
           python -m py_compile streamlit_app.py production.py drive_import.py
-          python -m py_compile components/componentes.py components/css_global.py components/prod_os.py
+          python -m py_compile components/componentes.py components/css_global.py components/prod_os.py components/graficos.py

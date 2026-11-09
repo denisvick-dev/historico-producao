@@ -16,7 +16,7 @@ from components.visoes_dashboards import (
 
 
 class ProjectDashboardTests(unittest.TestCase):
-    def test_project_summary_combines_points_but_counts_os_only_from_prod(self):
+    def test_project_summary_combines_points_but_counts_os_only_from_prod(self) -> None:
         frame = pd.DataFrame(
             [
                 {
@@ -63,7 +63,7 @@ class ProjectDashboardTests(unittest.TestCase):
         self.assertEqual(resumo.loc["Sem projeto", "os_count"], 0)
         self.assertAlmostEqual(resumo["share_pct"].sum(), 100)
 
-    def test_empty_project_summary_has_stable_columns(self):
+    def test_empty_project_summary_has_stable_columns(self) -> None:
         result = resumir_projetos(pd.DataFrame())
         self.assertEqual(
             list(result.columns),
@@ -80,7 +80,7 @@ class ProjectDashboardTests(unittest.TestCase):
 
 
 class ProductionRegularityTests(unittest.TestCase):
-    def test_regularidade_conta_lacunas_e_destaca_um_pico(self):
+    def test_regularidade_conta_lacunas_e_destaca_um_pico(self) -> None:
         frame = pd.DataFrame(
             [
                 {"technician": "Ana", "period": "2026-01-01", "points": 100},
@@ -108,7 +108,7 @@ class ProductionRegularityTests(unittest.TestCase):
         self.assertEqual(bia["months_without_records"], 3)
         self.assertEqual(bia["regularity"], "Base curta")
 
-    def test_regularidade_vazia_mantem_colunas(self):
+    def test_regularidade_vazia_mantem_colunas(self) -> None:
         resumo = resumir_regularidade(pd.DataFrame())
         self.assertIn("missing_periods", resumo.columns)
         self.assertIn("coefficient_variation_pct", resumo.columns)
@@ -116,7 +116,7 @@ class ProductionRegularityTests(unittest.TestCase):
 
 
 class SeasonalityDashboardTests(unittest.TestCase):
-    def test_heatmap_preenche_competencias_e_ordena_entidades(self):
+    def test_heatmap_preenche_competencias_e_ordena_entidades(self) -> None:
         frame = pd.DataFrame(
             [
                 {
@@ -161,7 +161,7 @@ class SeasonalityDashboardTests(unittest.TestCase):
         )
         self.assertEqual(matrix.loc["Bia"].tolist(), [40, 20, 0, 0])
 
-    def test_heatmap_aceita_projeto_e_valida_dimensao(self):
+    def test_heatmap_aceita_projeto_e_valida_dimensao(self) -> None:
         frame = pd.DataFrame(
             [
                 {
@@ -187,7 +187,7 @@ class SeasonalityDashboardTests(unittest.TestCase):
 
 
 class ExecutiveDashboardTests(unittest.TestCase):
-    def test_technician_comparison_marks_new_and_inactive_people(self):
+    def test_technician_comparison_marks_new_and_inactive_people(self) -> None:
         atual = pd.DataFrame(
             [
                 {"technician": "Ana", "source_sheet": "Prod", "points": 150},
@@ -210,7 +210,7 @@ class ExecutiveDashboardTests(unittest.TestCase):
         self.assertEqual(resultado.loc["Caio", "Status"], "Sem produção atual")
         self.assertEqual(resultado.loc["Caio", "Variação (%)"], -100)
 
-    def test_empty_previous_window_is_not_misreported_as_new_hires(self):
+    def test_empty_previous_window_is_not_misreported_as_new_hires(self) -> None:
         atual = pd.DataFrame(
             [{"technician": "Ana", "source_sheet": "Prod", "points": 100}]
         )
@@ -220,7 +220,7 @@ class ExecutiveDashboardTests(unittest.TestCase):
         self.assertEqual(resultado.loc[0, "Status"], "Sem base anterior")
         self.assertTrue(pd.isna(resultado.loc[0, "Variação (%)"]))
 
-    def test_comparison_label_uses_equal_length_month_windows(self):
+    def test_comparison_label_uses_equal_length_month_windows(self) -> None:
         atual = pd.DataFrame(
             {"period": [pd.Timestamp("2026-10-01"), pd.Timestamp("2026-11-01")]}
         )
@@ -228,7 +228,7 @@ class ExecutiveDashboardTests(unittest.TestCase):
         self.assertIn("out/26–nov/26", label)
         self.assertIn("ago/26–set/26", label)
 
-    def test_comparison_label_shows_exact_custom_window_dates(self):
+    def test_comparison_label_shows_exact_custom_window_dates(self) -> None:
         atual = pd.DataFrame({"period": [pd.Timestamp("2026-10-01")]})
 
         label = rotulo_janelas_comparacao(
@@ -241,7 +241,7 @@ class ExecutiveDashboardTests(unittest.TestCase):
         self.assertIn("15/10/2026 a 05/11/2026", label)
         self.assertIn("15/08/2026 a 14/10/2026", label)
 
-    def test_previous_period_matches_window_and_selected_dimensions(self):
+    def test_previous_period_matches_window_and_selected_dimensions(self) -> None:
         records = pd.DataFrame(
             [
                 {
@@ -320,7 +320,7 @@ class ExecutiveDashboardTests(unittest.TestCase):
 
 
 class DataHealthDashboardTests(unittest.TestCase):
-    def test_data_coverage_counts_unassigned_projects_and_demo_rows(self):
+    def test_data_coverage_counts_unassigned_projects_and_demo_rows(self) -> None:
         frame = pd.DataFrame(
             [
                 {"technician": "Ana", "project": "Projeto A", "is_demo": 0},
@@ -339,7 +339,7 @@ class DataHealthDashboardTests(unittest.TestCase):
         self.assertEqual(resumo["registros_demo"], 2)
         self.assertEqual(resumo["registros_producao"], 1)
 
-    def test_empty_data_has_zeroed_health_indicators(self):
+    def test_empty_data_has_zeroed_health_indicators(self) -> None:
         resumo = resumir_saude_dados(pd.DataFrame())
         self.assertEqual(resumo["registros"], 0)
         self.assertEqual(resumo["sem_projeto"], 0)

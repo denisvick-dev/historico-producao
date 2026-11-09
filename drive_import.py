@@ -22,7 +22,7 @@ DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.readonly"
 GOOGLE_SHEET_MIME_TYPE = "application/vnd.google-apps.spreadsheet"
 SUPPORTED_SUFFIXES = {".csv", ".xls", ".xlsx"}
 MAX_PARALLEL_DOWNLOADS = 8
-IMPORT_PARSER_VERSION = "contracts-v1"
+IMPORT_PARSER_VERSION = "contracts-v2"
 
 logger = structlog.get_logger(__name__)
 
@@ -70,7 +70,9 @@ def _request(
         response = session.get(url, params=params, timeout=60)
         response.raise_for_status()
     except requests.HTTPError as error:
-        status = error.response.status_code if error.response is not None else "desconhecido"
+        status = (
+            error.response.status_code if error.response is not None else "desconhecido"
+        )
         raise DriveImportError(
             f"O Google Drive retornou HTTP {status}. Confirme que a pasta foi "
             "compartilhada com a conta de serviço e que a API Drive está habilitada."
@@ -89,8 +91,7 @@ def list_folder_files(session: Any, folder_id: str) -> list[dict[str, str]]:
         params: dict[str, str | int | bool] = {
             "q": f"'{folder_id}' in parents and trashed = false",
             "fields": (
-                "nextPageToken,"
-                "files(id,name,mimeType,modifiedTime,md5Checksum,size)"
+                "nextPageToken,files(id,name,mimeType,modifiedTime,md5Checksum,size)"
             ),
             "pageSize": 1000,
             "supportsAllDrives": True,
@@ -102,9 +103,13 @@ def list_folder_files(session: Any, folder_id: str) -> list[dict[str, str]]:
         try:
             page = response.json()
         except ValueError as error:
-            raise DriveImportError("O Google Drive retornou uma resposta inválida.") from error
+            raise DriveImportError(
+                "O Google Drive retornou uma resposta inválida."
+            ) from error
         if not isinstance(page, dict) or not isinstance(page.get("files", []), list):
-            raise DriveImportError("O Google Drive retornou uma lista de arquivos inválida.")
+            raise DriveImportError(
+                "O Google Drive retornou uma lista de arquivos inválida."
+            )
         files.extend(file for file in page.get("files", []) if isinstance(file, dict))
         page_token = page.get("nextPageToken")
         if not page_token:
@@ -144,9 +149,7 @@ def _source_filename(file: dict[str, str]) -> str | None:
     return f"{stem} [{file_id}]{suffix}"
 
 
-def download_file(
-    session: Any, file: dict[str, str]
-) -> tuple[str, bytes] | None:
+def download_file(session: Any, file: dict[str, str]) -> tuple[str, bytes] | None:
     filename = _source_filename(file)
     if filename is None:
         return None
@@ -179,9 +182,13 @@ def _import_drive_file(
 ) -> tuple[list[dict], list[str], bool]:
     drive_name = drive_file.get("name", "Arquivo sem nome")
     if _source_filename(drive_file) is None:
-        return [], [
-            f"{drive_name} · formato não suportado; use XLSX, XLS, CSV ou Planilhas Google."
-        ], False
+        return (
+            [],
+            [
+                f"{drive_name} · formato não suportado; use XLSX, XLS, CSV ou Planilhas Google."
+            ],
+            False,
+        )
 
     try:
         worker_session = (
@@ -189,15 +196,17 @@ def _import_drive_file(
             if credentials is not None
             else create_drive_session(service_account_info)
         )
-        downloaded = download_file(
-            worker_session, drive_file
-        )
+        downloaded = download_file(worker_session, drive_file)
     except DriveImportError as error:
         return [], [f"{drive_name} · {error}"], False
     if downloaded is None:
-        return [], [
-            f"{drive_name} · formato não suportado; use XLSX, XLS, CSV ou Planilhas Google."
-        ], False
+        return (
+            [],
+            [
+                f"{drive_name} · formato não suportado; use XLSX, XLS, CSV ou Planilhas Google."
+            ],
+            False,
+        )
 
     filename, content = downloaded
     try:
@@ -210,7 +219,11 @@ def _import_drive_file(
     except ValueError as error:
         return [], [f"{drive_name} · {error}"], False
 
-    refreshed = bool(file_records or not file_issues)
+    # O arquivo foi baixado e processado: mesmo com issues pontuais (linhas
+    # inválidas), o fingerprint deve ser salvo para não rebaixar o arquivo a
+    # cada sincronização. Só os retornos antecipados acima (formato não
+    # suportado, falha de download ou erro fatal de leitura) não refrescam.
+    refreshed = True
     issues = [f"{drive_name} · {issue}" for issue in file_issues[:20]]
     return file_records, issues, refreshed
 
@@ -230,9 +243,7 @@ def import_drive_folder_snapshot(
     issues: list[str] = []
     successful_files = 0
     file_ids = {
-        file_id
-        for drive_file in files
-        if (file_id := drive_file.get("id", "").strip())
+        file_id for drive_file in files if (file_id := drive_file.get("id", "").strip())
     }
     refreshed_file_ids: set[str] = set()
     file_fingerprints: dict[str, str] = {}
@@ -242,10 +253,7 @@ def import_drive_folder_snapshot(
     for drive_file in files:
         fingerprint = _file_fingerprint(drive_file)
         file_id = drive_file.get("id", "")
-        if (
-            fingerprint is None
-            or fingerprint != known_file_fingerprints.get(file_id)
-        ):
+        if fingerprint is None or fingerprint != known_file_fingerprints.get(file_id):
             changed_files.append(drive_file)
 
     if changed_files:

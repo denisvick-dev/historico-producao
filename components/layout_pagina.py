@@ -271,7 +271,9 @@ def render_chips(
     """Faixa de chips com o contexto da página (período, registros, fontes…)."""
     if not itens:
         return
-    pares = list(itens.items()) if isinstance(itens, Mapping) else [tuple(i) for i in itens]
+    pares = (
+        list(itens.items()) if isinstance(itens, Mapping) else [tuple(i) for i in itens]
+    )
     marcados = {str(d) for d in destaque}
     acoes = {str(a) for a in acao}
     chips: list[str] = []
@@ -321,7 +323,9 @@ def render_cabecalho_pagina(
             for parte in (
                 periodo,
                 f"{formatar_numero_br(registros)} registros" if registros else "",
-                f"Atualizado em {_texto_horario(atualizado_em)}" if atualizado_em else "",
+                f"Atualizado em {_texto_horario(atualizado_em)}"
+                if atualizado_em
+                else "",
             )
             if parte
         )
@@ -525,7 +529,9 @@ def painel(
     então o parâmetro só é enviado quando informado.
     """
     if titulo:
-        _cabecalho_secao(titulo, icone=icone, subtitulo=subtitulo, badge=badge, ancora="")
+        _cabecalho_secao(
+            titulo, icone=icone, subtitulo=subtitulo, badge=badge, ancora=""
+        )
     opcoes: dict[str, Any] = {"border": True}
     if altura and int(altura) > 0:
         opcoes["height"] = int(altura)
@@ -542,7 +548,9 @@ def barra_filtros(
     icone: str = "tune",
     fixa: bool = True,
     colunas: int = 4,
-    gap: Literal["xxsmall", "xsmall", "small", "medium", "large"] | int | None = "small",
+    gap: Literal["xxsmall", "xsmall", "small", "medium", "large"]
+    | int
+    | None = "small",
 ) -> Iterator[list[Any]]:
     """Barra de filtros fixa no topo da página ao rolar (sticky).
 
@@ -589,7 +597,9 @@ def render_abas(
     if icones:
         nomes = [
             f"{icone} {nome}".strip() if icone else nome
-            for nome, icone in zip(nomes, list(icones) + [""] * max(0, len(nomes) - len(icones)))
+            for nome, icone in zip(
+                nomes, list(icones) + [""] * max(0, len(nomes) - len(icones))
+            )
         ]
     try:
         return list(st.tabs(nomes))
@@ -602,7 +612,8 @@ def render_divisor(texto: str = "", *, container: Any = None) -> None:
     """Divisor horizontal com rótulo opcional (marca mudança de bloco)."""
     if texto:
         _safe_render_html(
-            f'<div class="totale-divisor">{Validadores.html_escape(texto)}</div>', container
+            f'<div class="totale-divisor">{Validadores.html_escape(texto)}</div>',
+            container,
         )
     else:
         st.divider()
@@ -646,7 +657,9 @@ def render_barra_acoes(
 def colunas(
     quantidade: int,
     *,
-    gap: Literal["xxsmall", "xsmall", "small", "medium", "large"] | int | None = "small",
+    gap: Literal["xxsmall", "xsmall", "small", "medium", "large"]
+    | int
+    | None = "small",
     proporcao: Sequence[float] | None = None,
 ) -> list[Any]:
     """Atalho de grade: aceita número de colunas ou proporções."""

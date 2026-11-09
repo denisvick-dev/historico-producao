@@ -627,7 +627,9 @@ def _render_html(markup: str, container: Any = None) -> None:
             html_fn(limpo)
             return
         except Exception:
-            logger.debug("st.html falhou; usando markdown com HTML permitido.", exc_info=True)
+            logger.debug(
+                "st.html falhou; usando markdown com HTML permitido.", exc_info=True
+            )
     try:
         destino.markdown(limpo, unsafe_allow_html=True)
     except Exception:
@@ -786,7 +788,9 @@ def render_sidebar_brand(
 
     badge = ""
     if versao_final:
-        badge_txt = versao_final if versao_final.lower().startswith("v") else f"v{versao_final}"
+        badge_txt = (
+            versao_final if versao_final.lower().startswith("v") else f"v{versao_final}"
+        )
         badge = (
             f'<span style="display:inline-flex;margin-top:8px;padding:4px 9px;border-radius:999px;'
             f"background:{fundo_badge};color:{cor_badge};border:1px solid {borda_badge};"
@@ -799,9 +803,7 @@ def render_sidebar_brand(
             f'alt="{_escapar(nome_final or "Logotipo")}" loading="lazy">'
         )
     else:
-        marca_visual = (
-            f'<span class="sidebar-brand-mark" aria-hidden="true">{_escapar(icone or "⚡")}</span>'
-        )
+        marca_visual = f'<span class="sidebar-brand-mark" aria-hidden="true">{_escapar(icone or "⚡")}</span>'
     nome_html = (
         f'<h2 class="sidebar-brand-name" style="color:{cor_nome};{estilo_nome}">'
         f"{_escapar(nome_final)}</h2>"
@@ -1047,7 +1049,9 @@ def render_sidebar_info(
         elif user_name.strip():
             partes = user_name.strip().split()
             iniciais = (
-                (partes[0][0] + partes[-1][0]).upper() if len(partes) > 1 else partes[0][0].upper()
+                (partes[0][0] + partes[-1][0]).upper()
+                if len(partes) > 1
+                else partes[0][0].upper()
             )
         else:
             iniciais = "U"
@@ -1178,7 +1182,9 @@ def render_sidebar_status(
         f'<span style="font-size:11px;color:{tokens["texto_primario"]};font-weight:750;">{_escapar(valor)}</span></div>'
         for chave, valor in (detalhes or {}).items()
     )
-    ultima_fmt = formatar_datetime_exibicao(ultima_atualizacao) if ultima_atualizacao else ""
+    ultima_fmt = (
+        formatar_datetime_exibicao(ultima_atualizacao) if ultima_atualizacao else ""
+    )
     data_html = (
         f'<div style="font-size:10px;color:{tokens["texto_muted"]};margin-top:6px;">'
         f"Atualizado {_escapar(ultima_fmt)}</div>"
@@ -1215,7 +1221,9 @@ def render_sidebar_spacer(
             altura_css = valor
         else:
             altura_css = presets.get(valor, "16px")
-    _render_html(f'<div aria-hidden="true" style="height:{altura_css};"></div>', st.sidebar)
+    _render_html(
+        f'<div aria-hidden="true" style="height:{altura_css};"></div>', st.sidebar
+    )
 
 
 __all__ = [

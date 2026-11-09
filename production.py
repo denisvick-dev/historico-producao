@@ -94,6 +94,19 @@ WO_ALIASES = {
     "numerowo",
     "wo_number",
 }
+#: Coluna opcional de contagem de contratos exportada pelo sistema de origem:
+#: traz ``1`` na primeira linha de cada contrato do arquivo e ``0`` nas demais.
+#: É a fonte oficial de ``contracts_qty`` (soma por arquivo); arquivos sem a
+#: coluna caem no fallback de contratos distintos (``nunique``).
+QTD_CONTRATO_ALIASES = {
+    "qtdecontrato",
+    "qtdcontrato",
+    "quantidadecontrato",
+    "qtdecontratos",
+    "qtdcontratos",
+    "contratosqtde",
+    "contratosqtd",
+}
 DATE_ALIASES = {
     "data",
     "dataproducao",
@@ -197,7 +210,13 @@ def clean_contract(value: object) -> str | None:
     if value is None or value is pd.NA or value is pd.NaT:
         return None
     text = re.sub(r"\s+", " ", str(value)).strip()
-    if not text or normalize_text(text) in {"nan", "none", "nat", "semcontrato", "null"}:
+    if not text or normalize_text(text) in {
+        "nan",
+        "none",
+        "nat",
+        "semcontrato",
+        "null",
+    }:
         return None
     return text
 
@@ -230,12 +249,40 @@ def is_valid_contract(value: object) -> bool:
     )
 
 
+def parse_contract_flag(value: object) -> int | None:
+    """Interpreta o flag da coluna ``Qtde_Contrato`` de uma linha.
+
+    O export marca ``1`` na primeira linha de cada contrato do arquivo e ``0``
+    nas demais. Devolve ``1``/``0`` para valores válidos e ``None`` quando a
+    célula está vazia ou inválida (a linha não contribui para a soma).
+    """
+    if value is None or value is pd.NA or value is pd.NaT:
+        return None
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, (int, float)):
+        if pd.isna(value):
+            return None
+        return 1 if float(value) == 1 else 0 if float(value) == 0 else None
+    text = str(value).strip().replace(",", ".")
+    if not text:
+        return None
+    try:
+        number = float(text)
+    except ValueError:
+        return None
+    return 1 if number == 1 else 0 if number == 0 else None
+
+
 def add_contracts_qty(frame: pd.DataFrame) -> pd.DataFrame:
     """Adiciona a coluna ``contracts_qty`` (Qtde_Contrato) ao frame.
 
     O valor repete, em todas as linhas de um arquivo, o total de contratos
-    distintos identificados naquele arquivo. Registros sem contrato não entram
-    na contagem; arquivos sem nenhum contrato ficam com zero.
+    daquele arquivo. A fonte oficial é a soma dos flags da coluna
+    ``Qtde_Contrato`` do export (``1`` na primeira linha de cada contrato);
+    arquivos sem flags (coluna ausente ou toda vazia) caem no fallback de
+    contratos distintos (``nunique``). Registros sem contrato não entram na
+    contagem; arquivos sem nenhum contrato ficam com zero.
     """
     if frame.empty:
         frame["contracts_qty"] = pd.Series(dtype="int64")
@@ -249,9 +296,14 @@ def add_contracts_qty(frame: pd.DataFrame) -> pd.DataFrame:
         if not validos.empty
         else pd.Series(dtype="int64")
     )
-    frame["contracts_qty"] = (
-        frame["source_file"].map(contagem).fillna(0).astype(int)
-    )
+    if "contract_flag" in frame.columns:
+        flags = pd.to_numeric(validos["contract_flag"], errors="coerce")
+        if flags.notna().any():
+            soma_flags = flags.groupby(validos["source_file"]).sum().astype(int)
+            com_flags = flags.notna().groupby(validos["source_file"]).any()
+            # Arquivos com flags usam a soma oficial; os demais mantêm o nunique.
+            contagem = soma_flags[com_flags].combine_first(contagem)
+    frame["contracts_qty"] = frame["source_file"].map(contagem).fillna(0).astype(int)
     return frame
 
 
@@ -260,7 +312,14 @@ def clean_wo(value: object) -> str | None:
     if value is None or value is pd.NA or value is pd.NaT:
         return None
     text = re.sub(r"\s+", " ", str(value)).strip()
-    if not text or normalize_text(text) in {"nan", "none", "nat", "semwo", "semos", "null"}:
+    if not text or normalize_text(text) in {
+        "nan",
+        "none",
+        "nat",
+        "semwo",
+        "semos",
+        "null",
+    }:
         return None
     return text
 
@@ -321,7 +380,9 @@ def parse_reference_date(value: object) -> pd.Timestamp | None:
             timestamp = pd.to_datetime(
                 float(value), unit="D", origin="1899-12-30", errors="coerce"
             )
-            return timestamp.normalize() if isinstance(timestamp, pd.Timestamp) else None
+            return (
+                timestamp.normalize() if isinstance(timestamp, pd.Timestamp) else None
+            )
         return None
 
     text = str(value).strip()
@@ -421,6 +482,7 @@ def process_dataframe(
     project_col = find_column(frame, PROJECT_ALIASES)
     contract_col = find_column(frame, CONTRACT_ALIASES)
     wo_col = find_column(frame, WO_ALIASES)
+    qtd_contrato_col = find_column(frame, QTD_CONTRATO_ALIASES)
     date_col = find_date_column(frame)
     available = ", ".join(str(column) for column in frame.columns)
     if technician_col is None or points_col is None:
@@ -452,6 +514,7 @@ def process_dataframe(
     project_position = None
     contract_position = None
     wo_position = None
+    qtd_contrato_position = None
     if date_col is not None:
         date_position = len(selected_columns) + 1
         selected_columns.append(date_col)
@@ -464,7 +527,11 @@ def process_dataframe(
     if wo_col is not None:
         wo_position = len(selected_columns) + 1
         selected_columns.append(wo_col)
+    if qtd_contrato_col is not None:
+        qtd_contrato_position = len(selected_columns) + 1
+        selected_columns.append(qtd_contrato_col)
 
+    invalid_flags = 0
     for row in frame[selected_columns].itertuples(index=True, name=None):
         index = row[0]
         excel_row = int(index) + 2 if isinstance(index, int) else len(records) + 2
@@ -486,6 +553,17 @@ def process_dataframe(
             issues.append(f"Linha {excel_row}: data inválida ({date_value!r}).")
             continue
 
+        contract_flag = None
+        if qtd_contrato_position is not None:
+            flag_value = row[qtd_contrato_position]
+            contract_flag = parse_contract_flag(flag_value)
+            if (
+                contract_flag is None
+                and not pd.isna(flag_value)
+                and str(flag_value).strip()
+            ):
+                invalid_flags += 1
+
         records.append(
             {
                 "technician": technician,
@@ -502,12 +580,18 @@ def process_dataframe(
                 "wo": _wo_or_placeholder(
                     row[wo_position] if wo_position is not None else None
                 ),
+                "contract_flag": contract_flag,
                 "points": float(points),
                 "source_file": source_file,
                 "source_row": excel_row,
             }
         )
 
+    if invalid_flags:
+        issues.append(
+            f"{invalid_flags} valor(es) inválido(s) na coluna Qtde_Contrato "
+            "(esperado 1 ou 0); essas linhas não entram na soma de contratos."
+        )
     if not records and not issues:
         issues.append("Nenhuma linha com técnico e pontos válidos foi encontrada.")
     return records, issues
@@ -521,7 +605,9 @@ def read_csv(content: bytes) -> pd.DataFrame:
             headers = pd.read_csv(io.StringIO(text), sep=None, engine="python", nrows=0)
             contract_col = find_column(headers, CONTRACT_ALIASES)
             dtype = {contract_col: str} if contract_col is not None else None
-            return pd.read_csv(io.StringIO(text), sep=None, engine="python", dtype=dtype)
+            return pd.read_csv(
+                io.StringIO(text), sep=None, engine="python", dtype=dtype
+            )
         except (UnicodeDecodeError, pd.errors.ParserError) as error:
             last_error = error
     raise ValueError(f"Não foi possível ler o CSV: {last_error}")
@@ -559,17 +645,25 @@ def process_upload(
         if sheet_name is None:
             continue
         found = True
-        frame = None
-        for header_row in range(10):
-            candidate = pd.read_excel(workbook, sheet_name=sheet_name, header=header_row)
+        # Detecta a linha do cabeçalho numa prévia pequena (10 linhas) e só
+        # então lê a aba inteira uma única vez — evita até 10 leituras
+        # completas de arquivos de vários MB por aba.
+        header_row = None
+        for candidate_row in range(10):
+            preview = pd.read_excel(
+                workbook, sheet_name=sheet_name, header=candidate_row, nrows=10
+            )
             if (
-                find_column(candidate, TECHNICIAN_ALIASES) is not None
-                and find_column(candidate, POINTS_ALIASES) is not None
+                find_column(preview, TECHNICIAN_ALIASES) is not None
+                and find_column(preview, POINTS_ALIASES) is not None
             ):
-                frame = candidate
+                header_row = candidate_row
                 break
-        if frame is None:
-            frame = pd.read_excel(workbook, sheet_name=sheet_name)
+        frame = pd.read_excel(
+            workbook,
+            sheet_name=sheet_name,
+            header=header_row if header_row is not None else 0,
+        )
         sheet_records, sheet_issues = process_dataframe(
             frame, origin, filename, default_date
         )
@@ -608,6 +702,7 @@ def init_database() -> None:
                 project TEXT NOT NULL DEFAULT 'Sem projeto',
                 contract TEXT DEFAULT NULL,
                 wo TEXT DEFAULT NULL,
+                contract_flag INTEGER DEFAULT NULL,
                 points REAL NOT NULL,
                 source_file TEXT NOT NULL,
                 source_row INTEGER NOT NULL,
@@ -633,16 +728,24 @@ def init_database() -> None:
         )
         columns = {
             row["name"]
-            for row in connection.execute("PRAGMA table_info(production_records)").fetchall()
+            for row in connection.execute(
+                "PRAGMA table_info(production_records)"
+            ).fetchall()
         }
         if "project" not in columns:
             connection.execute(
                 "ALTER TABLE production_records ADD COLUMN project TEXT NOT NULL DEFAULT 'Sem projeto'"
             )
         if "contract" not in columns:
-            connection.execute("ALTER TABLE production_records ADD COLUMN contract TEXT")
+            connection.execute(
+                "ALTER TABLE production_records ADD COLUMN contract TEXT"
+            )
         if "wo" not in columns:
             connection.execute("ALTER TABLE production_records ADD COLUMN wo TEXT")
+        if "contract_flag" not in columns:
+            connection.execute(
+                "ALTER TABLE production_records ADD COLUMN contract_flag INTEGER"
+            )
         connection.execute(
             "CREATE INDEX IF NOT EXISTS idx_production_project ON production_records(project)"
         )
@@ -704,9 +807,9 @@ def save_records(records: Iterable[dict], is_demo: bool = False) -> int:
         connection.executemany(
             """
             INSERT INTO production_records (
-                technician, reference_date, source_sheet, project, contract, wo, points,
-                source_file, source_row, is_demo
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                technician, reference_date, source_sheet, project, contract, wo,
+                contract_flag, points, source_file, source_row, is_demo
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 (
@@ -716,6 +819,7 @@ def save_records(records: Iterable[dict], is_demo: bool = False) -> int:
                     clean_project(row.get("project", "Sem projeto")),
                     _contract_or_placeholder(row.get("contract")),
                     _wo_or_placeholder(row.get("wo")),
+                    row.get("contract_flag"),
                     row["points"],
                     row["source_file"],
                     row["source_row"],
@@ -786,9 +890,9 @@ def sync_drive_records(
         connection.executemany(
             """
             INSERT INTO production_records (
-                technician, reference_date, source_sheet, project, contract, wo, points,
-                source_file, source_row, is_demo
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+                technician, reference_date, source_sheet, project, contract, wo,
+                contract_flag, points, source_file, source_row, is_demo
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
             """,
             [
                 (
@@ -798,6 +902,7 @@ def sync_drive_records(
                     clean_project(row.get("project", "Sem projeto")),
                     _contract_or_placeholder(row.get("contract")),
                     _wo_or_placeholder(row.get("wo")),
+                    row.get("contract_flag"),
                     row["points"],
                     row["source_file"],
                     row["source_row"],
@@ -813,7 +918,9 @@ def load_records() -> pd.DataFrame:
     with connect() as connection:
         available_columns = {
             row["name"]
-            for row in connection.execute("PRAGMA table_info(production_records)").fetchall()
+            for row in connection.execute(
+                "PRAGMA table_info(production_records)"
+            ).fetchall()
         }
         select_columns = [
             "id",
@@ -831,9 +938,11 @@ def load_records() -> pd.DataFrame:
             select_columns.insert(5, "contract")
         if "wo" in available_columns:
             select_columns.insert(6 if "contract" not in available_columns else 6, "wo")
+        if "contract_flag" in available_columns:
+            select_columns.append("contract_flag")
         frame = pd.read_sql_query(
             f"""
-            SELECT {', '.join(select_columns)}
+            SELECT {", ".join(select_columns)}
             FROM production_records
             ORDER BY reference_date, technician, source_sheet
             """,
@@ -875,7 +984,9 @@ def load_dashboard_snapshot() -> tuple[pd.DataFrame, dict]:
     with connect() as connection:
         available_columns = {
             row["name"]
-            for row in connection.execute("PRAGMA table_info(production_records)").fetchall()
+            for row in connection.execute(
+                "PRAGMA table_info(production_records)"
+            ).fetchall()
         }
         select_columns = [
             "id",
@@ -893,9 +1004,11 @@ def load_dashboard_snapshot() -> tuple[pd.DataFrame, dict]:
             select_columns.insert(5, "contract")
         if "wo" in available_columns:
             select_columns.insert(6 if "contract" not in available_columns else 6, "wo")
+        if "contract_flag" in available_columns:
+            select_columns.append("contract_flag")
         frame = pd.read_sql_query(
             f"""
-            SELECT {', '.join(select_columns)}
+            SELECT {", ".join(select_columns)}
             FROM production_records
             ORDER BY reference_date, technician, source_sheet
             """,
@@ -1008,7 +1121,9 @@ def create_demonstration() -> None:
         "Lucas Moreira",
         "Marcelo Dias",
     ]
-    periods = pd.period_range(end=pd.Timestamp.today().to_period("M"), periods=12, freq="M")
+    periods = pd.period_range(
+        end=pd.Timestamp.today().to_period("M"), periods=12, freq="M"
+    )
     records: list[dict] = []
     for tech_index, technician in enumerate(names):
         for month_index, period in enumerate(periods):
@@ -1069,10 +1184,9 @@ def summarize(frame: pd.DataFrame, keys: str | list[str]) -> pd.DataFrame:
                 }
             ]
         )
-    result = (
-        work.groupby(keys, as_index=False, dropna=False)[["points_prod", "points_gpon"]]
-        .sum()
-    )
+    result = work.groupby(keys, as_index=False, dropna=False)[
+        ["points_prod", "points_gpon"]
+    ].sum()
     result["points_total"] = result["points_prod"] + result["points_gpon"]
     return result[columns]
 
@@ -1095,9 +1209,7 @@ def best_month_by_technician(frame: pd.DataFrame) -> pd.Series:
 
     monthly = summarize(frame, ["technician", "period"])
     best = (
-        monthly.sort_values(
-            ["points_total", "period"], ascending=[False, False]
-        )
+        monthly.sort_values(["points_total", "period"], ascending=[False, False])
         .drop_duplicates("technician")
         .set_index("technician")
     )
