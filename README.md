@@ -12,7 +12,7 @@ Painel em Streamlit para acompanhar a produção dos técnicos ao longo do tempo
 - **Regularidade da produção** com média e mediana mensal, coeficiente de variação, destaques de oscilação e competências sem registros por técnico.
 - **Sazonalidade** com mapa de calor de Pontos Totais por competência e técnico ou projeto, além de tabela exportável em CSV.
 - Página **Quantidade de O.S.** com evolução por competência e ranking dos 15 técnicos com mais ordens (cada linha válida da aba `Prod` conta como uma O.S.).
-- Página **Contratos**, no mesmo padrão do painel **Quantidade de O.S.** — ticker com os indicadores do recorte, linha de KPIs, contador em destaque a partir da coluna **Qtde_Contrato** (soma, por arquivo presente no recorte, dos contratos distintos do arquivo — o mesmo contrato reconta a cada mês), evolução mensal, ranking e matriz **Técnico × Competência** de contratos distintos com o melhor mês em verde e linha **Total geral**, tabela por arquivo importado e seção **Eficiência por contrato** (faixas de pontos por contrato·mês, resumo por contrato com a faixa mais frequente e detalhamento mensal, exportáveis em CSV).
+- Página **Contratos**, no mesmo padrão do painel **Quantidade de O.S.** — ticker com os indicadores do recorte, linha de KPIs, contador em destaque a partir da coluna **Qtde_Contrato** (soma, por arquivo presente no recorte, dos contratos distintos do arquivo — o mesmo contrato reconta a cada mês), evolução mensal, ranking e matriz **Técnico × Competência** de contratos distintos com o melhor mês em verde, linha **Total geral** e tabela por arquivo importado.
 - **Saúde dos dados** com cobertura de projetos, dados de demonstração, status de sincronização, histórico de arquivos importados com o contador de contratos distintos de cada arquivo e detalhamento dos registros com a coluna **Qtde_Contrato**, exportável em CSV.
 - Filtros compartilhados por período, projeto e técnico; a página de técnicos permite escolher o projeto e o perfil individual.
 - Evolução mensal e ranking da equipe.
@@ -171,7 +171,7 @@ historico-producao/
 ├── components/                   # Design System e componentes UI
 │   ├── __init__.py
 │   ├── componentes.py            # Design System base (cores, fontes, KPI, heróis)
-│   ├── contratos.py              # Página Contratos (Qtde_Contrato e eficiência)
+│   ├── contratos.py              # Página Contratos (Qtde_Contrato)
 │   ├── css_global.py             # CSS global dos componentes nativos
 │   ├── eficiencia.py             # Eficiência por técnico e por contrato
 │   ├── graficos.py               # Tokens de identidade visual (cores TOTALE)

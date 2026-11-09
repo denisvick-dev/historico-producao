@@ -16,9 +16,6 @@ A aba **Contratos** responde três perguntas:
   com registros em cada competência (o mesmo contrato pode somar em mais de
   um mês) e a soma acumulada até o mês.
 
-A mesma página traz, ao final, a seção **Eficiência por contrato**
-(faixas de pontos por contrato·mês), também consumindo dados do recorte.
-
 A página segue o mesmo padrão visual do painel **Quantidade de O.S.**: ticker
 com os indicadores no topo, linha de KPIs, seções com título próprio e os
 gráficos lado a lado em painéis com borda, além da matriz
@@ -43,7 +40,6 @@ from components.componentes import (
     render_kpi_card,
     render_ticker,
 )
-from components.eficiencia import render_eficiencia_contrato
 from production import clean_contract, is_valid_contract, month_label
 
 COLUNAS_RESUMO = ["Projeto", "Técnico", "Contratos distintos"]
@@ -97,12 +93,16 @@ def _qtde_numerico(serie: pd.Series) -> pd.Series:
     return pd.to_numeric(serie, errors="coerce").fillna(0)
 
 
-def resumir_contratos(frame: pd.DataFrame) -> tuple[pd.DataFrame, int, int]:
+def resumir_contratos(
+    frame: pd.DataFrame, *, _prevalidated: bool = False
+) -> tuple[pd.DataFrame, int, int]:
     """Conta identificadores distintos por projeto e técnico e no recorte inteiro."""
     colunas = COLUNAS_RESUMO
     if frame.empty or not {"project", "technician", "contract"}.issubset(frame.columns):
         return pd.DataFrame(columns=colunas), 0, len(frame)
-    validos, sem_contrato = _registros_com_contrato(frame)
+    validos, sem_contrato = (
+        (frame, 0) if _prevalidated else _registros_com_contrato(frame)
+    )
     if validos.empty:
         return pd.DataFrame(columns=colunas), 0, sem_contrato
     validos = validos.assign(technician=validos["technician"].map(_rotulo_tecnico))
@@ -119,7 +119,9 @@ def resumir_contratos(frame: pd.DataFrame) -> tuple[pd.DataFrame, int, int]:
     return resumo[colunas], int(validos["contract"].nunique()), sem_contrato
 
 
-def somar_qtde_contrato(frame: pd.DataFrame) -> tuple[int, int]:
+def somar_qtde_contrato(
+    frame: pd.DataFrame, *, _validos: pd.DataFrame | None = None
+) -> tuple[int, int]:
     """Soma a Qtde_Contrato dos arquivos presentes no recorte.
 
     A coluna repete em todas as linhas de um arquivo o total de contratos
@@ -131,7 +133,9 @@ def somar_qtde_contrato(frame: pd.DataFrame) -> tuple[int, int]:
     if frame.empty:
         return 0, 0
     if "contracts_qty" not in frame.columns:
-        validos, _ = _registros_com_contrato(frame)
+        validos = _validos
+        if validos is None:
+            validos, _ = _registros_com_contrato(frame)
         total = int(validos["contract"].nunique()) if not validos.empty else 0
         return total, 0
     if "source_file" not in frame.columns:
@@ -145,7 +149,9 @@ def somar_qtde_contrato(frame: pd.DataFrame) -> tuple[int, int]:
     return int(_qtde_numerico(por_arquivo).sum()), int(por_arquivo.shape[0])
 
 
-def contar_contratos_por_tecnico(frame: pd.DataFrame) -> pd.DataFrame:
+def contar_contratos_por_tecnico(
+    frame: pd.DataFrame, *, _prevalidated: bool = False
+) -> pd.DataFrame:
     """Conta contratos distintos por técnico e a participação na soma.
 
     A Qtde_Contrato é um valor único por arquivo e não separa por técnico;
@@ -153,7 +159,7 @@ def contar_contratos_por_tecnico(frame: pd.DataFrame) -> pd.DataFrame:
     """
     if frame.empty or not {"technician", "contract"}.issubset(frame.columns):
         return pd.DataFrame(columns=COLUNAS_TECNICO)
-    validos, _ = _registros_com_contrato(frame)
+    validos, _ = (frame, 0) if _prevalidated else _registros_com_contrato(frame)
     if validos.empty:
         return pd.DataFrame(columns=COLUNAS_TECNICO)
 
@@ -168,7 +174,9 @@ def contar_contratos_por_tecnico(frame: pd.DataFrame) -> pd.DataFrame:
     ).reset_index(drop=True)[COLUNAS_TECNICO]
 
 
-def contar_contratos_por_arquivo(frame: pd.DataFrame) -> pd.DataFrame:
+def contar_contratos_por_arquivo(
+    frame: pd.DataFrame, *, _prevalidated: bool = False
+) -> pd.DataFrame:
     """Contador de contratos em cada arquivo importado, a partir da Qtde_Contrato.
 
     A coluna ``Contratos`` repete o valor da coluna Qtde_Contrato do arquivo
@@ -178,7 +186,7 @@ def contar_contratos_por_arquivo(frame: pd.DataFrame) -> pd.DataFrame:
     """
     if frame.empty or not {"source_file", "contract"}.issubset(frame.columns):
         return pd.DataFrame(columns=COLUNAS_ARQUIVO)
-    validos, _ = _registros_com_contrato(frame)
+    validos, _ = (frame, 0) if _prevalidated else _registros_com_contrato(frame)
     if validos.empty:
         return pd.DataFrame(columns=COLUNAS_ARQUIVO)
     work = validos.assign(Arquivo=_chave_arquivo(validos["source_file"]))
@@ -275,7 +283,9 @@ def contar_contratos_por_mes(frame: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(linhas, columns=COLUNAS_MENSAL)
 
 
-def contar_contratos_por_tecnico_mes(frame: pd.DataFrame) -> pd.DataFrame:
+def contar_contratos_por_tecnico_mes(
+    frame: pd.DataFrame, *, _prevalidated: bool = False
+) -> pd.DataFrame:
     """Matriz Técnico × Competência de contratos distintos (nunique).
 
     Cada célula conta quantos contratos distintos o técnico atendeu na
@@ -288,7 +298,7 @@ def contar_contratos_por_tecnico_mes(frame: pd.DataFrame) -> pd.DataFrame:
     base = ["Técnico", "Total", "Participação (%)"]
     if frame.empty or not {"technician", "contract"}.issubset(frame.columns):
         return pd.DataFrame(columns=base)
-    validos, _ = _registros_com_contrato(frame)
+    validos, _ = (frame, 0) if _prevalidated else _registros_com_contrato(frame)
     competencias = _competencias(validos)
     if validos.empty or competencias is None:
         return pd.DataFrame(columns=base)
@@ -452,19 +462,21 @@ def _baixar_csv(frame: pd.DataFrame, nome: str) -> None:
 
 
 def render_contratos(frame: pd.DataFrame) -> None:
-    resumo, _, ausentes = resumir_contratos(frame)
-    total, arquivos = somar_qtde_contrato(frame)
-    por_tecnico = contar_contratos_por_tecnico(frame)
-    mensal = contar_contratos_por_mes(frame)
-
     if frame.empty:
         render_ticker(
             [("Contratos", "Nenhum registro para os filtros selecionados")],
             label="Indicadores de contratos",
         )
         st.info("Não há registros para os filtros selecionados.")
-        render_eficiencia_contrato(frame)
         return
+
+    registros_validos, ausentes = _registros_com_contrato(frame)
+    resumo, _, _ = resumir_contratos(registros_validos, _prevalidated=True)
+    total, arquivos = somar_qtde_contrato(frame, _validos=registros_validos)
+    por_tecnico = contar_contratos_por_tecnico(
+        registros_validos, _prevalidated=True
+    )
+    mensal = contar_contratos_por_mes(frame)
 
     ticker_items: list[tuple[str, str]] = [
         ("Total de contratos", formatar_numero_br(total)),
@@ -596,7 +608,9 @@ def render_contratos(frame: pd.DataFrame) -> None:
             "técnico aparece em verde; a participação é a fatia na soma dos "
             "totais; a linha 'Total geral' soma a matriz.",
         )
-        matriz = contar_contratos_por_tecnico_mes(frame)
+        matriz = contar_contratos_por_tecnico_mes(
+            registros_validos, _prevalidated=True
+        )
         if matriz.empty:
             st.info("Não há registros com contrato para montar a matriz.")
         else:
@@ -624,7 +638,9 @@ def render_contratos(frame: pd.DataFrame) -> None:
             )
             _baixar_csv(matriz, "contratos_por_tecnico_mes.csv")
 
-        por_arquivo = contar_contratos_por_arquivo(frame)
+        por_arquivo = contar_contratos_por_arquivo(
+            registros_validos, _prevalidated=True
+        )
         _section_heading(
             "Contratos por arquivo importado",
             "Coluna Qtde_Contrato lida diretamente de cada arquivo — o valor "
@@ -662,5 +678,3 @@ def render_contratos(frame: pd.DataFrame) -> None:
                 width="stretch",
             )
             _baixar_csv(resumo, "contratos_por_projeto_tecnico.csv")
-
-    render_eficiencia_contrato(frame)

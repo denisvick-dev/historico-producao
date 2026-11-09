@@ -7,7 +7,14 @@ from unittest import mock
 import pandas as pd
 
 import production
-from components.contratos import resumir_contratos
+from components.contratos import (
+    _registros_com_contrato,
+    contar_contratos_por_arquivo,
+    contar_contratos_por_tecnico,
+    contar_contratos_por_tecnico_mes,
+    resumir_contratos,
+    somar_qtde_contrato,
+)
 
 
 class ResumirContratosTests(unittest.TestCase):
@@ -31,6 +38,48 @@ class ResumirContratosTests(unittest.TestCase):
             ],
         )
         self.assertEqual((total, ausentes), (2, 1))
+
+    def test_funcoes_reutilizam_registros_validos_sem_alterar_resultados(self) -> None:
+        frame = pd.DataFrame(
+            {
+                "project": ["A", "A", "B", "B"],
+                "technician": ["Ana", "Ana", "Bia", "Bia"],
+                "contract": ["001", "001", "002", "Sem contrato"],
+                "source_file": ["jan.xlsx", "jan.xlsx", "fev.xlsx", "fev.xlsx"],
+                "source_sheet": ["Prod"] * 4,
+                "period": pd.to_datetime(
+                    ["2026-01-01", "2026-02-01", "2026-02-01", "2026-02-01"]
+                ),
+            }
+        )
+        validos, ausentes = _registros_com_contrato(frame)
+
+        resumo, total, sem_contrato = resumir_contratos(frame)
+        resumo_prevalidado, total_prevalidado, _ = resumir_contratos(
+            validos, _prevalidated=True
+        )
+        self.assertTrue(resumo.equals(resumo_prevalidado))
+        self.assertEqual((total, total_prevalidado), (2, 2))
+        self.assertEqual((sem_contrato, ausentes), (1, 1))
+
+        self.assertTrue(
+            contar_contratos_por_tecnico(frame).equals(
+                contar_contratos_por_tecnico(validos, _prevalidated=True)
+            )
+        )
+        self.assertTrue(
+            contar_contratos_por_tecnico_mes(frame).equals(
+                contar_contratos_por_tecnico_mes(validos, _prevalidated=True)
+            )
+        )
+        self.assertTrue(
+            contar_contratos_por_arquivo(frame).equals(
+                contar_contratos_por_arquivo(validos, _prevalidated=True)
+            )
+        )
+        self.assertEqual(
+            somar_qtde_contrato(frame), somar_qtde_contrato(frame, _validos=validos)
+        )
 
 
 class ImportacaoContratosTests(unittest.TestCase):

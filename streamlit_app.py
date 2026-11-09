@@ -1172,10 +1172,10 @@ def render_dashboard() -> None:
             "Ordens de serviço registradas na aba Prod, por competência e técnico.",
         ),
         "Contratos": (
-            "Contratos e eficiência por contrato",
+            "Contratos",
             "Acompanhe os indicadores no topo, a soma da Qtde_Contrato no "
-            "recorte, a matriz técnico × competência, os contratos de cada "
-            "arquivo e a eficiência (faixas de pontos) por contrato.",
+            "recorte, a matriz técnico × competência e os contratos de cada "
+            "arquivo importado.",
         ),
         "Regularidade": (
             "Regularidade da produção",

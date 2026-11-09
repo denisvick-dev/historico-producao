@@ -74,7 +74,7 @@ class StreamlitAppTests(unittest.TestCase):
             )
 
     def test_aba_contratos_exibe_contador(self) -> None:
-        """A aba Contratos unificada deve abrir com o contador e a eficiência."""
+        """A aba Contratos deve abrir com o contador e sem a seção de eficiência."""
         app = AppTest.from_file(_APP_PATH).run(timeout=30)
         app.radio(key="navigation").set_value("Contratos").run(timeout=30)
         self.assertFalse(app.exception)
@@ -84,8 +84,8 @@ class StreamlitAppTests(unittest.TestCase):
         self.assertIn("Contratos por técnico", markdown)
         self.assertIn("Evolução mensal de contratos", markdown)
         self.assertIn("Contratos por arquivo importado", markdown)
-        self.assertIn("Eficiência por contrato", markdown)
-        self.assertIn("Resumo por contrato", markdown)
+        self.assertNotIn("Eficiência por contrato", markdown)
+        self.assertNotIn("Resumo por contrato", markdown)
         self.assertNotIn("CONTRATOS NO RECORTE", markdown)
         self.assertGreaterEqual(len(app.get("plotly_chart")), 3)
         self.assertGreaterEqual(len(app.get("dataframe")), 3)
