@@ -1173,9 +1173,7 @@ def render_dashboard() -> None:
         ),
         "Contratos": (
             "Contratos",
-            "Acompanhe os indicadores no topo, a soma da Qtde_Contrato no "
-            "recorte, a matriz técnico × competência e os contratos de cada "
-            "arquivo importado.",
+            "Explore a carteira de contratos, sua evolução e a distribuição por técnico.",
         ),
         "Regularidade": (
             "Regularidade da produção",

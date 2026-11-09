@@ -79,16 +79,37 @@ class StreamlitAppTests(unittest.TestCase):
         app.radio(key="navigation").set_value("Contratos").run(timeout=30)
         self.assertFalse(app.exception)
         markdown = " ".join(str(item.value) for item in app.markdown)
-        self.assertIn("Total de contratos", markdown)
-        self.assertIn("Contratos no recorte", markdown)
-        self.assertIn("Contratos por técnico", markdown)
-        self.assertIn("Evolução mensal de contratos", markdown)
-        self.assertIn("Contratos por arquivo importado", markdown)
-        self.assertNotIn("Eficiência por contrato", markdown)
-        self.assertNotIn("Resumo por contrato", markdown)
-        self.assertNotIn("CONTRATOS NO RECORTE", markdown)
-        self.assertGreaterEqual(len(app.get("plotly_chart")), 3)
-        self.assertGreaterEqual(len(app.get("dataframe")), 3)
+        self.assertIn("CONTRATOS DISTINTOS", markdown)
+        self.assertIn("CONTAGEM POR ARQUIVO", markdown)
+        self.assertIn("Visão da carteira", markdown)
+        self.assertIn("Explorar contratos", markdown)
+        self.assertIn("Conferência das origens", markdown)
+        self.assertGreaterEqual(len(app.get("plotly_chart")), 2)
+        tabelas = [
+            cast("pd.DataFrame", cast("Any", item).value)
+            for item in app.get("dataframe")
+        ]
+        carteira = next(
+            t for t in tabelas if "Contrato" in t.columns and "Registros" in t.columns
+        )
+        contrato = carteira.iloc[0]["Contrato"]
+        app.text_input(key="contratos_busca").set_value(contrato).run(timeout=30)
+        self.assertFalse(app.exception)
+        tabelas = [
+            cast("pd.DataFrame", cast("Any", item).value)
+            for item in app.get("dataframe")
+        ]
+        filtrada = next(
+            t for t in tabelas if "Contrato" in t.columns and "Registros" in t.columns
+        )
+        self.assertEqual(filtrada["Contrato"].tolist(), [contrato])
+        app.text_input(key="contratos_busca").set_value("[sem resultado]").run(
+            timeout=30
+        )
+        self.assertFalse(app.exception)
+        self.assertTrue(
+            any("Nenhum contrato encontrado" in str(item.value) for item in app.info)
+        )
 
     def test_aba_contratos_unifica_eficiencia_por_contrato(self) -> None:
         """A navegação não deve mais separar Eficiência por contrato."""
