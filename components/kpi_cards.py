@@ -151,7 +151,11 @@ def direcao_delta(
     if not texto:
         return "none"
     limpo = (
-        texto.replace("−", "-").replace("+", "").replace("%", "").replace(".", "").replace(",", ".")
+        texto.replace("−", "-")
+        .replace("+", "")
+        .replace("%", "")
+        .replace(".", "")
+        .replace(",", ".")
     )
     try:
         valor = float(limpo)
@@ -267,7 +271,9 @@ def sparkline_svg(
         if amplitude <= 0:
             y = round(margem + altura_util / 2, 2)
         else:
-            y = round(margem + altura_util - ((valor - minimo) / amplitude) * altura_util, 2)
+            y = round(
+                margem + altura_util - ((valor - minimo) / amplitude) * altura_util, 2
+            )
         coordenadas.append((x, y))
 
     linha = " ".join(f"{x},{y}" for x, y in coordenadas)
@@ -446,7 +452,11 @@ def render_kpi_card(
             except (TypeError, ValueError):
                 percentual = 0.0
             barra_html = _barra_progresso(
-                percentual, 100.0, cor=cor_acento, cor_texto=cor_texto, mostrar_rotulo=False
+                percentual,
+                100.0,
+                cor=cor_acento,
+                cor_texto=cor_texto,
+                mostrar_rotulo=False,
             )
         if barra_html and meta_rotulo:
             barra_html = barra_html.replace(
@@ -473,7 +483,9 @@ def render_kpi_card(
     )
     linha_inferior = _delta_html(delta, direcao, cor_texto) + sub_html
     linha_html = (
-        f'<div class="kpi-avancado__linha">{linha_inferior}</div>' if linha_inferior else ""
+        f'<div class="kpi-avancado__linha">{linha_inferior}</div>'
+        if linha_inferior
+        else ""
     )
 
     classes = f"kpi-avancado kpi-avancado--{tamanho}{classes_extra}"
@@ -624,7 +636,9 @@ def render_kpi_row(
     specs: Sequence[SpecKPIAvancado],
     *,
     colunas: int | None = None,
-    gap: Literal["xxsmall", "xsmall", "small", "medium", "large"] | int | None = "small",
+    gap: Literal["xxsmall", "xsmall", "small", "medium", "large"]
+    | int
+    | None = "small",
     container: Any = None,
 ) -> None:
     """Renderiza uma fileira de cartões avançados a partir de especificações.

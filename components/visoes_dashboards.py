@@ -267,7 +267,7 @@ def matriz_sazonalidade(
     )
     entities = ranking.head(max(int(top_n), 1))["entity"].tolist()
     matrix = (
-        monthly.unstack(fill_value=0.0)
+        monthly.unstack()
         .reindex(index=entities, columns=periods, fill_value=0.0)
         .fillna(0.0)
     )

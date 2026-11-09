@@ -65,7 +65,9 @@ def _chart_layout(fig: go.Figure, height: int = 320) -> go.Figure:
         font=dict(family=Fontes.TEXTO, color=Cores.TEXTO_3, size=11),
         bargap=0.35,
     )
-    fig.update_xaxes(showgrid=False, zeroline=False, fixedrange=True, tickfont=dict(size=10))
+    fig.update_xaxes(
+        showgrid=False, zeroline=False, fixedrange=True, tickfont=dict(size=10)
+    )
     fig.update_yaxes(
         gridcolor="#e6edf5",
         zeroline=False,
@@ -105,15 +107,15 @@ def render_prod_orders(filtered: pd.DataFrame) -> None:
             ("Total de O.S.", formatar_numero_br(total_os)),
             (
                 "Competência mais recente",
-                f'{month_label(latest_month["period"])} · {formatar_numero_br(latest_month["os_count"])} O.S.',
+                f"{month_label(latest_month['period'])} · {formatar_numero_br(latest_month['os_count'])} O.S.",
             ),
             (
                 "Mês com mais O.S.",
-                f'{month_label(top_month["period"])} · {formatar_numero_br(top_month["os_count"])} O.S.',
+                f"{month_label(top_month['period'])} · {formatar_numero_br(top_month['os_count'])} O.S.",
             ),
             (
                 "Técnico destaque",
-                f'{top_technician["technician"]} · {formatar_numero_br(top_technician["os_count"])} O.S.',
+                f"{top_technician['technician']} · {formatar_numero_br(top_technician['os_count'])} O.S.",
             ),
             ("Técnicos ativos", formatar_numero_br(active_technicians)),
         ],
@@ -143,7 +145,9 @@ def render_prod_orders(filtered: pd.DataFrame) -> None:
         )
     with columns[2]:
         average = total_os / active_technicians if active_technicians else 0
-        formatted_average = f"{average:,.1f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        formatted_average = (
+            f"{average:,.1f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        )
         _metric_card(
             "MÉDIA DE O.S. POR TÉCNICO",
             formatted_average,

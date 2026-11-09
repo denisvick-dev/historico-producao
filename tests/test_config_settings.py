@@ -8,7 +8,7 @@ from config import settings
 
 
 class PortalSettingsTests(unittest.TestCase):
-    def test_environment_value_is_used_when_no_secret_exists(self):
+    def test_environment_value_is_used_when_no_secret_exists(self) -> None:
         with (
             patch.object(settings, "st") as streamlit,
             patch.dict(os.environ, {"TOTALE_VERSAO": "4.2.0"}),
@@ -17,7 +17,7 @@ class PortalSettingsTests(unittest.TestCase):
 
             self.assertEqual(settings.obter_versao_portal(), "4.2.0")
 
-    def test_secret_has_precedence_over_environment(self):
+    def test_secret_has_precedence_over_environment(self) -> None:
         with (
             patch.object(settings, "st") as streamlit,
             patch.dict(os.environ, {"TOTALE_AMBIENTE": "Homologação"}),
@@ -26,7 +26,7 @@ class PortalSettingsTests(unittest.TestCase):
 
             self.assertEqual(settings.obter_ambiente_portal(), "Produção")
 
-    def test_empty_values_are_ignored(self):
+    def test_empty_values_are_ignored(self) -> None:
         with (
             patch.object(settings, "st") as streamlit,
             patch.dict(os.environ, {"TOTALE_VERSAO": "  "}),
@@ -35,7 +35,7 @@ class PortalSettingsTests(unittest.TestCase):
 
             self.assertIsNone(settings.obter_versao_portal())
 
-    def test_defaults_are_declared(self):
+    def test_defaults_are_declared(self) -> None:
         self.assertEqual(settings.VERSAO_PORTAL_PADRAO, "3.7.0")
         self.assertEqual(settings.AMBIENTE_PORTAL_PADRAO, "Produção")
 

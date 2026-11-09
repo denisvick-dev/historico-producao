@@ -1,4 +1,5 @@
 """Eficiência mensal por técnico e por contrato no recorte selecionado."""
+
 from __future__ import annotations
 
 import pandas as pd
@@ -27,21 +28,44 @@ def calcular_eficiencia(frame: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame
     detalhes_colunas = ["Técnico", "Competência", "Pontos", "Faixa"]
     resumo_colunas = ["Técnico", "Meses com registros", *FAIXAS, "Faixa mais frequente"]
     if frame.empty or not {"technician", "points"}.issubset(frame.columns):
-        return pd.DataFrame(columns=detalhes_colunas), pd.DataFrame(columns=resumo_colunas)
+        return pd.DataFrame(columns=detalhes_colunas), pd.DataFrame(
+            columns=resumo_colunas
+        )
     coluna_data = "period" if "period" in frame.columns else "reference_date"
     if coluna_data not in frame.columns:
-        return pd.DataFrame(columns=detalhes_colunas), pd.DataFrame(columns=resumo_colunas)
+        return pd.DataFrame(columns=detalhes_colunas), pd.DataFrame(
+            columns=resumo_colunas
+        )
     work = frame.copy()
-    work["Competência"] = pd.to_datetime(work[coluna_data], errors="coerce").dt.to_period("M").dt.to_timestamp()
-    work["Técnico"] = work["technician"].fillna("Sem técnico").astype(str).str.strip().replace("", "Sem técnico")
+    work["Competência"] = (
+        pd.to_datetime(work[coluna_data], errors="coerce")
+        .dt.to_period("M")
+        .dt.to_timestamp()
+    )
+    work["Técnico"] = (
+        work["technician"]
+        .fillna("Sem técnico")
+        .astype(str)
+        .str.strip()
+        .replace("", "Sem técnico")
+    )
     work["Pontos"] = pd.to_numeric(work["points"], errors="coerce")
     work = work.dropna(subset=["Competência", "Pontos"])
     if work.empty:
-        return pd.DataFrame(columns=detalhes_colunas), pd.DataFrame(columns=resumo_colunas)
+        return pd.DataFrame(columns=detalhes_colunas), pd.DataFrame(
+            columns=resumo_colunas
+        )
     detalhes = work.groupby(["Técnico", "Competência"], as_index=False)["Pontos"].sum()
     # Limites contínuos: 400 pertence à faixa 5, sem lacunas entre faixas.
-    detalhes["Faixa"] = pd.cut(detalhes["Pontos"], bins=[float("-inf"), 300, 350, 375, 400, float("inf")], labels=FAIXAS, right=False).astype(str)
-    contagem = pd.crosstab(detalhes["Técnico"], detalhes["Faixa"]).reindex(columns=FAIXAS, fill_value=0)
+    detalhes["Faixa"] = pd.cut(
+        detalhes["Pontos"],
+        bins=[float("-inf"), 300, 350, 375, 400, float("inf")],
+        labels=FAIXAS,
+        right=False,
+    ).astype(str)
+    contagem = pd.crosstab(detalhes["Técnico"], detalhes["Faixa"]).reindex(
+        columns=FAIXAS, fill_value=0
+    )
     resumo = contagem.copy()
     resumo.insert(0, "Meses com registros", contagem.sum(axis=1))
     resumo["Faixa mais frequente"] = contagem.apply(
@@ -92,7 +116,9 @@ def render_eficiencia(frame: pd.DataFrame) -> None:
         st.info("Não há competências válidas para calcular a eficiência.")
         return
 
-    tecnicos = ["Todos"] + sorted(detalhes["Técnico"].dropna().astype(str).unique().tolist())
+    tecnicos = ["Todos"] + sorted(
+        detalhes["Técnico"].dropna().astype(str).unique().tolist()
+    )
     tecnico_selecionado = st.selectbox(
         "Filtrar por técnico",
         tecnicos,
@@ -139,7 +165,12 @@ def render_eficiencia(frame: pd.DataFrame) -> None:
         alt="Pontos e faixa mensal por técnico",
         column_config={"Pontos": st.column_config.NumberColumn(format="%.2f")},
     )
-    st.download_button("Baixar eficiência mensal em CSV", data=exibicao.to_csv(index=False, sep=";", decimal=",").encode("utf-8-sig"), file_name="eficiencia_mensal.csv", mime="text/csv")
+    st.download_button(
+        "Baixar eficiência mensal em CSV",
+        data=exibicao.to_csv(index=False, sep=";", decimal=",").encode("utf-8-sig"),
+        file_name="eficiencia_mensal.csv",
+        mime="text/csv",
+    )
 
 
 def resumir_eficiencia_contrato(
@@ -175,9 +206,7 @@ def resumir_eficiencia_contrato(
     work = frame.copy()
     work["Pontos"] = pd.to_numeric(work["points"], errors="coerce")
     work["Competência"] = (
-        pd.to_datetime(work[fonte], errors="coerce")
-        .dt.to_period("M")
-        .dt.to_timestamp()
+        pd.to_datetime(work[fonte], errors="coerce").dt.to_period("M").dt.to_timestamp()
     )
     if "contract" not in work.columns:
         work["contract"] = "Sem contrato"
@@ -200,24 +229,20 @@ def resumir_eficiencia_contrato(
         right=False,
     ).astype(str)
 
-    resumo = (
-        detalhes.groupby("Contrato", as_index=False)
-        .agg(
-            **{
-                "Meses com registros": ("Competência", "nunique"),
-                "Pontos totais": ("Pontos", "sum"),
-            }
-        )
+    resumo = detalhes.groupby("Contrato", as_index=False).agg(
+        **{
+            "Meses com registros": ("Competência", "nunique"),
+            "Pontos totais": ("Pontos", "sum"),
+        }
     )
     resumo["Faixa mais frequente"] = resumo["Contrato"].map(
         detalhes.groupby("Contrato")["Faixa"].apply(
             lambda faixas: faixas.value_counts().idxmax()
         )
     )
-    resumo = (
-        resumo.sort_values(["Pontos totais", "Contrato"], ascending=[False, True])
-        .reset_index(drop=True)[resumo_colunas]
-    )
+    resumo = resumo.sort_values(
+        ["Pontos totais", "Contrato"], ascending=[False, True]
+    ).reset_index(drop=True)[resumo_colunas]
     faixas = detalhes["Faixa"].value_counts().reindex(FAIXAS, fill_value=0)
     faixas.name = "Contratos"
     return detalhes[detalhes_colunas], resumo, faixas.astype("int64")
@@ -286,7 +311,9 @@ def render_eficiencia_contrato(frame: pd.DataFrame) -> None:
     tecnico_col = "technician" if "technician" in frame.columns else None
     tecnicos = ["Todos"]
     if tecnico_col:
-        tecnicos.extend(sorted(frame[tecnico_col].dropna().astype(str).unique().tolist()))
+        tecnicos.extend(
+            sorted(frame[tecnico_col].dropna().astype(str).unique().tolist())
+        )
     tecnico_selecionado = st.selectbox(
         "Filtrar por técnico",
         tecnicos,
@@ -347,7 +374,9 @@ def render_eficiencia_contrato(frame: pd.DataFrame) -> None:
                     {
                         "Meses com registros": "background-color: #E8EEF8; color: #012869; font-weight: 600",
                         "Pontos totais": "background-color: #F1F5F9; color: #475569; font-weight: 600",
-                        "Faixa mais frequente": _estilo_faixa(row["Faixa mais frequente"]),
+                        "Faixa mais frequente": _estilo_faixa(
+                            row["Faixa mais frequente"]
+                        ),
                     }
                 ),
                 axis=1,
@@ -362,7 +391,9 @@ def render_eficiencia_contrato(frame: pd.DataFrame) -> None:
                 "Faixa mais frequente": st.column_config.TextColumn(width="small"),
             },
         )
-        _baixar_csv(resumo, "eficiencia_por_contrato.csv", "download_eficiencia_contrato")
+        _baixar_csv(
+            resumo, "eficiencia_por_contrato.csv", "download_eficiencia_contrato"
+        )
 
     with st.expander("Detalhamento mensal por contrato"):
         exibicao = detalhes.copy()
@@ -377,4 +408,8 @@ def render_eficiencia_contrato(frame: pd.DataFrame) -> None:
                 "Faixa": st.column_config.TextColumn(width="small"),
             },
         )
-        _baixar_csv(exibicao, "eficiencia_por_contrato_mensal.csv", "download_eficiencia_contrato_mensal")
+        _baixar_csv(
+            exibicao,
+            "eficiencia_por_contrato_mensal.csv",
+            "download_eficiencia_contrato_mensal",
+        )

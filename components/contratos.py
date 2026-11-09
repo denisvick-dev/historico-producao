@@ -194,7 +194,10 @@ def contar_contratos_por_arquivo(frame: pd.DataFrame) -> pd.DataFrame:
         )
     else:
         resumo["Contratos"] = (
-            work.groupby("Arquivo")["contract"].nunique().reindex(resumo["Arquivo"]).to_numpy()
+            work.groupby("Arquivo")["contract"]
+            .nunique()
+            .reindex(resumo["Arquivo"])
+            .to_numpy()
         )
     if "source_sheet" in work.columns:
         origens = work.groupby("Arquivo")["source_sheet"].agg(
@@ -205,15 +208,12 @@ def contar_contratos_por_arquivo(frame: pd.DataFrame) -> pd.DataFrame:
         resumo["Origem"] = resumo["Arquivo"].map(origens).fillna("—")
     else:
         resumo["Origem"] = "—"
-    return (
-        resumo.sort_values(
-            by=["Contratos", "Arquivo"],
-            ascending=[False, True],
-            kind="mergesort",
-            na_position="last",
-        )
-        .reset_index(drop=True)[COLUNAS_ARQUIVO]
-    )
+    return resumo.sort_values(
+        by=["Contratos", "Arquivo"],
+        ascending=[False, True],
+        kind="mergesort",
+        na_position="last",
+    ).reset_index(drop=True)[COLUNAS_ARQUIVO]
 
 
 def _competencias(frame: pd.DataFrame) -> pd.Series | None:
@@ -314,7 +314,9 @@ def contar_contratos_por_tecnico_mes(frame: pd.DataFrame) -> pd.DataFrame:
     matriz.columns = rotulos
     matriz["Total"] = matriz.sum(axis=1)
     total_geral = int(matriz["Total"].sum())
-    matriz = matriz.sort_values(["Total", "Técnico"], ascending=[False, True]).reset_index()
+    matriz = matriz.sort_values(
+        ["Total", "Técnico"], ascending=[False, True]
+    ).reset_index()
     matriz["Participação (%)"] = (
         (matriz["Total"] / total_geral * 100).round(1) if total_geral else 0.0
     )
@@ -414,7 +416,9 @@ def _best_month_style(row: pd.Series) -> pd.Series:
         return styles
 
     month_columns = [
-        column for column in row.index if column not in {"Técnico", "Total", "Participação (%)"}
+        column
+        for column in row.index
+        if column not in {"Técnico", "Total", "Participação (%)"}
     ]
     if not month_columns:
         return styles
@@ -565,9 +569,7 @@ def render_contratos(frame: pd.DataFrame) -> None:
                     hide_index=True,
                     width="stretch",
                     column_config={
-                        "Contratos no mês": st.column_config.NumberColumn(
-                            format="%d"
-                        ),
+                        "Contratos no mês": st.column_config.NumberColumn(format="%d"),
                         "Acumulado (soma)": st.column_config.NumberColumn(format="%d"),
                     },
                 )

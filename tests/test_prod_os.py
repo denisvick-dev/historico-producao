@@ -12,10 +12,8 @@ from components.prod_os import (
 
 
 class ProductionOrderTableTests(unittest.TestCase):
-    def test_best_month_for_technician_is_highlighted_green(self):
-        row = pd.Series(
-            {"Técnico": "Ana", "mar/26": 2, "abr/26": 5, "Total": 7}
-        )
+    def test_best_month_for_technician_is_highlighted_green(self) -> None:
+        row = pd.Series({"Técnico": "Ana", "mar/26": 2, "abr/26": 5, "Total": 7})
 
         styles = _best_month_style(row)
 
@@ -23,7 +21,7 @@ class ProductionOrderTableTests(unittest.TestCase):
         self.assertIn("background-color: #DCFCE7", styles["abr/26"])
         self.assertEqual(styles["Total"], "")
 
-    def test_total_general_row_is_not_highlighted(self):
+    def test_total_general_row_is_not_highlighted(self) -> None:
         row = pd.Series(
             {"Técnico": "Total geral", "mar/26": 5, "abr/26": 5, "Total": 10}
         )
@@ -32,30 +30,48 @@ class ProductionOrderTableTests(unittest.TestCase):
 
         self.assertTrue(styles.eq("").all())
 
-    def test_best_month_tie_for_technician_highlights_each_month(self):
-        row = pd.Series(
-            {"Técnico": "Ana", "mar/26": 5, "abr/26": 5, "Total": 10}
-        )
+    def test_best_month_tie_for_technician_highlights_each_month(self) -> None:
+        row = pd.Series({"Técnico": "Ana", "mar/26": 5, "abr/26": 5, "Total": 10})
 
         styles = _best_month_style(row)
 
         self.assertIn("background-color: #DCFCE7", styles["mar/26"])
         self.assertIn("background-color: #DCFCE7", styles["abr/26"])
 
-    def test_total_column_uses_distinct_color(self):
+    def test_total_column_uses_distinct_color(self) -> None:
         style = _total_column_style(10)
 
         self.assertIn("background-color: #E8EEF8", style)
         self.assertIn("font-weight: 600", style)
 
-    def test_table_has_technicians_months_and_totals(self):
+    def test_table_has_technicians_months_and_totals(self) -> None:
         frame = pd.DataFrame(
             [
-                {"technician": "Ana", "period": pd.Timestamp("2026-10-01"), "source_sheet": "Prod"},
-                {"technician": "Ana", "period": pd.Timestamp("2026-10-01"), "source_sheet": "Prod"},
-                {"technician": "Ana", "period": pd.Timestamp("2026-11-01"), "source_sheet": "Prod"},
-                {"technician": "Bia", "period": pd.Timestamp("2026-11-01"), "source_sheet": "Prod"},
-                {"technician": "Bia", "period": pd.Timestamp("2026-10-01"), "source_sheet": "Gpon"},
+                {
+                    "technician": "Ana",
+                    "period": pd.Timestamp("2026-10-01"),
+                    "source_sheet": "Prod",
+                },
+                {
+                    "technician": "Ana",
+                    "period": pd.Timestamp("2026-10-01"),
+                    "source_sheet": "Prod",
+                },
+                {
+                    "technician": "Ana",
+                    "period": pd.Timestamp("2026-11-01"),
+                    "source_sheet": "Prod",
+                },
+                {
+                    "technician": "Bia",
+                    "period": pd.Timestamp("2026-11-01"),
+                    "source_sheet": "Prod",
+                },
+                {
+                    "technician": "Bia",
+                    "period": pd.Timestamp("2026-10-01"),
+                    "source_sheet": "Gpon",
+                },
             ]
         )
 

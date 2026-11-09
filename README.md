@@ -174,7 +174,7 @@ historico-producao/
 │   ├── contratos.py              # Página Contratos (Qtde_Contrato e eficiência)
 │   ├── css_global.py             # CSS global dos componentes nativos
 │   ├── eficiencia.py             # Eficiência por técnico e por contrato
-│   ├── graficos.py               # Fábrica de gráficos Plotly
+│   ├── graficos.py               # Tokens de identidade visual (cores TOTALE)
 │   ├── kpi_cards.py              # Cartões de KPI avançados
 │   ├── layout_pagina.py          # Hierarquia de leitura das páginas
 │   ├── prod_os.py                # Página de quantidade de O.S.
