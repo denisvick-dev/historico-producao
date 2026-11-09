@@ -61,6 +61,43 @@ def test_sync_preserva_contrato(tmp_path, monkeypatch):
     assert production.load_records().iloc[0]["contract"] == "0001"
 
 
+def test_sync_persiste_placeholders_em_banco_legado(tmp_path, monkeypatch):
+    path = tmp_path / "legacy.db"
+    monkeypatch.setattr(production, "DB_PATH", path)
+    with sqlite3.connect(path) as db:
+        db.execute(
+            """
+            CREATE TABLE production_records (
+                id INTEGER PRIMARY KEY,
+                technician TEXT NOT NULL,
+                reference_date TEXT NOT NULL,
+                source_sheet TEXT NOT NULL,
+                project TEXT NOT NULL DEFAULT 'Sem projeto',
+                contract TEXT NOT NULL DEFAULT 'Sem contrato',
+                wo TEXT NOT NULL DEFAULT 'Sem WO',
+                points REAL NOT NULL,
+                source_file TEXT NOT NULL,
+                source_row INTEGER NOT NULL,
+                is_demo INTEGER NOT NULL DEFAULT 0,
+                imported_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+
+    registros, problemas = production.process_upload(
+        "arquivo [abc].csv",
+        b"Tecnico;Pontos;Data\nAna;10;01/01/2026\n",
+    )
+    assert not problemas
+    assert registros[0]["contract"] == "Sem contrato"
+    assert registros[0]["wo"] == "Sem WO"
+    production.sync_drive_records(registros, {"abc"}, {"abc"})
+    assert production.load_records().iloc[0][["contract", "wo"]].to_dict() == {
+        "contract": "Sem contrato",
+        "wo": "Sem WO",
+    }
+
+
 def test_contador_por_tecnico():
     from components.contratos import contar_contratos_por_tecnico
 

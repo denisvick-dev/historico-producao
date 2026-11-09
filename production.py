@@ -207,6 +207,14 @@ def clean_wo(value: object) -> str | None:
     return text
 
 
+def _contract_or_placeholder(value: object) -> str:
+    return clean_contract(value) or "Sem contrato"
+
+
+def _wo_or_placeholder(value: object) -> str:
+    return clean_wo(value) or "Sem WO"
+
+
 def parse_points(value: object) -> float | None:
     """Converte números brasileiros e internacionais sem perder precisão."""
     if value is None or (isinstance(value, float) and pd.isna(value)):
@@ -430,15 +438,11 @@ def process_dataframe(
                     if project_position is not None
                     else "Sem projeto"
                 ),
-                "contract": (
-                    clean_contract(row[contract_position])
-                    if contract_position is not None
-                    else None
+                "contract": _contract_or_placeholder(
+                    row[contract_position] if contract_position is not None else None
                 ),
-                "wo": (
-                    clean_wo(row[wo_position])
-                    if wo_position is not None
-                    else None
+                "wo": _wo_or_placeholder(
+                    row[wo_position] if wo_position is not None else None
                 ),
                 "points": float(points),
                 "source_file": source_file,
@@ -652,8 +656,8 @@ def save_records(records: Iterable[dict], is_demo: bool = False) -> int:
                     row["reference_date"],
                     row["source_sheet"],
                     clean_project(row.get("project", "Sem projeto")),
-                    clean_contract(row.get("contract")),
-                    clean_wo(row.get("wo")),
+                    _contract_or_placeholder(row.get("contract")),
+                    _wo_or_placeholder(row.get("wo")),
                     row["points"],
                     row["source_file"],
                     row["source_row"],
@@ -734,8 +738,8 @@ def sync_drive_records(
                     row["reference_date"],
                     row["source_sheet"],
                     clean_project(row.get("project", "Sem projeto")),
-                    clean_contract(row.get("contract")),
-                    clean_wo(row.get("wo")),
+                    _contract_or_placeholder(row.get("contract")),
+                    _wo_or_placeholder(row.get("wo")),
                     row["points"],
                     row["source_file"],
                     row["source_row"],
@@ -780,13 +784,13 @@ def load_records() -> pd.DataFrame:
     if frame.empty:
         return frame
     if "contract" not in frame.columns:
-        frame["contract"] = None
+        frame["contract"] = "Sem contrato"
     else:
-        frame["contract"] = frame["contract"].map(clean_contract)
+        frame["contract"] = frame["contract"].map(_contract_or_placeholder)
     if "wo" not in frame.columns:
-        frame["wo"] = None
+        frame["wo"] = "Sem WO"
     else:
-        frame["wo"] = frame["wo"].map(clean_wo)
+        frame["wo"] = frame["wo"].map(_wo_or_placeholder)
     frame["reference_date"] = pd.to_datetime(frame["reference_date"])
     frame["period"] = frame["reference_date"].dt.to_period("M").dt.to_timestamp()
     return frame
@@ -851,13 +855,13 @@ def load_dashboard_snapshot() -> tuple[pd.DataFrame, dict]:
         )
     if not frame.empty:
         if "contract" not in frame.columns:
-            frame["contract"] = None
+            frame["contract"] = "Sem contrato"
         else:
-            frame["contract"] = frame["contract"].map(clean_contract)
+            frame["contract"] = frame["contract"].map(_contract_or_placeholder)
         if "wo" not in frame.columns:
-            frame["wo"] = None
+            frame["wo"] = "Sem WO"
         else:
-            frame["wo"] = frame["wo"].map(clean_wo)
+            frame["wo"] = frame["wo"].map(_wo_or_placeholder)
         frame["reference_date"] = pd.to_datetime(frame["reference_date"])
         frame["period"] = frame["reference_date"].dt.to_period("M").dt.to_timestamp()
     return frame, stats

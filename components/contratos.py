@@ -65,7 +65,9 @@ def _registros_com_contrato(frame: pd.DataFrame) -> tuple[pd.DataFrame, int]:
 
 
 def _rotulo_tecnico(valor: object) -> str:
-    if valor is None or pd.isna(valor):
+    if valor is None or valor is pd.NA or valor is pd.NaT:
+        return "Sem técnico"
+    if isinstance(valor, float) and pd.isna(valor):
         return "Sem técnico"
     texto = str(valor).strip()
     return texto or "Sem técnico"
@@ -76,16 +78,206 @@ def resumir_contratos(frame: pd.DataFrame) -> tuple[pd.DataFrame, int, int]:
     colunas = ["Projeto", "Técnico", "Contratos distintos"]
     if frame.empty or not {"project", "technician", "contract"}.issubset(frame.columns):
         return pd.DataFrame(columns=colunas), 0, len(frame)
-    work = frame.copy()
-    work["contract"] = work["contract"].map(clean_contract)
-    sem_contrato = int(work["contract"].isna().sum())
-    validos = work.dropna(subset=["contract"])
-    resumo = (validos.groupby(["project", "technician"], dropna=False)["contract"]
-              .nunique().reset_index(name="Contratos distintos")
-              .rename(columns={"project": "Projeto", "technician": "Técnico"})
-              .sort_values(["Contratos distintos", "Projeto", "Técnico"], ascending=[False, True, True])
-              .reset_index(drop=True))
+    validos, sem_contrato = _registros_com_contrato(frame)
+    if validos.empty:
+        return pd.DataFrame(columns=colunas), 0, sem_contrato
+    validos = validos.assign(technician=validos["technician"].map(_rotulo_tecnico))
+    resumo = validos.groupby(["project", "technician"], dropna=False)[
+        "contract"
+    ].nunique().reset_index()
+    resumo.columns = colunas
+    resumo = resumo.sort_values(
+        ["Contratos distintos", "Projeto", "Técnico"],
+        ascending=[False, True, True],
+    ).reset_index(drop=True)
     return resumo[colunas], int(validos["contract"].nunique()), sem_contrato
+
+
+def contar_contratos_por_tecnico(frame: pd.DataFrame) -> pd.DataFrame:
+    """Conta contratos distintos por técnico e a participação na soma."""
+    if frame.empty or not {"technician", "contract"}.issubset(frame.columns):
+        return pd.DataFrame(columns=COLUNAS_TECNICO)
+    validos, _ = _registros_com_contrato(frame)
+    if validos.empty:
+        return pd.DataFrame(columns=COLUNAS_TECNICO)
+
+    work = validos.assign(Técnico=validos["technician"].map(_rotulo_tecnico))
+    resumo = (
+        work.groupby("Técnico")
+        .agg(Contratos=("contract", "nunique"))
+        .reset_index()
+    )
+    soma = int(resumo["Contratos"].sum())
+    resumo["Participação (%)"] = (resumo["Contratos"] / soma * 100).round(1)
+    return (
+        resumo.sort_values(["Contratos", "Técnico"], ascending=[False, True])
+        .reset_index(drop=True)[COLUNAS_TECNICO]
+    )
+
+
+def _competencias(frame: pd.DataFrame) -> pd.Series | None:
+    """Obtém competências mensais da data do período ou da data de referência."""
+    for coluna in ("period", "reference_date"):
+        if coluna not in frame.columns:
+            continue
+        datas = pd.to_datetime(frame[coluna], errors="coerce")
+        if datas.notna().any():
+            return pd.Series(
+                datas.dt.to_period("M").dt.to_timestamp(), index=frame.index
+            )
+    return None
+
+
+def contar_contratos_por_mes(frame: pd.DataFrame) -> pd.DataFrame:
+    """Conta contratos ativos por mês e o acumulado distinto."""
+    if frame.empty or "contract" not in frame.columns:
+        return pd.DataFrame(columns=COLUNAS_MENSAL)
+    validos, _ = _registros_com_contrato(frame)
+    if validos.empty:
+        return pd.DataFrame(columns=COLUNAS_MENSAL)
+    competencias = _competencias(validos)
+    if competencias is None:
+        return pd.DataFrame(columns=COLUNAS_MENSAL)
+    work = validos.assign(Competencia=competencias).dropna(subset=["Competencia"])
+    if work.empty:
+        return pd.DataFrame(columns=COLUNAS_MENSAL)
+
+    por_mes = work.groupby("Competencia")["contract"].apply(frozenset)
+    meses = pd.date_range(start=por_mes.index.min(), end=por_mes.index.max(), freq="MS")
+    acumulado: set[str] = set()
+    linhas = []
+    for mes in meses:
+        contratos = set(por_mes.get(mes, frozenset()))
+        acumulado.update(contratos)
+        linhas.append(
+            {
+                "Competência": month_label(mes),
+                "Contratos ativos": len(contratos),
+                "Contratos acumulados": len(acumulado),
+            }
+        )
+    return pd.DataFrame(linhas, columns=COLUNAS_MENSAL)
+
+
+def _estilizar_figura(fig: go.Figure, altura: int = 320) -> go.Figure:
+    fig.update_layout(
+        height=altura,
+        margin={"l": 8, "r": 18, "t": 30, "b": 8},
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font={"family": Fontes.TEXTO, "color": Cores.TEXTO_3, "size": 11},
+        hoverlabel={"bgcolor": "white", "font_color": AZUL_TOTALE},
+        legend={"orientation": "h", "y": 1.12, "x": 1, "xanchor": "right"},
+    )
+    fig.update_xaxes(showgrid=False, zeroline=False, fixedrange=True)
+    fig.update_yaxes(
+        gridcolor="#E6EDF5",
+        zeroline=False,
+        fixedrange=True,
+        separatethousands=True,
+        rangemode="tozero",
+    )
+    return fig
+
+
+def _grafico_por_tecnico(por_tecnico: pd.DataFrame) -> go.Figure:
+    dados = por_tecnico.head(12).sort_values("Contratos")
+    fig = go.Figure(
+        go.Bar(
+            x=dados["Contratos"],
+            y=dados["Técnico"],
+            orientation="h",
+            marker_color=AZUL_TOTALE,
+            text=dados["Contratos"],
+            textposition="outside",
+            cliponaxis=False,
+            hovertemplate="<b>%{y}</b><br>%{x} contrato(s)<extra></extra>",
+        )
+    )
+    fig.update_layout(bargap=0.35, showlegend=False)
+    fig.update_xaxes(dtick=1, title=None)
+    fig.update_yaxes(showgrid=False)
+    return _estilizar_figura(fig, altura=max(280, len(dados) * 32 + 90))
+
+
+def _grafico_mensal(mensal: pd.DataFrame) -> go.Figure:
+    fig = go.Figure()
+    fig.add_bar(
+        x=mensal["Competência"],
+        y=mensal["Contratos ativos"],
+        name="Ativos no mês",
+        marker_color=AZUL_TOTALE,
+        hovertemplate="<b>%{x}</b><br>Ativos: %{y}<extra></extra>",
+    )
+    fig.add_scatter(
+        x=mensal["Competência"],
+        y=mensal["Contratos acumulados"],
+        name="Acumulado distinto",
+        mode="lines+markers",
+        yaxis="y2",
+        line={"color": LARANJA_TOTALE, "width": 3},
+        marker={"size": 7, "color": LARANJA_TOTALE},
+        hovertemplate="<b>%{x}</b><br>Acumulado: %{y}<extra></extra>",
+    )
+    fig.update_layout(
+        yaxis={"title": "Ativos no mês"},
+        yaxis2={
+            "title": "Acumulado",
+            "overlaying": "y",
+            "side": "right",
+            "showgrid": False,
+            "rangemode": "tozero",
+        },
+        bargap=0.35,
+    )
+    return _estilizar_figura(fig)
+
+
+def _metric_card(
+    label: str,
+    value: str,
+    note: str,
+    symbol: str,
+    card_class: str = "",
+    note_class: str = "",
+) -> None:
+    st.markdown(
+        f"""
+        <div class="kpi-card {card_class}">
+            <div class="kpi-top"><span class="kpi-label">{html.escape(label)}</span><span class="kpi-dot">{html.escape(symbol)}</span></div>
+            <div class="kpi-value">{html.escape(value)}</div>
+            <div class="kpi-note {note_class}">{html.escape(note)}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _contador_destaque(total: int, tecnicos: int, meses: int) -> None:
+    apoio = (
+        f"{formatar_numero_br(tecnicos)} técnico(s) · "
+        f"{formatar_numero_br(meses)} competência(s)"
+    )
+    st.markdown(
+        f"""
+        <div class="highlight-card highlight-card--azul">
+            <h3>CONTRATOS DISTINTOS NO RECORTE</h3>
+            <p class="big-number">{formatar_numero_br(total)}</p>
+            <p style="margin:.35rem 0 0;font-size:12px;color:rgba(255,255,255,.86);">{html.escape(apoio)}</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _baixar_csv(frame: pd.DataFrame, nome: str) -> None:
+    st.download_button(
+        "Baixar contagem em CSV",
+        data=frame.to_csv(index=False, sep=";", decimal=",").encode("utf-8-sig"),
+        file_name=nome,
+        mime="text/csv",
+        key=f"download_contratos_{nome}",
+    )
 
 
 def render_contratos(frame: pd.DataFrame) -> None:
@@ -169,7 +361,6 @@ def render_contratos(frame: pd.DataFrame) -> None:
             por_tecnico,
             hide_index=True,
             width="stretch",
-            alt="Contador de contratos distintos por técnico",
             column_config={
                 "Contratos": st.column_config.NumberColumn(format="%d"),
                 "Participação (%)": st.column_config.ProgressColumn(
@@ -201,7 +392,6 @@ def render_contratos(frame: pd.DataFrame) -> None:
                 mensal,
                 hide_index=True,
                 width="stretch",
-                alt="Contador mensal de contratos ativos e acumulados",
                 column_config={
                     "Contratos ativos": st.column_config.NumberColumn(format="%d"),
                     "Contratos acumulados": st.column_config.NumberColumn(format="%d"),
@@ -214,6 +404,5 @@ def render_contratos(frame: pd.DataFrame) -> None:
             resumo,
             hide_index=True,
             width="stretch",
-            alt="Contratos distintos por projeto e técnico",
         )
         _baixar_csv(resumo, "contratos_por_projeto_tecnico.csv")
