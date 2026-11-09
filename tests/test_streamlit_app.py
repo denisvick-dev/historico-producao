@@ -74,7 +74,7 @@ class StreamlitAppTests(unittest.TestCase):
         app.radio(key="navigation").set_value("Contratos").run(timeout=30)
         self.assertFalse(app.exception)
         markdown = " ".join(str(item.value) for item in app.markdown)
-        self.assertIn("CONTRATOS DISTINTOS NO RECORTE", markdown)
+        self.assertIn("CONTRATOS NO RECORTE", markdown)
         self.assertIn("Contador por técnico", markdown)
         self.assertIn("Evolução mensal dos contratos", markdown)
         self.assertGreaterEqual(len(app.get("plotly_chart")), 2)

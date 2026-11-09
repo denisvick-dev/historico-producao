@@ -1,13 +1,20 @@
-"""Contador de contratos distintos no recorte de produção.
+"""Contador de contratos na aba Contratos, baseado na coluna **Qtde_Contrato**.
 
 A aba **Contratos** responde três perguntas:
 
-• **Quanto?** — o contador em destaque soma os identificadores de contrato
-  distintos no período e nos filtros selecionados.
-• **Quem?** — o contador por técnico mostra quantos contratos cada técnico
-  atendeu no recorte.
-• **Quando?** — a evolução mensal mostra os contratos ativos em cada
-  competência e o acumulado distinto até aquele mês.
+• **Quanto?** — o contador em destaque soma a coluna ``contracts_qty``
+  (Qtde_Contrato) de cada arquivo presente no recorte. A coluna repete, em
+  todas as linhas de um arquivo, o total de contratos distintos daquele
+  arquivo; por isso somamos uma vez por arquivo (o máximo), nunca as linhas.
+  Um contrato que aparece em mais de um mês volta a contar naquele mês — o
+  recorte **não** é uma união de contratos distintos.
+• **Quem?** — o contador por técnico mostra quantos contratos distintos cada
+  técnico atendeu no recorte (a coluna Qtde_Contrato é um valor único por
+  arquivo e não separa por técnico, então esta seção conta
+  ``nunique(contrato)`` por técnico).
+• **Quando?** — a evolução mensal mostra a soma da Qtde_Contrato dos arquivos
+  com registros em cada competência (o mesmo contrato pode somar em mais de
+  um mês) e a soma acumulada até o mês.
 
 Os cálculos ficam em funções puras (testáveis sem Streamlit); o layout apenas
 consome os DataFrames resultantes.
@@ -24,9 +31,9 @@ import streamlit as st
 from components.componentes import Cores, Fontes, formatar_numero_br
 from production import clean_contract, is_valid_contract, month_label
 
-COLUNAS_RESUMO = ["Projeto", "Técnico", "Contratos"]
+COLUNAS_RESUMO = ["Projeto", "Técnico", "Contratos distintos"]
 COLUNAS_TECNICO = ["Técnico", "Contratos", "Participação (%)"]
-COLUNAS_MENSAL = ["Competência", "Contratos ativos", "Contratos acumulados"]
+COLUNAS_MENSAL = ["Competência", "Contratos no mês", "Acumulado (soma)"]
 COLUNAS_ARQUIVO = ["Arquivo", "Origem", "Registros com contrato", "Contratos"]
 CHART_CONFIG = {"displayModeBar": False, "responsive": True}
 
@@ -41,9 +48,10 @@ def _registros_com_contrato(frame: pd.DataFrame) -> tuple[pd.DataFrame, int]:
     """Separa os registros com identificador de contrato válido.
 
     Retorna a cópia normalizada (coluna ``contract`` limpa) e a quantidade de
-    linhas sem contrato — que ficam fora de todas as contagens. O marcador
-    ``"Sem contrato"`` gravado pela importação é tratado como ausência, para
-    que ele nunca seja contado como se fosse um contrato real.
+    linhas sem contrato — que ficam fora das contagens por técnico e da
+    contagem de registros por arquivo. O marcador ``"Sem contrato"`` gravado
+    pela importação é tratado como ausência, para que ele nunca seja contado
+    como se fosse um contrato real.
     """
     if frame.empty or "contract" not in frame.columns:
         return frame.iloc[0:0].copy(), 0
@@ -62,9 +70,21 @@ def _rotulo_tecnico(valor: object) -> str:
     return texto or "Sem técnico"
 
 
+def _chave_arquivo(serie: pd.Series) -> pd.Series:
+    """Normaliza o identificador do arquivo (vazio vira ``Sem arquivo``)."""
+    return (
+        serie.fillna("Sem arquivo").astype(str).str.strip().replace("", "Sem arquivo")
+    )
+
+
+def _qtde_numerico(serie: pd.Series) -> pd.Series:
+    """Converte Qtde_Contrato para número, tratando valores inválidos como 0."""
+    return pd.to_numeric(serie, errors="coerce").fillna(0)
+
+
 def resumir_contratos(frame: pd.DataFrame) -> tuple[pd.DataFrame, int, int]:
     """Conta identificadores distintos por projeto e técnico e no recorte inteiro."""
-    colunas = ["Projeto", "Técnico", "Contratos distintos"]
+    colunas = COLUNAS_RESUMO
     if frame.empty or not {"project", "technician", "contract"}.issubset(frame.columns):
         return pd.DataFrame(columns=colunas), 0, len(frame)
     validos, sem_contrato = _registros_com_contrato(frame)
@@ -84,8 +104,38 @@ def resumir_contratos(frame: pd.DataFrame) -> tuple[pd.DataFrame, int, int]:
     return resumo[colunas], int(validos["contract"].nunique()), sem_contrato
 
 
+def somar_qtde_contrato(frame: pd.DataFrame) -> tuple[int, int]:
+    """Soma a Qtde_Contrato dos arquivos presentes no recorte.
+
+    A coluna repete em todas as linhas de um arquivo o total de contratos
+    distintos do arquivo; por isso somamos o valor máximo de cada arquivo
+    (nunca as linhas). Retorna ``(soma, quantidade_de_arquivos)``. Sem a
+    coluna ``contracts_qty``, cai para a união de contratos distintos do
+    recorte (0 arquivo identificado).
+    """
+    if frame.empty:
+        return 0, 0
+    if "contracts_qty" not in frame.columns:
+        validos, _ = _registros_com_contrato(frame)
+        total = int(validos["contract"].nunique()) if not validos.empty else 0
+        return total, 0
+    if "source_file" not in frame.columns:
+        maior = _qtde_numerico(frame["contracts_qty"]).max()
+        return int(maior), 1
+    por_arquivo = (
+        frame.assign(_arquivo=_chave_arquivo(frame["source_file"]))
+        .groupby("_arquivo")["contracts_qty"]
+        .max()
+    )
+    return int(_qtde_numerico(por_arquivo).sum()), int(por_arquivo.shape[0])
+
+
 def contar_contratos_por_tecnico(frame: pd.DataFrame) -> pd.DataFrame:
-    """Conta contratos distintos por técnico e a participação na soma."""
+    """Conta contratos distintos por técnico e a participação na soma.
+
+    A Qtde_Contrato é um valor único por arquivo e não separa por técnico;
+    esta seção conta ``nunique(contrato)`` por técnico no recorte.
+    """
     if frame.empty or not {"technician", "contract"}.issubset(frame.columns):
         return pd.DataFrame(columns=COLUNAS_TECNICO)
     validos, _ = _registros_com_contrato(frame)
@@ -104,29 +154,33 @@ def contar_contratos_por_tecnico(frame: pd.DataFrame) -> pd.DataFrame:
 
 
 def contar_contratos_por_arquivo(frame: pd.DataFrame) -> pd.DataFrame:
-    """Contador de contratos distintos em cada arquivo importado.
+    """Contador de contratos em cada arquivo importado, a partir da Qtde_Contrato.
 
-    O recorte é o mesmo da página (período e filtros); o arquivo vem de
-    ``source_file``. Registros sem contrato ficam fora do contador e da coluna
-    de registros, que por isso se chama ``Registros com contrato``.
+    A coluna ``Contratos`` repete o valor da coluna Qtde_Contrato do arquivo
+    (contratos distintos do arquivo inteiro, sem aplicar os filtros do
+    recorte). ``Registros com contrato`` conta apenas as linhas válidas do
+    recorte. Sem a coluna ``contracts_qty``, cai para ``nunique(contract)``.
     """
     if frame.empty or not {"source_file", "contract"}.issubset(frame.columns):
         return pd.DataFrame(columns=COLUNAS_ARQUIVO)
     validos, _ = _registros_com_contrato(frame)
     if validos.empty:
         return pd.DataFrame(columns=COLUNAS_ARQUIVO)
-    work = validos.assign(
-        Arquivo=validos["source_file"]
-        .fillna("Sem arquivo")
-        .astype(str)
-        .str.strip()
-        .replace("", "Sem arquivo")
-    )
+    work = validos.assign(Arquivo=_chave_arquivo(validos["source_file"]))
     resumo = (
         work.groupby("Arquivo", as_index=False)["contract"]
-        .agg(Registros="size", Contratos="nunique")
+        .agg(Registros="size")
+        .rename(columns={"Registros": "Registros com contrato"})
     )
-    resumo["Registros com contrato"] = resumo.pop("Registros")
+    if "contracts_qty" in work.columns:
+        qtde = work.groupby("Arquivo")["contracts_qty"].max()
+        resumo["Contratos"] = (
+            _qtde_numerico(resumo["Arquivo"].map(qtde)).fillna(0).astype(int)
+        )
+    else:
+        resumo["Contratos"] = (
+            work.groupby("Arquivo")["contract"].nunique().reindex(resumo["Arquivo"]).to_numpy()
+        )
     if "source_sheet" in work.columns:
         origens = work.groupby("Arquivo")["source_sheet"].agg(
             lambda valores: " / ".join(
@@ -161,31 +215,46 @@ def _competencias(frame: pd.DataFrame) -> pd.Series | None:
 
 
 def contar_contratos_por_mes(frame: pd.DataFrame) -> pd.DataFrame:
-    """Conta contratos ativos por mês e o acumulado distinto."""
-    if frame.empty or "contract" not in frame.columns:
+    """Evolução mensal a partir da coluna Qtde_Contrato.
+
+    Para cada competência, soma a Qtde_Contrato de cada arquivo que tem
+    registros nela — o mesmo contrato pode somar em mais de um mês. A coluna
+    ``Acumulado (soma)`` é a soma progressiva dos meses. Meses sem registros
+    aparecem zerados. Arquivos que abrangem mais de um mês contam em cada
+    competência em que aparecem.
+    """
+    if frame.empty or "contracts_qty" not in frame.columns:
         return pd.DataFrame(columns=COLUNAS_MENSAL)
-    validos, _ = _registros_com_contrato(frame)
-    if validos.empty:
-        return pd.DataFrame(columns=COLUNAS_MENSAL)
-    competencias = _competencias(validos)
+    competencias = _competencias(frame)
     if competencias is None:
         return pd.DataFrame(columns=COLUNAS_MENSAL)
-    work = validos.assign(Competencia=competencias).dropna(subset=["Competencia"])
+    work = frame.assign(Competencia=competencias).dropna(subset=["Competencia"])
     if work.empty:
         return pd.DataFrame(columns=COLUNAS_MENSAL)
+    if "source_file" in work.columns:
+        arquivos = work.assign(Arquivo=_chave_arquivo(work["source_file"]))
+        por_arquivo = (
+            arquivos.groupby(["Competencia", "Arquivo"])["contracts_qty"]
+            .max()
+            .reset_index()
+        )
+        por_mes = _qtde_numerico(
+            por_arquivo.groupby("Competencia")["contracts_qty"].sum()
+        )
+    else:
+        por_mes = _qtde_numerico(work.groupby("Competencia")["contracts_qty"].max())
 
-    por_mes = work.groupby("Competencia")["contract"].apply(frozenset)
     meses = pd.date_range(start=por_mes.index.min(), end=por_mes.index.max(), freq="MS")
-    acumulado: set[str] = set()
+    acumulado = 0
     linhas = []
     for mes in meses:
-        contratos = set(por_mes.get(mes, frozenset()))
-        acumulado.update(contratos)
+        contratos = int(por_mes.get(mes, 0))
+        acumulado += contratos
         linhas.append(
             {
                 "Competência": month_label(mes),
-                "Contratos ativos": len(contratos),
-                "Contratos acumulados": len(acumulado),
+                "Contratos no mês": contratos,
+                "Acumulado (soma)": acumulado,
             }
         )
     return pd.DataFrame(linhas, columns=COLUNAS_MENSAL)
@@ -236,15 +305,15 @@ def _grafico_mensal(mensal: pd.DataFrame) -> go.Figure:
     fig = go.Figure()
     fig.add_bar(
         x=mensal["Competência"],
-        y=mensal["Contratos ativos"],
-        name="Ativos no mês",
+        y=mensal["Contratos no mês"],
+        name="Qtde_Contrato no mês",
         marker_color=AZUL_TOTALE,
-        hovertemplate="<b>%{x}</b><br>Ativos: %{y}<extra></extra>",
+        hovertemplate="<b>%{x}</b><br>Qtde_Contrato: %{y}<extra></extra>",
     )
     fig.add_scatter(
         x=mensal["Competência"],
-        y=mensal["Contratos acumulados"],
-        name="Acumulado distinto",
+        y=mensal["Acumulado (soma)"],
+        name="Acumulado (soma)",
         mode="lines+markers",
         yaxis="y2",
         line={"color": LARANJA_TOTALE, "width": 3},
@@ -252,9 +321,9 @@ def _grafico_mensal(mensal: pd.DataFrame) -> go.Figure:
         hovertemplate="<b>%{x}</b><br>Acumulado: %{y}<extra></extra>",
     )
     fig.update_layout(
-        yaxis={"title": "Ativos no mês"},
+        yaxis={"title": "Contratos no mês"},
         yaxis2={
-            "title": "Acumulado",
+            "title": "Acumulado (soma)",
             "overlaying": "y",
             "side": "right",
             "showgrid": False,
@@ -285,15 +354,15 @@ def _metric_card(
     )
 
 
-def _contador_destaque(total: int, tecnicos: int, meses: int) -> None:
+def _contador_destaque(total: int, arquivos: int, meses: int) -> None:
     apoio = (
-        f"{formatar_numero_br(tecnicos)} técnico(s) · "
+        f"{formatar_numero_br(arquivos)} arquivo(s) · "
         f"{formatar_numero_br(meses)} competência(s)"
     )
     st.markdown(
         f"""
         <div class="highlight-card highlight-card--azul">
-            <h3>CONTRATOS DISTINTOS NO RECORTE</h3>
+            <h3>CONTRATOS NO RECORTE</h3>
             <p class="big-number">{formatar_numero_br(total)}</p>
             <p style="margin:.35rem 0 0;font-size:12px;color:rgba(255,255,255,.86);">{html.escape(apoio)}</p>
         </div>
@@ -313,20 +382,26 @@ def _baixar_csv(frame: pd.DataFrame, nome: str) -> None:
 
 
 def render_contratos(frame: pd.DataFrame) -> None:
-    resumo, total, ausentes = resumir_contratos(frame)
+    resumo, _, ausentes = resumir_contratos(frame)
+    total, arquivos = somar_qtde_contrato(frame)
     por_tecnico = contar_contratos_por_tecnico(frame)
     mensal = contar_contratos_por_mes(frame)
+    competencias = _competencias(frame)
+    n_competencias = (
+        int(competencias.dropna().nunique()) if competencias is not None else 0
+    )
 
     st.markdown("### Contador de contratos")
     st.caption(
-        "Contagem de identificadores de contrato distintos no período e filtros "
-        "selecionados, considerando Prod e Gpon. Um contrato repetido no mesmo "
-        "projeto e técnico é contado uma vez."
+        "Soma da coluna Qtde_Contrato dos arquivos presentes no recorte: cada "
+        "arquivo conta os contratos distintos que trouxe, então um contrato "
+        "que se repete em outro mês volta a contar naquele mês — o recorte "
+        "não é uma união de contratos distintos."
     )
 
     destaque, apoio = st.columns([1.15, 2], gap="medium")
     with destaque:
-        _contador_destaque(total, len(por_tecnico), len(mensal))
+        _contador_destaque(total, arquivos, n_competencias)
     with apoio:
         cards = st.columns(3)
         with cards[0]:
@@ -350,7 +425,7 @@ def render_contratos(frame: pd.DataFrame) -> None:
             _metric_card(
                 "REGISTROS SEM CONTRATO",
                 formatar_numero_br(ausentes),
-                "Ficam fora de todas as contagens",
+                "Ficam fora das contagens por técnico e de registros",
                 "!",
                 card_class="kpi-card--vermelho" if ausentes else "kpi-card--verde",
                 note_class="negative" if ausentes else "positive",
@@ -358,26 +433,24 @@ def render_contratos(frame: pd.DataFrame) -> None:
 
     if ausentes:
         st.warning(
-            "Registros sem identificador de contrato não entram na contagem. "
-            "Dados importados antes desta atualização precisam ser sincronizados "
+            "Registros sem identificador de contrato não entram nas contagens "
+            "por técnico nem na contagem de registros por arquivo. Dados "
+            "importados antes desta atualização precisam ser sincronizados "
             "ou reimportados para preencher o campo."
         )
     if total == 0:
         st.info(
-            "Nenhum contrato identificado no recorte. Verifique a coluna Contrato "
-            "nos arquivos de origem e a sincronização."
+            "Nenhuma Qtde_Contrato positiva nos arquivos do recorte. Verifique "
+            "a coluna Contrato nos arquivos de origem e a sincronização."
         )
         return
-    st.caption(
-        "Um mesmo contrato pode aparecer em mais de um projeto ou técnico; por "
-        "isso a soma das linhas pode superar o total distinto do recorte."
-    )
 
     st.markdown("### Contador por técnico")
     st.caption(
-        "Quantidade de contratos distintos atendidos por técnico no recorte. A "
-        "participação é a fatia de cada técnico na soma da coluna, não no total "
-        "distinto do recorte."
+        "Quantidade de contratos distintos atendidos por técnico no recorte "
+        "(a Qtde_Contrato é um valor único por arquivo e não separa por "
+        "técnico). A participação é a fatia de cada técnico na soma da "
+        "coluna, não na soma da Qtde_Contrato do recorte."
     )
     grafico_col, tabela_col = st.columns([1.15, 1], gap="medium")
     with grafico_col, st.container(border=True):
@@ -413,8 +486,9 @@ def render_contratos(frame: pd.DataFrame) -> None:
         )
     else:
         st.caption(
-            "Barras: contratos com ao menos um registro no mês. Linha: contratos "
-            "distintos acumulados até o mês. Meses sem registros aparecem zerados."
+            "Barras: soma da Qtde_Contrato dos arquivos que têm registros no "
+            "mês — o mesmo contrato pode somar em meses diferentes. Linha: "
+            "soma acumulada até o mês. Meses sem registros aparecem zerados."
         )
         with st.container(border=True):
             st.plotly_chart(
@@ -425,8 +499,8 @@ def render_contratos(frame: pd.DataFrame) -> None:
                 hide_index=True,
                 width="stretch",
                 column_config={
-                    "Contratos ativos": st.column_config.NumberColumn(format="%d"),
-                    "Contratos acumulados": st.column_config.NumberColumn(format="%d"),
+                    "Contratos no mês": st.column_config.NumberColumn(format="%d"),
+                    "Acumulado (soma)": st.column_config.NumberColumn(format="%d"),
                 },
             )
             _baixar_csv(mensal, "contratos_por_mes.csv")
@@ -437,9 +511,10 @@ def render_contratos(frame: pd.DataFrame) -> None:
         st.info("Não há arquivo de origem associado aos contratos do recorte.")
     else:
         st.caption(
-            "Contador de contratos distintos em cada arquivo importado, dentro "
-            "do período e filtros selecionados. Registros sem contrato não "
-            "entram na contagem."
+            "Coluna Qtde_Contrato lida diretamente de cada arquivo — o valor "
+            "reflete os contratos distintos do arquivo inteiro e não muda com "
+            "os filtros do recorte. Registros com contrato conta as linhas "
+            "válidas do recorte."
         )
         with st.container(border=True):
             st.dataframe(
@@ -457,7 +532,11 @@ def render_contratos(frame: pd.DataFrame) -> None:
             )
             _baixar_csv(por_arquivo, "contratos_por_arquivo.csv")
 
-    with st.expander("Detalhamento por projeto e técnico", expanded=False):
+    with st.expander("Detalhamento por projeto e técnico (contratos distintos)"):
+        st.caption(
+            "Contagem de contratos distintos por projeto e técnico no recorte "
+            "(nunique). Não usa a Qtde_Contrato e pode divergir dela."
+        )
         st.dataframe(
             resumo,
             hide_index=True,
