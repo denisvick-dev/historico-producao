@@ -35,6 +35,7 @@ from components.componentes import (
     render_ticker,
     render_sidebar_theme_selector,
 )
+from components.contratos import render_contratos
 from components.eficiencia import render_eficiencia, render_eficiencia_wo
 from components.prod_os import render_prod_orders
 from components.visoes_dashboards import (
@@ -702,7 +703,6 @@ def render_overview(
         if not ranking.empty:
             top_tech = f"{ranking.iloc[0]['technician']} · {format_points(ranking.iloc[0]['points_total'])} pontos"
 
-        periods_count = max(filtered["period"].nunique(), 1)
         latest_period = filtered["period"].max()
         latest = summarize(
             filtered[filtered["period"].eq(latest_period)], "technician"
@@ -798,11 +798,9 @@ def render_overview(
         ]
     ]
     st.dataframe(
-        display_table.style.map(
-            _total_points_style, subset=["Pontos Totais"]
-        ).map(_monthly_average_style, subset=["Média mensal"]).map(
-            _status_badge_style, subset=["Variação no último mês"]
-        ),
+        display_table.style.map(_total_points_style, subset=["Pontos Totais"])
+        .map(_monthly_average_style, subset=["Média mensal"])
+        .map(_status_badge_style, subset=["Variação no último mês"]),
         width="stretch",
         hide_index=True,
         alt="Ranking mensal de produção, GPON e pontos por técnico",
@@ -1164,7 +1162,8 @@ def render_dashboard() -> None:
         ),
         "Contratos": (
             "Contratos por projeto e técnico",
-            "Acompanhe a quantidade de contratos distintos no período selecionado.",
+            "Acompanhe o contador de contratos distintos, a carteira por técnico "
+            "e a evolução mensal no período selecionado.",
         ),
         "Regularidade": (
             "Regularidade da produção",

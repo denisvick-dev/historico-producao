@@ -68,6 +68,18 @@ class StreamlitAppTests(unittest.TestCase):
                 row["Pontos Totais"] / active_months,
             )
 
+    def test_aba_contratos_exibe_contador(self):
+        """A aba Contratos deve abrir com o contador em destaque e os gráficos."""
+        app = AppTest.from_file(_APP_PATH).run(timeout=30)
+        app.radio(key="navigation").set_value("Contratos").run(timeout=30)
+        self.assertFalse(app.exception)
+        markdown = " ".join(str(item.value) for item in app.markdown)
+        self.assertIn("CONTRATOS DISTINTOS NO RECORTE", markdown)
+        self.assertIn("Contador por técnico", markdown)
+        self.assertIn("Evolução mensal dos contratos", markdown)
+        self.assertGreaterEqual(len(app.get("plotly_chart")), 2)
+        self.assertGreaterEqual(len(app.get("dataframe")), 2)
+
     def test_novas_visoes_carregam_sem_erro(self):
         """As páginas complementares devem abrir sem exceções."""
         app = AppTest.from_file(_APP_PATH).run(timeout=30)
@@ -81,7 +93,6 @@ class StreamlitAppTests(unittest.TestCase):
             with self.subTest(pagina=pagina):
                 app.radio(key="navigation").set_value(pagina).run(timeout=30)
                 self.assertFalse(app.exception)
-
 
 
 if __name__ == "__main__":
