@@ -1654,6 +1654,27 @@ def render_kpi_sm(
     _card_premium(container, label, valor, sub, tema, icone, colorida=True, compacto=True)
 
 
+def render_kpi_card(
+    label: str,
+    value: str,
+    note: str,
+    symbol: str,
+    card_class: str = "",
+    note_class: str = "",
+) -> None:
+    """Cartão de KPI compacto usado nas páginas analíticas (aba Contratos)."""
+    st.markdown(
+        f"""
+        <div class="kpi-card {card_class}">
+            <div class="kpi-top"><span class="kpi-label">{Validadores.html_escape(label)}</span><span class="kpi-dot">{Validadores.html_escape(symbol)}</span></div>
+            <div class="kpi-value">{Validadores.html_escape(value)}</div>
+            <div class="kpi-note {note_class}">{Validadores.html_escape(note)}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def render_insight(msg: str, tipo: TipoInsightType = "info", titulo: str = "") -> None:
     if not msg:
         return
@@ -2091,6 +2112,7 @@ __all__ = [
     "render_hero_totale_2",
     "render_insight",
     "render_kpi",
+    "render_kpi_card",
     "render_kpi_sm",
     "render_metric",
     "render_metric_card",

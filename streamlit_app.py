@@ -36,7 +36,7 @@ from components.componentes import (
     render_sidebar_theme_selector,
 )
 from components.contratos import render_contratos
-from components.eficiencia import render_eficiencia, render_eficiencia_wo
+from components.eficiencia import render_eficiencia
 from components.prod_os import render_prod_orders
 from components.visoes_dashboards import (
     render_projetos,
@@ -1161,7 +1161,6 @@ with st.sidebar:
         "Contratos": "◈  Contratos",
         "Regularidade": "◌  Regularidade",
         "Eficiência": "▧  Eficiência por técnico",
-        "Eficiência por contrato": "◫  Eficiência por contrato",
         "Técnicos": "♙  Técnicos",
         "Saúde dos dados": "◉  Saúde dos dados",
     }
@@ -1206,9 +1205,10 @@ def render_dashboard() -> None:
             "Ordens de serviço registradas na aba Prod, por competência e técnico.",
         ),
         "Contratos": (
-            "Contratos por projeto e técnico",
+            "Contratos e eficiência por contrato",
             "Acompanhe a soma da Qtde_Contrato dos arquivos do recorte, a carteira por "
-            "técnico, a evolução mensal e os contratos de cada arquivo importado.",
+            "técnico, a evolução mensal, os contratos de cada arquivo e a eficiência "
+            "(faixas de pontos) por contrato.",
         ),
         "Regularidade": (
             "Regularidade da produção",
@@ -1217,10 +1217,6 @@ def render_dashboard() -> None:
         "Eficiência": (
             "Eficiência por técnico por mês",
             "Acompanhe as faixas mensais e a faixa mais frequente no período.",
-        ),
-        "Eficiência por contrato": (
-            "Eficiência por contrato",
-            "Analise a eficiência por contrato, com a faixa mensal e o contador de contratos ativos.",
         ),
         "Técnicos": (
             "Produção por técnico",
@@ -1312,8 +1308,6 @@ def render_dashboard() -> None:
             render_regularidade_producao(filtered, period_start, period_end)
         elif navigation == "Eficiência":
             render_eficiencia(filtered)
-        elif navigation == "Eficiência por contrato":
-            render_eficiencia_wo(filtered)
         elif navigation == "Técnicos":
             render_technicians(filtered)
 
@@ -1325,13 +1319,3 @@ def render_dashboard() -> None:
 
 
 render_dashboard()
-
-# Conferência das colunas dos arquivos importados do Drive referente ao contrato
-with st.expander("Conferência de colunas dos arquivos importados do Drive"):
-    st.markdown(
-        """
-        <p>Esta seção exibe as colunas disponíveis nos registros importados do Drive.</p>
-        """,
-        unsafe_allow_html=True,
-    )
-    render_column_check(records)

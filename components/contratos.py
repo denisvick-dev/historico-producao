@@ -16,6 +16,9 @@ A aba **Contratos** responde três perguntas:
   com registros em cada competência (o mesmo contrato pode somar em mais de
   um mês) e a soma acumulada até o mês.
 
+A mesma página traz, ao final, a seção **Eficiência por contrato**
+(faixas de pontos por contrato·mês), também consumindo dados do recorte.
+
 Os cálculos ficam em funções puras (testáveis sem Streamlit); o layout apenas
 consome os DataFrames resultantes.
 """
@@ -28,7 +31,8 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from components.componentes import Cores, Fontes, formatar_numero_br
+from components.componentes import Cores, Fontes, formatar_numero_br, render_kpi_card
+from components.eficiencia import render_eficiencia_contrato
 from production import clean_contract, is_valid_contract, month_label
 
 COLUNAS_RESUMO = ["Projeto", "Técnico", "Contratos distintos"]
@@ -168,8 +172,8 @@ def contar_contratos_por_arquivo(frame: pd.DataFrame) -> pd.DataFrame:
         return pd.DataFrame(columns=COLUNAS_ARQUIVO)
     work = validos.assign(Arquivo=_chave_arquivo(validos["source_file"]))
     resumo = (
-        work.groupby("Arquivo", as_index=False)["contract"]
-        .agg(Registros="size")
+        work.groupby("Arquivo", as_index=False)
+        .agg(Registros=("contract", "size"))
         .rename(columns={"Registros": "Registros com contrato"})
     )
     if "contracts_qty" in work.columns:
@@ -334,26 +338,6 @@ def _grafico_mensal(mensal: pd.DataFrame) -> go.Figure:
     return _estilizar_figura(fig)
 
 
-def _metric_card(
-    label: str,
-    value: str,
-    note: str,
-    symbol: str,
-    card_class: str = "",
-    note_class: str = "",
-) -> None:
-    st.markdown(
-        f"""
-        <div class="kpi-card {card_class}">
-            <div class="kpi-top"><span class="kpi-label">{html.escape(label)}</span><span class="kpi-dot">{html.escape(symbol)}</span></div>
-            <div class="kpi-value">{html.escape(value)}</div>
-            <div class="kpi-note {note_class}">{html.escape(note)}</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
 def _contador_destaque(total: int, arquivos: int, meses: int) -> None:
     apoio = (
         f"{formatar_numero_br(arquivos)} arquivo(s) · "
@@ -405,7 +389,7 @@ def render_contratos(frame: pd.DataFrame) -> None:
     with apoio:
         cards = st.columns(3)
         with cards[0]:
-            _metric_card(
+            render_kpi_card(
                 "TÉCNICOS COM CONTRATOS",
                 formatar_numero_br(len(por_tecnico)),
                 "Técnicos com ao menos um contrato no recorte",
@@ -414,7 +398,7 @@ def render_contratos(frame: pd.DataFrame) -> None:
             )
         with cards[1]:
             media = por_tecnico["Contratos"].mean() if not por_tecnico.empty else 0.0
-            _metric_card(
+            render_kpi_card(
                 "MÉDIA POR TÉCNICO",
                 formatar_numero_br(media, 1),
                 "Contratos distintos por técnico",
@@ -422,7 +406,7 @@ def render_contratos(frame: pd.DataFrame) -> None:
                 card_class="kpi-card--laranja",
             )
         with cards[2]:
-            _metric_card(
+            render_kpi_card(
                 "REGISTROS SEM CONTRATO",
                 formatar_numero_br(ausentes),
                 "Ficam fora das contagens por técnico e de registros",
@@ -443,103 +427,104 @@ def render_contratos(frame: pd.DataFrame) -> None:
             "Nenhuma Qtde_Contrato positiva nos arquivos do recorte. Verifique "
             "a coluna Contrato nos arquivos de origem e a sincronização."
         )
-        return
-
-    st.markdown("### Contador por técnico")
-    st.caption(
-        "Quantidade de contratos distintos atendidos por técnico no recorte "
-        "(a Qtde_Contrato é um valor único por arquivo e não separa por "
-        "técnico). A participação é a fatia de cada técnico na soma da "
-        "coluna, não na soma da Qtde_Contrato do recorte."
-    )
-    grafico_col, tabela_col = st.columns([1.15, 1], gap="medium")
-    with grafico_col, st.container(border=True):
-        st.markdown("**Ranking por contratos · Top 12**")
-        st.plotly_chart(
-            _grafico_por_tecnico(por_tecnico),
-            width="stretch",
-            config=CHART_CONFIG,
-        )
-    with tabela_col, st.container(border=True):
-        st.markdown("**Contagem completa**")
-        st.dataframe(
-            por_tecnico,
-            hide_index=True,
-            width="stretch",
-            column_config={
-                "Contratos": st.column_config.NumberColumn(format="%d"),
-                "Participação (%)": st.column_config.ProgressColumn(
-                    "Participação (%)",
-                    format="%.1f%%",
-                    min_value=0.0,
-                    max_value=100.0,
-                ),
-            },
-        )
-        _baixar_csv(por_tecnico, "contratos_por_tecnico.csv")
-
-    st.markdown("### Evolução mensal dos contratos")
-    if mensal.empty:
-        st.info(
-            "Os registros do recorte não têm data de competência válida; não é "
-            "possível montar a evolução mensal."
-        )
     else:
+        st.markdown("### Contador por técnico")
         st.caption(
-            "Barras: soma da Qtde_Contrato dos arquivos que têm registros no "
-            "mês — o mesmo contrato pode somar em meses diferentes. Linha: "
-            "soma acumulada até o mês. Meses sem registros aparecem zerados."
+            "Quantidade de contratos distintos atendidos por técnico no recorte "
+            "(a Qtde_Contrato é um valor único por arquivo e não separa por "
+            "técnico). A participação é a fatia de cada técnico na soma da "
+            "coluna, não na soma da Qtde_Contrato do recorte."
         )
-        with st.container(border=True):
+        grafico_col, tabela_col = st.columns([1.15, 1], gap="medium")
+        with grafico_col, st.container(border=True):
+            st.markdown("**Ranking por contratos · Top 12**")
             st.plotly_chart(
-                _grafico_mensal(mensal), width="stretch", config=CHART_CONFIG
+                _grafico_por_tecnico(por_tecnico),
+                width="stretch",
+                config=CHART_CONFIG,
             )
+        with tabela_col, st.container(border=True):
+            st.markdown("**Contagem completa**")
             st.dataframe(
-                mensal,
+                por_tecnico,
                 hide_index=True,
                 width="stretch",
                 column_config={
-                    "Contratos no mês": st.column_config.NumberColumn(format="%d"),
-                    "Acumulado (soma)": st.column_config.NumberColumn(format="%d"),
-                },
-            )
-            _baixar_csv(mensal, "contratos_por_mes.csv")
-
-    por_arquivo = contar_contratos_por_arquivo(frame)
-    st.markdown("### Contratos por arquivo importado")
-    if por_arquivo.empty:
-        st.info("Não há arquivo de origem associado aos contratos do recorte.")
-    else:
-        st.caption(
-            "Coluna Qtde_Contrato lida diretamente de cada arquivo — o valor "
-            "reflete os contratos distintos do arquivo inteiro e não muda com "
-            "os filtros do recorte. Registros com contrato conta as linhas "
-            "válidas do recorte."
-        )
-        with st.container(border=True):
-            st.dataframe(
-                por_arquivo,
-                hide_index=True,
-                width="stretch",
-                column_config={
-                    "Arquivo": st.column_config.TextColumn(width="large"),
-                    "Origem": st.column_config.TextColumn(width="small"),
-                    "Registros com contrato": st.column_config.NumberColumn(
-                        format="%d"
-                    ),
                     "Contratos": st.column_config.NumberColumn(format="%d"),
+                    "Participação (%)": st.column_config.ProgressColumn(
+                        "Participação (%)",
+                        format="%.1f%%",
+                        min_value=0.0,
+                        max_value=100.0,
+                    ),
                 },
             )
-            _baixar_csv(por_arquivo, "contratos_por_arquivo.csv")
+            _baixar_csv(por_tecnico, "contratos_por_tecnico.csv")
 
-    with st.expander("Detalhamento por projeto e técnico (contratos distintos)"):
-        st.caption(
-            "Contagem de contratos distintos por projeto e técnico no recorte "
-            "(nunique). Não usa a Qtde_Contrato e pode divergir dela."
-        )
-        st.dataframe(
-            resumo,
-            hide_index=True,
-            width="stretch",
-        )
-        _baixar_csv(resumo, "contratos_por_projeto_tecnico.csv")
+        st.markdown("### Evolução mensal dos contratos")
+        if mensal.empty:
+            st.info(
+                "Os registros do recorte não têm data de competência válida; não é "
+                "possível montar a evolução mensal."
+            )
+        else:
+            st.caption(
+                "Barras: soma da Qtde_Contrato dos arquivos que têm registros no "
+                "mês — o mesmo contrato pode somar em meses diferentes. Linha: "
+                "soma acumulada até o mês. Meses sem registros aparecem zerados."
+            )
+            with st.container(border=True):
+                st.plotly_chart(
+                    _grafico_mensal(mensal), width="stretch", config=CHART_CONFIG
+                )
+                st.dataframe(
+                    mensal,
+                    hide_index=True,
+                    width="stretch",
+                    column_config={
+                        "Contratos no mês": st.column_config.NumberColumn(format="%d"),
+                        "Acumulado (soma)": st.column_config.NumberColumn(format="%d"),
+                    },
+                )
+                _baixar_csv(mensal, "contratos_por_mes.csv")
+
+        por_arquivo = contar_contratos_por_arquivo(frame)
+        st.markdown("### Contratos por arquivo importado")
+        if por_arquivo.empty:
+            st.info("Não há arquivo de origem associado aos contratos do recorte.")
+        else:
+            st.caption(
+                "Coluna Qtde_Contrato lida diretamente de cada arquivo — o valor "
+                "reflete os contratos distintos do arquivo inteiro e não muda com "
+                "os filtros do recorte. Registros com contrato conta as linhas "
+                "válidas do recorte."
+            )
+            with st.container(border=True):
+                st.dataframe(
+                    por_arquivo,
+                    hide_index=True,
+                    width="stretch",
+                    column_config={
+                        "Arquivo": st.column_config.TextColumn(width="large"),
+                        "Origem": st.column_config.TextColumn(width="small"),
+                        "Registros com contrato": st.column_config.NumberColumn(
+                            format="%d"
+                        ),
+                        "Contratos": st.column_config.NumberColumn(format="%d"),
+                    },
+                )
+                _baixar_csv(por_arquivo, "contratos_por_arquivo.csv")
+
+        with st.expander("Detalhamento por projeto e técnico (contratos distintos)"):
+            st.caption(
+                "Contagem de contratos distintos por projeto e técnico no recorte "
+                "(nunique). Não usa a Qtde_Contrato e pode divergir dela."
+            )
+            st.dataframe(
+                resumo,
+                hide_index=True,
+                width="stretch",
+            )
+            _baixar_csv(resumo, "contratos_por_projeto_tecnico.csv")
+
+    render_eficiencia_contrato(frame)
