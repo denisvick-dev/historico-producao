@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, cast
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -37,11 +37,10 @@ def resumir_projetos(frame: pd.DataFrame) -> pd.DataFrame:
 
     pontos = summarize(frame, "project")
     ordens = summarize_os(frame, "project")
-    tecnicos = (
-        frame.groupby("project", as_index=False, dropna=False)["technician"]
-        .nunique()
-        .rename(columns={"technician": "technicians"})
-    )
+    tecnicos = cast(
+        pd.DataFrame,
+        frame.groupby("project", as_index=False, dropna=False)["technician"].nunique(),
+    ).rename(columns={"technician": "technicians"})
     resultado = pontos.merge(ordens, on="project", how="left").merge(
         tecnicos, on="project", how="left"
     )
@@ -63,10 +62,11 @@ def _serie_competencias(frame: pd.DataFrame) -> pd.Series:
     coluna = "period" if "period" in frame.columns else "reference_date"
     if coluna not in frame.columns:
         return pd.Series(pd.NaT, index=frame.index, dtype="datetime64[ns]")
-    return (
+    return cast(
+        pd.Series,
         pd.to_datetime(frame[coluna], errors="coerce")
         .dt.to_period("M")
-        .dt.to_timestamp()
+        .dt.to_timestamp(),
     )
 
 
@@ -142,7 +142,7 @@ def resumir_regularidade(
     monthly_points = (
         work.groupby(["_tecnico", "_competencia"])["_pontos"]
         .sum()
-        .unstack(fill_value=0.0)
+        .unstack(fill_value=0)
     )
     monthly_records = (
         work.groupby(["_tecnico", "_competencia"]).size().unstack(fill_value=0)
@@ -172,7 +172,7 @@ def resumir_regularidade(
             variation = float("nan")
 
         if active_months:
-            peak_month_value = active_values.idxmax()
+            peak_month_value = cast(pd.Timestamp, active_values.idxmax())
             peak_points = float(active_values.loc[peak_month_value])
             peak_month = month_label(peak_month_value)
         else:
@@ -358,13 +358,8 @@ def resumir_saude_dados(frame: pd.DataFrame) -> dict[str, int | float]:
         }
 
     if "technician" in frame.columns:
-        tecnicos = (
-            frame["technician"]
-            .astype("string")
-            .str.strip()
-            .replace("", pd.NA)
-            .nunique()
-        )
+        nomes_tecnicos = frame["technician"].astype("string").str.strip()
+        tecnicos = nomes_tecnicos.mask(nomes_tecnicos.eq(""), pd.NA).nunique()
     else:
         tecnicos = 0
 
@@ -906,7 +901,7 @@ def render_resumo_executivo(
 # ====================================================
 # 🧭 PÁGINA: SAÚDE DOS DADOS E IMPORTAÇÕES
 # ====================================================
-def _formatar_data_importacao(valor: object) -> str:
+def _formatar_data_importacao(valor: Any) -> str:
     if valor is None or pd.isna(valor) or not str(valor).strip():
         return "—"
     data = pd.to_datetime(valor, errors="coerce", utc=True)
@@ -915,7 +910,7 @@ def _formatar_data_importacao(valor: object) -> str:
     return data.tz_convert("America/Sao_Paulo").strftime("%d/%m/%Y %H:%M BRT")
 
 
-def _formatar_data_referencia(valor: object) -> str:
+def _formatar_data_referencia(valor: Any) -> str:
     data = pd.to_datetime(valor, errors="coerce")
     return data.strftime("%d/%m/%Y") if pd.notna(data) else "—"
 
@@ -1227,12 +1222,12 @@ def render_regularidade_producao(
             "Alta oscilação": "background-color: #FEE2E2; color: #991B1B; font-weight: 600;",
             "Base curta": "background-color: #E2E8F0; color: #334155;",
             "Sem pontos": "background-color: #E2E8F0; color: #334155;",
-        }.get(value, ""),
+        }.get(str(value), ""),
         subset=["Classificação"],
     ).map(
         lambda value: (
             "background-color: #FEF3C7; color: #92400E; font-weight: 600;"
-            if value > 0
+            if cast(float, value) > 0
             else ""
         ),
         subset=["Meses sem registro"],

@@ -339,6 +339,10 @@ class DataHealthDashboardTests(unittest.TestCase):
         self.assertEqual(resumo["registros_demo"], 2)
         self.assertEqual(resumo["registros_producao"], 1)
 
+    def test_tecnicos_vazios_ou_ausentes_nao_sao_contados(self) -> None:
+        frame = pd.DataFrame({"technician": [" Ana ", "Ana", " ", None, pd.NA]})
+        self.assertEqual(resumir_saude_dados(frame)["tecnicos"], 1)
+
     def test_empty_data_has_zeroed_health_indicators(self) -> None:
         resumo = resumir_saude_dados(pd.DataFrame())
         self.assertEqual(resumo["registros"], 0)

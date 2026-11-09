@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
@@ -55,7 +57,10 @@ def calcular_eficiencia(frame: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame
         return pd.DataFrame(columns=detalhes_colunas), pd.DataFrame(
             columns=resumo_colunas
         )
-    detalhes = work.groupby(["Técnico", "Competência"], as_index=False)["Pontos"].sum()
+    detalhes = cast(
+        pd.DataFrame,
+        work.groupby(["Técnico", "Competência"], as_index=False)["Pontos"].sum(),
+    )
     # Limites contínuos: 400 pertence à faixa 5, sem lacunas entre faixas.
     detalhes["Faixa"] = pd.cut(
         detalhes["Pontos"],
@@ -220,7 +225,10 @@ def resumir_eficiencia_contrato(
             faixas_zero,
         )
 
-    detalhes = work.groupby(["Contrato", "Competência"], as_index=False)["Pontos"].sum()
+    detalhes = cast(
+        pd.DataFrame,
+        work.groupby(["Contrato", "Competência"], as_index=False)["Pontos"].sum(),
+    )
     # Limites contínuos: 400 pertence à faixa 5, sem lacunas entre faixas.
     detalhes["Faixa"] = pd.cut(
         detalhes["Pontos"],
@@ -229,7 +237,8 @@ def resumir_eficiencia_contrato(
         right=False,
     ).astype(str)
 
-    resumo = detalhes.groupby("Contrato", as_index=False).agg(
+    # Os stubs do pandas não descrevem todas as formas de agregação nomeada.
+    resumo = cast(Any, detalhes.groupby("Contrato", as_index=False)).agg(
         **{
             "Meses com registros": ("Competência", "nunique"),
             "Pontos totais": ("Pontos", "sum"),
