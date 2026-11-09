@@ -230,6 +230,45 @@ class ContadorContratosTests(unittest.TestCase):
             ],
         )
 
+    def test_contador_por_arquivo_importado(self) -> None:
+        from components.contratos import contar_contratos_por_arquivo
+
+        frame = pd.DataFrame(
+            {
+                "source_file": ["a.xlsx", "a.xlsx", "b.xlsx", "b.xlsx"],
+                "source_sheet": ["Prod", "Gpon", "Prod", "Prod"],
+                "contract": ["001", "001", "002", "Sem contrato"],
+            }
+        )
+        self.assertEqual(
+            contar_contratos_por_arquivo(frame).to_dict("records"),
+            [
+                {
+                    "Arquivo": "a.xlsx",
+                    "Origem": "Gpon / Prod",
+                    "Registros com contrato": 2,
+                    "Contratos": 1,
+                },
+                {
+                    "Arquivo": "b.xlsx",
+                    "Origem": "Prod",
+                    "Registros com contrato": 1,
+                    "Contratos": 1,
+                },
+            ],
+        )
+
+    def test_contador_por_arquivo_sem_coluna_de_origem(self) -> None:
+        from components.contratos import contar_contratos_por_arquivo
+
+        frame = pd.DataFrame({"contract": ["001"]})
+        contagem = contar_contratos_por_arquivo(frame)
+        self.assertTrue(contagem.empty)
+        self.assertEqual(
+            list(contagem.columns),
+            ["Arquivo", "Origem", "Registros com contrato", "Contratos"],
+        )
+
     def test_contadores_com_frame_vazio(self) -> None:
         from components.contratos import contar_contratos_por_mes
 

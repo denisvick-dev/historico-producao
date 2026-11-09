@@ -197,6 +197,22 @@ def clean_contract(value: object) -> str | None:
     return text
 
 
+#: Valores normalizados que representam ausência de contrato (nunca um contrato).
+CONTRACT_PLACEHOLDERS = {"semcontrato", "null", "na", "nan", "none", "nat"}
+
+
+def is_valid_contract(value: object) -> bool:
+    """Indica se o valor é um identificador de contrato real.
+
+    O marcador ``"Sem contrato"`` gravado pela importação (e variações vazias
+    ou nulas) representa ausência: não pode entrar em contagens.
+    """
+    contrato = clean_contract(value)
+    return contrato is not None and normalize_text(contrato) not in (
+        CONTRACT_PLACEHOLDERS
+    )
+
+
 def clean_wo(value: object) -> str | None:
     """Normaliza a identificação da WO/OS."""
     if value is None or value is pd.NA or value is pd.NaT:
@@ -868,9 +884,15 @@ def load_dashboard_snapshot() -> tuple[pd.DataFrame, dict]:
 
 
 def import_batches() -> pd.DataFrame:
+    """Resumo por arquivo importado, incluindo o contador de contratos.
+
+    ``contracts_count`` conta identificadores de contrato distintos no arquivo;
+    registros sem contrato (marcador ``"Sem contrato"`` e variações nulas) não
+    entram na contagem.
+    """
     init_database()
     with connect() as connection:
-        return pd.read_sql_query(
+        frame = pd.read_sql_query(
             """
             SELECT source_file,
                    GROUP_CONCAT(DISTINCT source_sheet) AS origins,
@@ -883,6 +905,31 @@ def import_batches() -> pd.DataFrame:
             """,
             connection,
         )
+        contratos = pd.read_sql_query(
+            "SELECT source_file, contract FROM production_records",
+            connection,
+        )
+    if "contract" not in contratos.columns:
+        contratos["contract"] = None
+    if frame.empty:
+        frame["contracts_count"] = pd.Series(dtype="int64")
+        return frame
+    validos = (
+        contratos[contratos["contract"].map(is_valid_contract)]
+        if not contratos.empty
+        else contratos
+    )
+    contagem = (
+        validos.groupby("source_file")["contract"].nunique().astype(int)
+        if not validos.empty
+        else pd.Series(dtype="int64")
+    )
+    frame.insert(
+        3,
+        "contracts_count",
+        frame["source_file"].map(contagem).fillna(0).astype(int),
+    )
+    return frame
 
 
 def clear_demonstration() -> None:
