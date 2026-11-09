@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from typing import Any
 
@@ -919,6 +920,77 @@ def _formatar_data_referencia(valor: object) -> str:
     return data.strftime("%d/%m/%Y") if pd.notna(data) else "—"
 
 
+def _render_detalhe_arquivo(frame: pd.DataFrame) -> None:
+    """Detalha os registros de um arquivo importado com a coluna Qtde_Contrato."""
+    st.markdown("### Detalhamento do arquivo")
+    if frame.empty or "source_file" not in frame.columns:
+        st.info("Não há registros de arquivos importados para detalhar.")
+        return
+    arquivos = sorted({str(valor) for valor in frame["source_file"].dropna()})
+    if not arquivos:
+        st.info("Não há registros de arquivos importados para detalhar.")
+        return
+    st.caption(
+        "Qtde_Contrato repete, em cada linha, o total de contratos distintos do "
+        "arquivo selecionado — a mesma contagem da coluna Contratos."
+    )
+    arquivo = st.selectbox("Arquivo importado", arquivos, key="saude_arquivo_detalhe")
+    detalhe = frame.loc[frame["source_file"].astype(str).eq(arquivo)].copy()
+    total_contratos = (
+        int(detalhe["contracts_qty"].max()) if "contracts_qty" in detalhe else 0
+    )
+    cards = st.columns(3)
+    cards[0].metric("Registros no arquivo", f"{len(detalhe):,}".replace(",", "."))
+    cards[1].metric("Qtde_Contrato", f"{total_contratos:,}".replace(",", "."))
+    cards[2].metric(
+        "Técnicos no arquivo",
+        f"{detalhe['technician'].nunique():,}".replace(",", "."),
+    )
+
+    colunas = {
+        "wo": "O.S.",
+        "project": "Projeto",
+        "contract": "Contrato",
+        "technician": "Técnico",
+        "reference_date": "Data",
+        "points": "Pontos",
+        "source_sheet": "Origem",
+        "contracts_qty": "Qtde_Contrato",
+    }
+    disponiveis = {
+        chave: rotulo for chave, rotulo in colunas.items() if chave in detalhe
+    }
+    tabela = detalhe[list(disponiveis)].rename(columns=disponiveis)
+    if "Data" in tabela.columns:
+        tabela["Data"] = pd.to_datetime(tabela["Data"], errors="coerce").dt.strftime(
+            "%d/%m/%Y"
+        )
+    st.dataframe(
+        tabela,
+        width="stretch",
+        hide_index=True,
+        alt="Registros do arquivo importado com a quantidade de contratos",
+        column_config={
+            "O.S.": st.column_config.TextColumn(width="medium"),
+            "Projeto": st.column_config.TextColumn(width="medium"),
+            "Contrato": st.column_config.TextColumn(width="small"),
+            "Técnico": st.column_config.TextColumn(width="medium"),
+            "Data": st.column_config.TextColumn(width="small"),
+            "Pontos": st.column_config.NumberColumn(format="%.2f"),
+            "Origem": st.column_config.TextColumn(width="small"),
+            "Qtde_Contrato": st.column_config.NumberColumn(format="%d"),
+        },
+    )
+    nome = re.sub(r"[^\w.-]+", "_", arquivo.split(" [")[0]).strip("._") or "arquivo"
+    st.download_button(
+        "Baixar arquivo enriquecido em CSV",
+        data=tabela.to_csv(index=False, sep=";", decimal=",").encode("utf-8-sig"),
+        file_name=f"{nome}_com_qtde_contrato.csv",
+        mime="text/csv",
+        key=f"saude_download_arquivo_{arquivos.index(arquivo)}",
+    )
+
+
 def render_saude_dados(
     frame: pd.DataFrame,
     stats: Mapping[str, Any],
@@ -1030,6 +1102,8 @@ def render_saude_dados(
         mime="text/csv",
         key="data_health_download",
     )
+
+    _render_detalhe_arquivo(frame)
 
 
 def render_regularidade_producao(
