@@ -1,10 +1,12 @@
 import unittest
 
 import pandas as pd
+from pandas.io.formats.style import Styler
 
 from components.eficiencia import (
     _estilo_faixa,
     _estilo_resumo_linha,
+    _styled_faixa_table,
     calcular_eficiencia,
     resumir_eficiencia_contrato,
 )
@@ -169,6 +171,28 @@ class EficienciaTests(unittest.TestCase):
         detalhes, resumo, faixas = resumir_eficiencia_contrato(pd.DataFrame())
         self.assertTrue(detalhes.empty and resumo.empty)
         self.assertEqual(int(faixas.sum()), 0)
+
+    def test_tabela_de_faixas_nao_aplica_styler_acima_do_limite(self) -> None:
+        frame = pd.DataFrame(
+            {
+                "Contrato": ["C1"],
+                "Competência": ["2026-01"],
+                "Pontos": [320],
+                "Faixa": ["Faixa 2"],
+            }
+        )
+
+        with pd.option_context("styler.render.max_elements", 3):
+            resultado = _styled_faixa_table(frame)
+
+        self.assertIs(resultado, frame)
+
+    def test_tabela_de_faixas_mantem_styler_abaixo_do_limite(self) -> None:
+        frame = pd.DataFrame({"Faixa": ["Faixa 2"]})
+
+        resultado = _styled_faixa_table(frame)
+
+        self.assertIsInstance(resultado, Styler)
 
 
 if __name__ == "__main__":
