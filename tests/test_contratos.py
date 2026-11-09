@@ -361,3 +361,85 @@ class ContadorContratosTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+
+class MatrizTecnicoMesTests(unittest.TestCase):
+    """Matriz Técnico × Competência de contratos distintos (nunique)."""
+
+    def test_matriz_nunique_com_total_geral(self) -> None:
+        from components.contratos import contar_contratos_por_tecnico_mes
+
+        frame = pd.DataFrame(
+            {
+                "technician": ["Ana", "Ana", "Ana", "Bia", "Ana", "Bia"],
+                "contract": ["001", "001", "002", "003", "004", " Sem contrato "],
+                "period": pd.to_datetime(
+                    [
+                        "2026-01-01",
+                        "2026-01-01",
+                        "2026-02-01",
+                        "2026-02-01",
+                        "2026-03-01",
+                        "2026-03-01",
+                    ]
+                ),
+            }
+        )
+        matriz = contar_contratos_por_tecnico_mes(frame)
+        self.assertEqual(
+            list(matriz.columns),
+            ["Técnico", "jan/26", "fev/26", "mar/26", "Total", "Participação (%)"],
+        )
+        registros = matriz.to_dict("records")
+        self.assertEqual(registros[0]["Técnico"], "Ana")  # maior total primeiro
+        self.assertEqual(
+            registros[0],
+            {
+                "Técnico": "Ana",
+                "jan/26": 1,
+                "fev/26": 1,
+                "mar/26": 1,
+                "Total": 3,
+                "Participação (%)": 75.0,
+            },
+        )
+        self.assertEqual(
+            registros[1],
+            {
+                "Técnico": "Bia",
+                "jan/26": 0,
+                "fev/26": 1,
+                "mar/26": 0,
+                "Total": 1,
+                "Participação (%)": 25.0,
+            },
+        )
+        self.assertEqual(
+            registros[2],
+            {
+                "Técnico": "Total geral",
+                "jan/26": 1,
+                "fev/26": 2,
+                "mar/26": 1,
+                "Total": 4,
+                "Participação (%)": 100.0,
+            },
+        )
+
+    def test_matriz_sem_contrato_valido(self) -> None:
+        from components.contratos import contar_contratos_por_tecnico_mes
+
+        frame = pd.DataFrame(
+            {
+                "technician": ["Ana"],
+                "contract": ["Sem contrato"],
+                "period": pd.to_datetime(["2026-01-01"]),
+            }
+        )
+        self.assertTrue(contar_contratos_por_tecnico_mes(frame).empty)
+
+    def test_matriz_frame_vazio(self) -> None:
+        from components.contratos import contar_contratos_por_tecnico_mes
+
+        self.assertTrue(contar_contratos_por_tecnico_mes(pd.DataFrame()).empty)

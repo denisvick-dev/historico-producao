@@ -19,19 +19,30 @@ A aba **Contratos** responde três perguntas:
 A mesma página traz, ao final, a seção **Eficiência por contrato**
 (faixas de pontos por contrato·mês), também consumindo dados do recorte.
 
+A página segue o mesmo padrão visual do painel **Quantidade de O.S.**: ticker
+com os indicadores no topo, linha de KPIs, seções com título próprio e os
+gráficos lado a lado em painéis com borda, além da matriz
+**Técnico × Competência** de contratos distintos (nunique) com o melhor mês
+de cada técnico destacado em verde e a linha ``Total geral`` com a soma da
+matriz.
+
 Os cálculos ficam em funções puras (testáveis sem Streamlit); o layout apenas
 consome os DataFrames resultantes.
 """
 
 from __future__ import annotations
 
-import html
-
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from components.componentes import Cores, Fontes, formatar_numero_br, render_kpi_card
+from components.componentes import (
+    Cores,
+    Fontes,
+    formatar_numero_br,
+    render_kpi_card,
+    render_ticker,
+)
 from components.eficiencia import render_eficiencia_contrato
 from production import clean_contract, is_valid_contract, month_label
 
@@ -264,6 +275,58 @@ def contar_contratos_por_mes(frame: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(linhas, columns=COLUNAS_MENSAL)
 
 
+def contar_contratos_por_tecnico_mes(frame: pd.DataFrame) -> pd.DataFrame:
+    """Matriz Técnico × Competência de contratos distintos (nunique).
+
+    Cada célula conta quantos contratos distintos o técnico atendeu na
+    competência — a mesma métrica do ranking por técnico, detalhada por mês.
+    A coluna ``Total`` soma os meses; ``Participação (%)`` é a fatia do
+    técnico na soma dos totais. Meses sem registros no recorte aparecem
+    zerados (mesma lacuna da evolução mensal). A linha ``Total geral`` soma
+    cada coluna. Registros sem contrato válido ficam de fora.
+    """
+    base = ["Técnico", "Total", "Participação (%)"]
+    if frame.empty or not {"technician", "contract"}.issubset(frame.columns):
+        return pd.DataFrame(columns=base)
+    validos, _ = _registros_com_contrato(frame)
+    competencias = _competencias(validos)
+    if validos.empty or competencias is None:
+        return pd.DataFrame(columns=base)
+    work = validos.assign(
+        Técnico=validos["technician"].map(_rotulo_tecnico),
+        Mês=competencias,
+    ).dropna(subset=["Mês"])
+    if work.empty:
+        return pd.DataFrame(columns=base)
+    detalhe = (
+        work.groupby(["Técnico", "Mês"], as_index=False)["contract"]
+        .nunique()
+        .rename(columns={"contract": "Contratos"})
+    )
+    meses = pd.date_range(work["Mês"].min(), work["Mês"].max(), freq="MS")
+    rotulos = [month_label(mes) for mes in meses]
+    matriz = (
+        detalhe.pivot(index="Técnico", columns="Mês", values="Contratos")
+        .reindex(columns=meses)
+        .fillna(0)
+        .astype(int)
+    )
+    matriz.columns = rotulos
+    matriz["Total"] = matriz.sum(axis=1)
+    total_geral = int(matriz["Total"].sum())
+    matriz = matriz.sort_values(["Total", "Técnico"], ascending=[False, True]).reset_index()
+    matriz["Participação (%)"] = (
+        (matriz["Total"] / total_geral * 100).round(1) if total_geral else 0.0
+    )
+    total_linha: dict[str, object] = {"Técnico": "Total geral"}
+    for coluna in rotulos:
+        total_linha[coluna] = int(matriz[coluna].sum())
+    total_linha["Total"] = total_geral
+    total_linha["Participação (%)"] = 100.0 if total_geral else 0.0
+    matriz = pd.concat([matriz, pd.DataFrame([total_linha])], ignore_index=True)
+    return matriz[["Técnico", *rotulos, "Total", "Participação (%)"]]
+
+
 def _estilizar_figura(fig: go.Figure, altura: int = 320) -> go.Figure:
     fig.update_layout(
         height=altura,
@@ -338,21 +401,40 @@ def _grafico_mensal(mensal: pd.DataFrame) -> go.Figure:
     return _estilizar_figura(fig)
 
 
-def _contador_destaque(total: int, arquivos: int, meses: int) -> None:
-    apoio = (
-        f"{formatar_numero_br(arquivos)} arquivo(s) · "
-        f"{formatar_numero_br(meses)} competência(s)"
-    )
+def _section_heading(title: str, subtitle: str = "") -> None:
     st.markdown(
-        f"""
-        <div class="highlight-card highlight-card--azul">
-            <h3>CONTRATOS NO RECORTE</h3>
-            <p class="big-number">{formatar_numero_br(total)}</p>
-            <p style="margin:.35rem 0 0;font-size:12px;color:rgba(255,255,255,.86);">{html.escape(apoio)}</p>
-        </div>
-        """,
+        f'<div class="section-heading"><div><h2>{title}</h2><p>{subtitle}</p></div></div>',
         unsafe_allow_html=True,
     )
+
+
+def _best_month_style(row: pd.Series) -> pd.Series:
+    styles = pd.Series("", index=row.index, dtype="object")
+    if row.get("Técnico") == "Total geral":
+        return styles
+
+    month_columns = [
+        column for column in row.index if column not in {"Técnico", "Total", "Participação (%)"}
+    ]
+    if not month_columns:
+        return styles
+
+    monthly_values = pd.to_numeric(row[month_columns], errors="coerce")
+    best_value = monthly_values.max()
+    if pd.isna(best_value) or best_value <= 0:
+        return styles
+
+    best_months = monthly_values[monthly_values.eq(best_value)].index
+    styles.loc[best_months] = (
+        "background-color: #DCFCE7; color: #166534; font-weight: 600"
+    )
+    return styles
+
+
+def _total_column_style(value: object) -> str:
+    if not isinstance(value, (int, float)):
+        return ""
+    return "background-color: #E8EEF8; color: #012869; font-weight: 600"
 
 
 def _baixar_csv(frame: pd.DataFrame, nome: str) -> None:
@@ -370,110 +452,111 @@ def render_contratos(frame: pd.DataFrame) -> None:
     total, arquivos = somar_qtde_contrato(frame)
     por_tecnico = contar_contratos_por_tecnico(frame)
     mensal = contar_contratos_por_mes(frame)
-    competencias = _competencias(frame)
-    n_competencias = (
-        int(competencias.dropna().nunique()) if competencias is not None else 0
-    )
 
-    st.markdown("### Contador de contratos")
-    st.caption(
-        "Soma da coluna Qtde_Contrato dos arquivos presentes no recorte: cada "
-        "arquivo conta os contratos distintos que trouxe, então um contrato "
-        "que se repete em outro mês volta a contar naquele mês — o recorte "
-        "não é uma união de contratos distintos."
-    )
+    if frame.empty:
+        render_ticker(
+            [("Contratos", "Nenhum registro para os filtros selecionados")],
+            label="Indicadores de contratos",
+        )
+        st.info("Não há registros para os filtros selecionados.")
+        render_eficiencia_contrato(frame)
+        return
 
-    destaque, apoio = st.columns([1.15, 2], gap="medium")
-    with destaque:
-        _contador_destaque(total, arquivos, n_competencias)
-    with apoio:
-        cards = st.columns(3)
-        with cards[0]:
-            render_kpi_card(
-                "TÉCNICOS COM CONTRATOS",
-                formatar_numero_br(len(por_tecnico)),
-                "Técnicos com ao menos um contrato no recorte",
-                "TC",
-                card_class="kpi-card--azul",
+    ticker_items: list[tuple[str, str]] = [
+        ("Total de contratos", formatar_numero_br(total)),
+        ("Arquivos no recorte", formatar_numero_br(arquivos)),
+    ]
+    if not mensal.empty:
+        recente = mensal.iloc[-1]
+        ticker_items.append(
+            (
+                "Competência mais recente",
+                f"{recente['Competência']} · "
+                f"{formatar_numero_br(recente['Contratos no mês'])} no mês",
             )
-        with cards[1]:
-            media = por_tecnico["Contratos"].mean() if not por_tecnico.empty else 0.0
-            render_kpi_card(
-                "MÉDIA POR TÉCNICO",
-                formatar_numero_br(media, 1),
-                "Contratos distintos por técnico",
-                "MÉD",
-                card_class="kpi-card--laranja",
+        )
+        pico = mensal.loc[mensal["Contratos no mês"].idxmax()]
+        ticker_items.append(
+            (
+                "Mês com mais contratos",
+                f"{pico['Competência']} · "
+                f"{formatar_numero_br(pico['Contratos no mês'])}",
             )
-        with cards[2]:
-            render_kpi_card(
-                "REGISTROS SEM CONTRATO",
-                formatar_numero_br(ausentes),
-                "Ficam fora das contagens por técnico e de registros",
-                "!",
-                card_class="kpi-card--vermelho" if ausentes else "kpi-card--verde",
-                note_class="negative" if ausentes else "positive",
+        )
+    if not por_tecnico.empty:
+        destaque = por_tecnico.iloc[0]
+        ticker_items.append(
+            (
+                "Técnico destaque",
+                f"{destaque['Técnico']} · "
+                f"{formatar_numero_br(destaque['Contratos'])} contrato(s)",
             )
+        )
+    ticker_items.append(("Técnicos ativos", formatar_numero_br(len(por_tecnico))))
+    render_ticker(ticker_items, label="Indicadores de contratos")
+
+    cards_colunas = st.columns(3)
+    with cards_colunas[0]:
+        render_kpi_card(
+            "TOTAL DE CONTRATOS",
+            formatar_numero_br(total),
+            "Soma da Qtde_Contrato dos arquivos do recorte",
+            "CT",
+            card_class="kpi-card--azul",
+        )
+    with cards_colunas[1]:
+        render_kpi_card(
+            "TÉCNICOS COM CONTRATOS",
+            formatar_numero_br(len(por_tecnico)),
+            "Técnicos com ao menos um contrato no recorte",
+            "TC",
+            card_class="kpi-card--laranja",
+        )
+    with cards_colunas[2]:
+        media = por_tecnico["Contratos"].mean() if not por_tecnico.empty else 0.0
+        render_kpi_card(
+            "MÉDIA POR TÉCNICO",
+            formatar_numero_br(media, 1),
+            "Contratos distintos por técnico",
+            "MÉD",
+            card_class="kpi-card--verde",
+        )
 
     if ausentes:
         st.warning(
-            "Registros sem identificador de contrato não entram nas contagens "
-            "por técnico nem na contagem de registros por arquivo. Dados "
-            "importados antes desta atualização precisam ser sincronizados "
-            "ou reimportados para preencher o campo."
+            f"{formatar_numero_br(ausentes)} registro(s) sem identificador de "
+            "contrato não entram nas contagens por técnico nem na contagem de "
+            "registros por arquivo. Dados importados antes desta atualização "
+            "precisam ser sincronizados ou reimportados para preencher o campo."
         )
+
+    _section_heading(
+        "Contratos no recorte",
+        "Soma da coluna Qtde_Contrato dos arquivos presentes no recorte: cada "
+        "arquivo conta os contratos distintos que trouxe — um contrato que se "
+        "repete em outro mês volta a contar naquele mês; o recorte não é uma "
+        "união de contratos distintos.",
+    )
     if total == 0:
         st.info(
             "Nenhuma Qtde_Contrato positiva nos arquivos do recorte. Verifique "
             "a coluna Contrato nos arquivos de origem e a sincronização."
         )
     else:
-        st.markdown("### Contador por técnico")
-        st.caption(
-            "Quantidade de contratos distintos atendidos por técnico no recorte "
-            "(a Qtde_Contrato é um valor único por arquivo e não separa por "
-            "técnico). A participação é a fatia de cada técnico na soma da "
-            "coluna, não na soma da Qtde_Contrato do recorte."
-        )
-        grafico_col, tabela_col = st.columns([1.15, 1], gap="medium")
-        with grafico_col, st.container(border=True):
-            st.markdown("**Ranking por contratos · Top 12**")
-            st.plotly_chart(
-                _grafico_por_tecnico(por_tecnico),
-                width="stretch",
-                config=CHART_CONFIG,
-            )
-        with tabela_col, st.container(border=True):
-            st.markdown("**Contagem completa**")
-            st.dataframe(
-                por_tecnico,
-                hide_index=True,
-                width="stretch",
-                column_config={
-                    "Contratos": st.column_config.NumberColumn(format="%d"),
-                    "Participação (%)": st.column_config.ProgressColumn(
-                        "Participação (%)",
-                        format="%.1f%%",
-                        min_value=0.0,
-                        max_value=100.0,
-                    ),
-                },
-            )
-            _baixar_csv(por_tecnico, "contratos_por_tecnico.csv")
-
-        st.markdown("### Evolução mensal dos contratos")
-        if mensal.empty:
-            st.info(
-                "Os registros do recorte não têm data de competência válida; não é "
-                "possível montar a evolução mensal."
-            )
-        else:
-            st.caption(
-                "Barras: soma da Qtde_Contrato dos arquivos que têm registros no "
-                "mês — o mesmo contrato pode somar em meses diferentes. Linha: "
-                "soma acumulada até o mês. Meses sem registros aparecem zerados."
-            )
-            with st.container(border=True):
+        mensal_col, ranking_col = st.columns([1, 1.1], gap="medium")
+        with mensal_col, st.container(border=True):
+            st.markdown("**Evolução mensal de contratos**")
+            if mensal.empty:
+                st.info(
+                    "Os registros do recorte não têm data de competência válida; "
+                    "não é possível montar a evolução mensal."
+                )
+            else:
+                st.caption(
+                    "Barras: soma da Qtde_Contrato dos arquivos com registros "
+                    "no mês. Linha: soma acumulada até o mês. Meses sem "
+                    "registros aparecem zerados."
+                )
                 st.plotly_chart(
                     _grafico_mensal(mensal), width="stretch", config=CHART_CONFIG
                 )
@@ -482,23 +565,74 @@ def render_contratos(frame: pd.DataFrame) -> None:
                     hide_index=True,
                     width="stretch",
                     column_config={
-                        "Contratos no mês": st.column_config.NumberColumn(format="%d"),
+                        "Contratos no mês": st.column_config.NumberColumn(
+                            format="%d"
+                        ),
                         "Acumulado (soma)": st.column_config.NumberColumn(format="%d"),
                     },
                 )
                 _baixar_csv(mensal, "contratos_por_mes.csv")
+        with ranking_col, st.container(border=True):
+            st.markdown("**Contratos por técnico · Top 12**")
+            if por_tecnico.empty:
+                st.info("Não há contratos por técnico para exibir.")
+            else:
+                st.plotly_chart(
+                    _grafico_por_tecnico(por_tecnico),
+                    width="stretch",
+                    config=CHART_CONFIG,
+                )
+                st.caption(
+                    "Contratos distintos por técnico no recorte (a Qtde_Contrato "
+                    "é um valor único por arquivo e não separa por técnico)."
+                )
+
+        _section_heading(
+            "Contratos por técnico",
+            "Contratos distintos de cada técnico em cada competência — a mesma "
+            "métrica do ranking, detalhada por mês. O melhor mês de cada "
+            "técnico aparece em verde; a participação é a fatia na soma dos "
+            "totais; a linha 'Total geral' soma a matriz.",
+        )
+        matriz = contar_contratos_por_tecnico_mes(frame)
+        if matriz.empty:
+            st.info("Não há registros com contrato para montar a matriz.")
+        else:
+            count_columns = {
+                column: st.column_config.NumberColumn(format="%d")
+                for column in matriz.columns
+                if column not in {"Técnico", "Participação (%)"}
+            }
+            st.dataframe(
+                matriz.style.apply(_best_month_style, axis=1).map(
+                    _total_column_style, subset=["Total"]
+                ),
+                width="stretch",
+                hide_index=True,
+                column_config={
+                    **count_columns,
+                    "Participação (%)": st.column_config.ProgressColumn(
+                        "Participação (%)",
+                        format="%.1f%%",
+                        min_value=0.0,
+                        max_value=100.0,
+                    ),
+                },
+                alt="Contratos distintos por técnico, competência e total",
+            )
+            _baixar_csv(matriz, "contratos_por_tecnico_mes.csv")
 
         por_arquivo = contar_contratos_por_arquivo(frame)
-        st.markdown("### Contratos por arquivo importado")
+        _section_heading(
+            "Contratos por arquivo importado",
+            "Coluna Qtde_Contrato lida diretamente de cada arquivo — o valor "
+            "reflete os contratos distintos do arquivo inteiro e não muda com "
+            "os filtros do recorte. Registros com contrato conta as linhas "
+            "válidas do recorte.",
+        )
         if por_arquivo.empty:
             st.info("Não há arquivo de origem associado aos contratos do recorte.")
         else:
-            st.caption(
-                "Coluna Qtde_Contrato lida diretamente de cada arquivo — o valor "
-                "reflete os contratos distintos do arquivo inteiro e não muda com "
-                "os filtros do recorte. Registros com contrato conta as linhas "
-                "válidas do recorte."
-            )
             with st.container(border=True):
                 st.dataframe(
                     por_arquivo,

@@ -11,6 +11,9 @@ __pycache__/
 .venv/
 venv/
 
+# Saída de execuções locais de diagnóstico
+out.txt
+
 # Streamlit e arquivos locais
 .streamlit/secrets.toml
 .DS_Store
