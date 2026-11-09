@@ -294,10 +294,8 @@ def contar_contratos_por_tecnico_mes(
     ).dropna(subset=["Mês"])
     if work.empty:
         return pd.DataFrame(columns=base)
-    detalhe = (
-        work.groupby(["Técnico", "Mês"], as_index=False)["contract"]
-        .nunique()
-        .rename(columns={"contract": "Contratos"})
+    detalhe = work.groupby(["Técnico", "Mês"], as_index=False).agg(
+        Contratos=("contract", "nunique")
     )
     meses = pd.date_range(work["Mês"].min(), work["Mês"].max(), freq="MS")
     rotulos = [month_label(mes) for mes in meses]
