@@ -135,8 +135,7 @@ class ImportacaoContratosTests(unittest.TestCase):
         path = Path(self._tmp.name) / "legacy.db"
         with mock.patch.object(production, "DB_PATH", path):
             with sqlite3.connect(path) as db:
-                db.execute(
-                    """
+                db.execute("""
                     CREATE TABLE production_records (
                         id INTEGER PRIMARY KEY,
                         technician TEXT NOT NULL,
@@ -151,8 +150,7 @@ class ImportacaoContratosTests(unittest.TestCase):
                         is_demo INTEGER NOT NULL DEFAULT 0,
                         imported_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                     )
-                    """
-                )
+                    """)
 
             registros, problemas = production.process_upload(
                 "arquivo [abc].csv",
@@ -645,3 +643,78 @@ class QtdeContratoTests(unittest.TestCase):
                 frame = production.load_records()
                 self.assertIn("contract_flag", frame.columns)
                 self.assertTrue(frame["contract_flag"].isna().all())
+
+
+class CarteiraContratosTests(unittest.TestCase):
+    def test_carteira_agrupa_identificadores_validos_no_recorte(self) -> None:
+        from components.contratos import resumir_carteira
+
+        frame = pd.DataFrame(
+            {
+                "contract": [" 001 ", "001", "002", "Sem contrato"],
+                "project": ["B", "A", None, "A"],
+                "technician": ["Bia", "Ana", None, "Ana"],
+                "points": [10, 5, 3, 100],
+                "reference_date": pd.to_datetime(
+                    ["2026-02-10", "2026-01-05", "2026-02-01", "2026-02-01"]
+                ),
+            }
+        )
+        carteira = resumir_carteira(frame)
+        self.assertEqual(carteira["Contrato"].tolist(), ["001", "002"])
+        primeiro = carteira.iloc[0]
+        self.assertEqual(
+            (primeiro["Projetos"], primeiro["Técnicos"]), ("A · B", "Ana · Bia")
+        )
+        self.assertEqual((primeiro["Registros"], primeiro["Pontos"]), (2, 15))
+        self.assertEqual(primeiro["Primeiro registro"], pd.Timestamp("2026-01-05"))
+        self.assertEqual(primeiro["Último registro"], pd.Timestamp("2026-02-10"))
+
+    def test_evolucao_distinta_com_repeticoes_e_lacuna(self) -> None:
+        from components.contratos import contratos_distintos_por_mes
+
+        frame = pd.DataFrame(
+            {
+                "contract": ["001", "001", "001", "002", "Sem contrato"],
+                "period": pd.to_datetime(
+                    [
+                        "2026-01-01",
+                        "2026-01-01",
+                        "2026-03-01",
+                        "2026-03-01",
+                        "2026-03-01",
+                    ]
+                ),
+            }
+        )
+        self.assertEqual(
+            contratos_distintos_por_mes(frame).to_dict("records"),
+            [
+                {"Competência": "jan/26", "Contratos": 1},
+                {"Competência": "fev/26", "Contratos": 0},
+                {"Competência": "mar/26", "Contratos": 2},
+            ],
+        )
+
+    def test_arquivo_sem_contrato_valido_ainda_contribui_para_conferencia(self) -> None:
+        frame = pd.DataFrame(
+            {
+                "source_file": ["a.csv", "b.csv"],
+                "contract": ["001", "Sem contrato"],
+                "contracts_qty": [2, 5],
+            }
+        )
+        tabela = contar_contratos_por_arquivo(frame)
+        self.assertEqual(tabela["Contratos"].sum(), somar_qtde_contrato(frame)[0])
+        self.assertEqual(
+            tabela.loc[tabela["Arquivo"] == "b.csv", "Registros com contrato"].iloc[0],
+            0,
+        )
+
+    def test_ausencia_de_coluna_contrato(self) -> None:
+        from components.contratos import resumir_carteira
+
+        frame = pd.DataFrame({"source_file": ["a.csv"], "contracts_qty": [2]})
+        self.assertEqual(_registros_com_contrato(frame)[1], 1)
+        self.assertTrue(resumir_carteira(frame).empty)
+        self.assertEqual(contar_contratos_por_arquivo(frame).iloc[0]["Contratos"], 2)
