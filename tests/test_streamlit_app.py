@@ -80,16 +80,6 @@ class StreamlitAppTests(unittest.TestCase):
         self.assertGreaterEqual(len(app.get("plotly_chart")), 2)
         self.assertGreaterEqual(len(app.get("dataframe")), 2)
 
-    def test_aba_saude_dados_mostra_contratos_por_arquivo(self):
-        """A lista de arquivos importados deve exibir o contador de contratos."""
-        app = AppTest.from_file(_APP_PATH).run(timeout=30)
-        app.radio(key="navigation").set_value("Saúde dos dados").run(timeout=30)
-        self.assertFalse(app.exception)
-        tabelas = [item.value for item in app.get("dataframe")]
-        arquivos = [tabela for tabela in tabelas if "Contratos" in tabela.columns]
-        self.assertTrue(arquivos)
-        self.assertIn("Arquivo", arquivos[0].columns)
-
     def test_novas_visoes_carregam_sem_erro(self):
         """As páginas complementares devem abrir sem exceções."""
         app = AppTest.from_file(_APP_PATH).run(timeout=30)

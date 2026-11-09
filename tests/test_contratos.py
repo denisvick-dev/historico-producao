@@ -17,9 +17,9 @@ def test_contagem_distinta_e_ausentes():
     )
     resumo, total, ausentes = resumir_contratos(frame)
     assert resumo.to_dict("records") == [
-        {"Projeto": "A", "Técnico": "Ana", "Contratos": 2},
-        {"Projeto": "A", "Técnico": "Bia", "Contratos": 1},
-        {"Projeto": "B", "Técnico": "Ana", "Contratos": 1},
+        {"Projeto": "A", "Técnico": "Ana", "Contratos distintos": 2},
+        {"Projeto": "A", "Técnico": "Bia", "Contratos distintos": 1},
+        {"Projeto": "B", "Técnico": "Ana", "Contratos distintos": 1},
     ]
     assert (total, ausentes) == (2, 1)
 
@@ -59,6 +59,43 @@ def test_sync_preserva_contrato(tmp_path, monkeypatch):
     )
     production.sync_drive_records(registros, {"abc"}, {"abc"})
     assert production.load_records().iloc[0]["contract"] == "0001"
+
+
+def test_sync_persiste_placeholders_em_banco_legado(tmp_path, monkeypatch):
+    path = tmp_path / "legacy.db"
+    monkeypatch.setattr(production, "DB_PATH", path)
+    with sqlite3.connect(path) as db:
+        db.execute(
+            """
+            CREATE TABLE production_records (
+                id INTEGER PRIMARY KEY,
+                technician TEXT NOT NULL,
+                reference_date TEXT NOT NULL,
+                source_sheet TEXT NOT NULL,
+                project TEXT NOT NULL DEFAULT 'Sem projeto',
+                contract TEXT NOT NULL DEFAULT 'Sem contrato',
+                wo TEXT NOT NULL DEFAULT 'Sem WO',
+                points REAL NOT NULL,
+                source_file TEXT NOT NULL,
+                source_row INTEGER NOT NULL,
+                is_demo INTEGER NOT NULL DEFAULT 0,
+                imported_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+
+    registros, problemas = production.process_upload(
+        "arquivo [abc].csv",
+        b"Tecnico;Pontos;Data\nAna;10;01/01/2026\n",
+    )
+    assert not problemas
+    assert registros[0]["contract"] == "Sem contrato"
+    assert registros[0]["wo"] == "Sem WO"
+    production.sync_drive_records(registros, {"abc"}, {"abc"})
+    assert production.load_records().iloc[0][["contract", "wo"]].to_dict() == {
+        "contract": "Sem contrato",
+        "wo": "Sem WO",
+    }
 
 
 def test_contador_por_tecnico():
@@ -191,45 +228,6 @@ class ContadorContratosTests(unittest.TestCase):
                     "Contratos acumulados": 1,
                 }
             ],
-        )
-
-    def test_contador_por_arquivo_importado(self) -> None:
-        from components.contratos import contar_contratos_por_arquivo
-
-        frame = pd.DataFrame(
-            {
-                "source_file": ["a.xlsx", "a.xlsx", "b.xlsx", "b.xlsx"],
-                "source_sheet": ["Prod", "Gpon", "Prod", "Prod"],
-                "contract": ["001", "001", "002", "Sem contrato"],
-            }
-        )
-        self.assertEqual(
-            contar_contratos_por_arquivo(frame).to_dict("records"),
-            [
-                {
-                    "Arquivo": "a.xlsx",
-                    "Origem": "Gpon / Prod",
-                    "Registros com contrato": 2,
-                    "Contratos": 1,
-                },
-                {
-                    "Arquivo": "b.xlsx",
-                    "Origem": "Prod",
-                    "Registros com contrato": 1,
-                    "Contratos": 1,
-                },
-            ],
-        )
-
-    def test_contador_por_arquivo_sem_coluna_de_origem(self) -> None:
-        from components.contratos import contar_contratos_por_arquivo
-
-        frame = pd.DataFrame({"contract": ["001"]})
-        contagem = contar_contratos_por_arquivo(frame)
-        self.assertTrue(contagem.empty)
-        self.assertEqual(
-            list(contagem.columns),
-            ["Arquivo", "Origem", "Registros com contrato", "Contratos"],
         )
 
     def test_contadores_com_frame_vazio(self) -> None:

@@ -138,6 +138,36 @@ class DriveImportTests(unittest.TestCase):
         self.assertEqual(result.refreshed_file_ids, set())
         self.assertEqual(result.successful_files, 0)
 
+    def test_snapshot_reimports_files_after_contract_parser_change(self):
+        drive_file = {
+            "id": "file-id",
+            "name": "producao.csv",
+            "mimeType": "text/csv",
+            "modifiedTime": "2026-11-06T12:00:00Z",
+        }
+        session = FakeSession([FakeResponse(data={"files": [drive_file]})])
+        legacy_fingerprint = "producao.csv|text/csv|2026-11-06T12:00:00Z||"
+
+        with (
+            patch("drive_import.create_drive_session", return_value=session),
+            patch(
+                "drive_import.download_file",
+                return_value=(
+                    "producao [file-id].csv",
+                    b"Tecnico;Data;Pontos;Contrato\nAna;11/2026;10;001\n",
+                ),
+            ) as download,
+        ):
+            result = drive_import.import_drive_folder_snapshot(
+                {},
+                "folder-id",
+                known_file_fingerprints={"file-id": legacy_fingerprint},
+            )
+
+        download.assert_called_once()
+        self.assertEqual(result.refreshed_file_ids, {"file-id"})
+        self.assertEqual(result.records[0]["contract"], "001")
+
     def test_snapshot_downloads_files_in_parallel(self):
         files = [
             {"id": "one", "name": "one.csv", "mimeType": "text/csv"},

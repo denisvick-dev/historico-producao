@@ -300,29 +300,6 @@ class PersistenceTests(unittest.TestCase):
         finally:
             production.DB_PATH = current_path
 
-    def test_import_batches_conta_contratos_distintos_por_arquivo(self):
-        principal = self.record(row=2)
-        principal["contract"] = "001"
-        repetido = self.record(row=3)
-        repetido["contract"] = "001"
-        outro = self.record(row=4)
-        outro["contract"] = "002"
-        ausente = self.record(row=5)
-        ausente["contract"] = "Sem contrato"
-        outro_arquivo = self.record(row=6)
-        outro_arquivo["source_file"] = "outro.xlsx"
-        outro_arquivo["contract"] = "009"
-        production.save_records([principal, repetido, outro, ausente, outro_arquivo])
-
-        lotes = production.import_batches().set_index("source_file")
-        self.assertEqual(int(lotes.loc["producao.xlsx", "contracts_count"]), 2)
-        self.assertEqual(int(lotes.loc["outro.xlsx", "contracts_count"]), 1)
-
-    def test_import_batches_sem_contratos(self):
-        production.save_records([self.record()])
-        lotes = production.import_batches()
-        self.assertEqual(int(lotes.iloc[0]["contracts_count"]), 0)
-
     def test_first_real_import_removes_demonstration(self):
         demo = self.record(points=999)
         demo["source_file"] = production.DEMO_SOURCE

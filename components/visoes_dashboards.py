@@ -997,28 +997,19 @@ def render_saude_dados(
             "source_file": "Arquivo",
             "origins": "Origem",
             "rows_count": "Registros",
-            "contracts_count": "Contratos",
             "points": "Pontos somados",
             "imported_at": "Importado em",
         }
-    )
-    st.caption(
-        "O contador de contratos por arquivo considera identificadores "
-        "distintos; registros sem contrato não entram na contagem."
     )
     st.dataframe(
         tabela,
         width="stretch",
         hide_index=True,
-        alt=(
-            "Arquivos importados, origem, registros, contratos distintos "
-            "e pontos somados"
-        ),
+        alt="Arquivos importados, origem, registros e pontos somados",
         column_config={
             "Arquivo": st.column_config.TextColumn(width="large"),
             "Origem": st.column_config.TextColumn(width="small"),
             "Registros": st.column_config.NumberColumn(format="%d"),
-            "Contratos": st.column_config.NumberColumn(format="%d"),
             "Pontos somados": st.column_config.NumberColumn(format="%.2f"),
             "Importado em": st.column_config.TextColumn(width="medium"),
         },

@@ -187,39 +187,32 @@ def clean_project(value: object) -> str:
     return text
 
 
-def clean_contract(value: object) -> str:
+def clean_contract(value: object) -> str | None:
     """Normaliza o número ou nome do contrato."""
     if value is None or value is pd.NA or value is pd.NaT:
-        return "Sem contrato"
+        return None
     text = re.sub(r"\s+", " ", str(value)).strip()
-    if not text or normalize_text(text) in {"nan", "none", "nat", "semcontrato"}:
-        return "Sem contrato"
+    if not text or normalize_text(text) in {"nan", "none", "nat", "semcontrato", "null"}:
+        return None
     return text
 
 
-#: Valores normalizados que representam ausência de contrato (nunca um contrato).
-CONTRACT_PLACEHOLDERS = {"semcontrato", "null", "na", "nan", "none", "nat"}
-
-
-def is_valid_contract(value: object) -> bool:
-    """Indica se o valor é um identificador de contrato real.
-
-    O marcador ``"Sem contrato"`` gravado pela importação (e variações vazias
-    ou nulas) representa ausência: não pode entrar em contagens.
-    """
-    if value is None or value is pd.NA or value is pd.NaT:
-        return False
-    return normalize_text(clean_contract(value)) not in CONTRACT_PLACEHOLDERS
-
-
-def clean_wo(value: object) -> str:
+def clean_wo(value: object) -> str | None:
     """Normaliza a identificação da WO/OS."""
     if value is None or value is pd.NA or value is pd.NaT:
-        return "Sem WO"
+        return None
     text = re.sub(r"\s+", " ", str(value)).strip()
-    if not text or normalize_text(text) in {"nan", "none", "nat", "semwo", "semos"}:
-        return "Sem WO"
+    if not text or normalize_text(text) in {"nan", "none", "nat", "semwo", "semos", "null"}:
+        return None
     return text
+
+
+def _contract_or_placeholder(value: object) -> str:
+    return clean_contract(value) or "Sem contrato"
+
+
+def _wo_or_placeholder(value: object) -> str:
+    return clean_wo(value) or "Sem WO"
 
 
 def parse_points(value: object) -> float | None:
@@ -445,15 +438,11 @@ def process_dataframe(
                     if project_position is not None
                     else "Sem projeto"
                 ),
-                "contract": (
-                    clean_contract(row[contract_position])
-                    if contract_position is not None
-                    else "Sem contrato"
+                "contract": _contract_or_placeholder(
+                    row[contract_position] if contract_position is not None else None
                 ),
-                "wo": (
-                    clean_wo(row[wo_position])
-                    if wo_position is not None
-                    else "Sem WO"
+                "wo": _wo_or_placeholder(
+                    row[wo_position] if wo_position is not None else None
                 ),
                 "points": float(points),
                 "source_file": source_file,
@@ -559,8 +548,8 @@ def init_database() -> None:
                 reference_date TEXT NOT NULL,
                 source_sheet TEXT NOT NULL CHECK(source_sheet IN ('Prod', 'Gpon')),
                 project TEXT NOT NULL DEFAULT 'Sem projeto',
-                contract TEXT NOT NULL DEFAULT 'Sem contrato',
-                wo TEXT NOT NULL DEFAULT 'Sem WO',
+                contract TEXT DEFAULT NULL,
+                wo TEXT DEFAULT NULL,
                 points REAL NOT NULL,
                 source_file TEXT NOT NULL,
                 source_row INTEGER NOT NULL,
@@ -593,13 +582,9 @@ def init_database() -> None:
                 "ALTER TABLE production_records ADD COLUMN project TEXT NOT NULL DEFAULT 'Sem projeto'"
             )
         if "contract" not in columns:
-            connection.execute(
-                "ALTER TABLE production_records ADD COLUMN contract TEXT NOT NULL DEFAULT 'Sem contrato'"
-            )
+            connection.execute("ALTER TABLE production_records ADD COLUMN contract TEXT")
         if "wo" not in columns:
-            connection.execute(
-                "ALTER TABLE production_records ADD COLUMN wo TEXT NOT NULL DEFAULT 'Sem WO'"
-            )
+            connection.execute("ALTER TABLE production_records ADD COLUMN wo TEXT")
         connection.execute(
             "CREATE INDEX IF NOT EXISTS idx_production_project ON production_records(project)"
         )
@@ -671,8 +656,8 @@ def save_records(records: Iterable[dict], is_demo: bool = False) -> int:
                     row["reference_date"],
                     row["source_sheet"],
                     clean_project(row.get("project", "Sem projeto")),
-                    clean_contract(row.get("contract", "Sem contrato")),
-                    clean_wo(row.get("wo", "Sem WO")),
+                    _contract_or_placeholder(row.get("contract")),
+                    _wo_or_placeholder(row.get("wo")),
                     row["points"],
                     row["source_file"],
                     row["source_row"],
@@ -753,8 +738,8 @@ def sync_drive_records(
                     row["reference_date"],
                     row["source_sheet"],
                     clean_project(row.get("project", "Sem projeto")),
-                    clean_contract(row.get("contract", "Sem contrato")),
-                    clean_wo(row.get("wo", "Sem WO")),
+                    _contract_or_placeholder(row.get("contract")),
+                    _wo_or_placeholder(row.get("wo")),
                     row["points"],
                     row["source_file"],
                     row["source_row"],
@@ -800,8 +785,12 @@ def load_records() -> pd.DataFrame:
         return frame
     if "contract" not in frame.columns:
         frame["contract"] = "Sem contrato"
+    else:
+        frame["contract"] = frame["contract"].map(_contract_or_placeholder)
     if "wo" not in frame.columns:
         frame["wo"] = "Sem WO"
+    else:
+        frame["wo"] = frame["wo"].map(_wo_or_placeholder)
     frame["reference_date"] = pd.to_datetime(frame["reference_date"])
     frame["period"] = frame["reference_date"].dt.to_period("M").dt.to_timestamp()
     return frame
@@ -867,23 +856,21 @@ def load_dashboard_snapshot() -> tuple[pd.DataFrame, dict]:
     if not frame.empty:
         if "contract" not in frame.columns:
             frame["contract"] = "Sem contrato"
+        else:
+            frame["contract"] = frame["contract"].map(_contract_or_placeholder)
         if "wo" not in frame.columns:
             frame["wo"] = "Sem WO"
+        else:
+            frame["wo"] = frame["wo"].map(_wo_or_placeholder)
         frame["reference_date"] = pd.to_datetime(frame["reference_date"])
         frame["period"] = frame["reference_date"].dt.to_period("M").dt.to_timestamp()
     return frame, stats
 
 
 def import_batches() -> pd.DataFrame:
-    """Resumo por arquivo importado, incluindo o contador de contratos.
-
-    ``contracts_count`` conta identificadores de contrato distintos no arquivo;
-    registros sem contrato (marcador ``"Sem contrato"`` e variações nulas) não
-    entram na contagem.
-    """
     init_database()
     with connect() as connection:
-        frame = pd.read_sql_query(
+        return pd.read_sql_query(
             """
             SELECT source_file,
                    GROUP_CONCAT(DISTINCT source_sheet) AS origins,
@@ -896,31 +883,6 @@ def import_batches() -> pd.DataFrame:
             """,
             connection,
         )
-        contratos = pd.read_sql_query(
-            "SELECT source_file, contract FROM production_records",
-            connection,
-        )
-    if "contract" not in contratos.columns:
-        contratos["contract"] = None
-    if frame.empty:
-        frame["contracts_count"] = pd.Series(dtype="int64")
-        return frame
-    validos = (
-        contratos[contratos["contract"].map(is_valid_contract)]
-        if not contratos.empty
-        else contratos
-    )
-    contagem = (
-        validos.groupby("source_file")["contract"].nunique().astype(int)
-        if not validos.empty
-        else pd.Series(dtype="int64")
-    )
-    frame.insert(
-        3,
-        "contracts_count",
-        frame["source_file"].map(contagem).fillna(0).astype(int),
-    )
-    return frame
 
 
 def clear_demonstration() -> None:

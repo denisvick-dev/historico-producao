@@ -22,6 +22,7 @@ DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.readonly"
 GOOGLE_SHEET_MIME_TYPE = "application/vnd.google-apps.spreadsheet"
 SUPPORTED_SUFFIXES = {".csv", ".xls", ".xlsx"}
 MAX_PARALLEL_DOWNLOADS = 8
+IMPORT_PARSER_VERSION = "contracts-v1"
 
 logger = structlog.get_logger(__name__)
 
@@ -123,6 +124,7 @@ def _file_fingerprint(drive_file: dict[str, str]) -> str | None:
             modified_time,
             checksum,
             size,
+            IMPORT_PARSER_VERSION,
         )
     )
 
