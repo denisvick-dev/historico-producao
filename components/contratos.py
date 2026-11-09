@@ -186,10 +186,14 @@ def contar_contratos_por_arquivo(
     resumo["Contratos"] = resumo["Arquivo"].map(qtde).fillna(0).astype(int)
     if "source_sheet" in work.columns:
         origens = work.groupby("Arquivo")["source_sheet"].agg(
-            lambda valores: " / ".join(
-                sorted({str(valor) for valor in valores.dropna() if str(valor).strip()})
+            lambda valores: (
+                " / ".join(
+                    sorted(
+                        {str(valor) for valor in valores.dropna() if str(valor).strip()}
+                    )
+                )
+                or "—"
             )
-            or "—"
         )
         resumo["Origem"] = resumo["Arquivo"].map(origens).fillna("—")
     else:
