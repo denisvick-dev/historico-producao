@@ -10,9 +10,9 @@ def test_contagem_distinta_e_ausentes():
     frame = pd.DataFrame({"project": ["A", "A", "A", "A", "B", "B"], "technician": ["Ana", "Ana", "Ana", "Bia", "Ana", "Ana"], "contract": ["001", "001", "002", "001", "001", " NULL "]})
     resumo, total, ausentes = resumir_contratos(frame)
     assert resumo.to_dict("records") == [
-        {"Projeto": "A", "Técnico": "Ana", "Contratos": 2},
-        {"Projeto": "A", "Técnico": "Bia", "Contratos": 1},
-        {"Projeto": "B", "Técnico": "Ana", "Contratos": 1},
+        {"Projeto": "A", "Técnico": "Ana", "Contratos distintos": 2},
+        {"Projeto": "A", "Técnico": "Bia", "Contratos distintos": 1},
+        {"Projeto": "B", "Técnico": "Ana", "Contratos distintos": 1},
     ]
     assert (total, ausentes) == (2, 1)
 

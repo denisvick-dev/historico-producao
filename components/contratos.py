@@ -9,7 +9,7 @@ from production import clean_contract
 
 def resumir_contratos(frame: pd.DataFrame) -> tuple[pd.DataFrame, int, int]:
     """Conta identificadores distintos por projeto e técnico e no recorte inteiro."""
-    colunas = ["Projeto", "Técnico", "Contratos"]
+    colunas = ["Projeto", "Técnico", "Contratos distintos"]
     if frame.empty or not {"project", "technician", "contract"}.issubset(frame.columns):
         return pd.DataFrame(columns=colunas), 0, len(frame)
     work = frame.copy()
@@ -17,9 +17,9 @@ def resumir_contratos(frame: pd.DataFrame) -> tuple[pd.DataFrame, int, int]:
     sem_contrato = int(work["contract"].isna().sum())
     validos = work.dropna(subset=["contract"])
     resumo = (validos.groupby(["project", "technician"], dropna=False)["contract"]
-              .nunique().reset_index(name="Contratos")
+              .nunique().reset_index(name="Contratos distintos")
               .rename(columns={"project": "Projeto", "technician": "Técnico"})
-              .sort_values(["Contratos", "Projeto", "Técnico"], ascending=[False, True, True])
+              .sort_values(["Contratos distintos", "Projeto", "Técnico"], ascending=[False, True, True])
               .reset_index(drop=True))
     return resumo[colunas], int(validos["contract"].nunique()), sem_contrato
 

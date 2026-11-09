@@ -187,23 +187,23 @@ def clean_project(value: object) -> str:
     return text
 
 
-def clean_contract(value: object) -> str:
+def clean_contract(value: object) -> str | None:
     """Normaliza o número ou nome do contrato."""
     if value is None or value is pd.NA or value is pd.NaT:
-        return "Sem contrato"
+        return None
     text = re.sub(r"\s+", " ", str(value)).strip()
-    if not text or normalize_text(text) in {"nan", "none", "nat", "semcontrato"}:
-        return "Sem contrato"
+    if not text or normalize_text(text) in {"nan", "none", "nat", "semcontrato", "null"}:
+        return None
     return text
 
 
-def clean_wo(value: object) -> str:
+def clean_wo(value: object) -> str | None:
     """Normaliza a identificação da WO/OS."""
     if value is None or value is pd.NA or value is pd.NaT:
-        return "Sem WO"
+        return None
     text = re.sub(r"\s+", " ", str(value)).strip()
-    if not text or normalize_text(text) in {"nan", "none", "nat", "semwo", "semos"}:
-        return "Sem WO"
+    if not text or normalize_text(text) in {"nan", "none", "nat", "semwo", "semos", "null"}:
+        return None
     return text
 
 
@@ -433,12 +433,12 @@ def process_dataframe(
                 "contract": (
                     clean_contract(row[contract_position])
                     if contract_position is not None
-                    else "Sem contrato"
+                    else None
                 ),
                 "wo": (
                     clean_wo(row[wo_position])
                     if wo_position is not None
-                    else "Sem WO"
+                    else None
                 ),
                 "points": float(points),
                 "source_file": source_file,
@@ -544,8 +544,8 @@ def init_database() -> None:
                 reference_date TEXT NOT NULL,
                 source_sheet TEXT NOT NULL CHECK(source_sheet IN ('Prod', 'Gpon')),
                 project TEXT NOT NULL DEFAULT 'Sem projeto',
-                contract TEXT NOT NULL DEFAULT 'Sem contrato',
-                wo TEXT NOT NULL DEFAULT 'Sem WO',
+                contract TEXT DEFAULT NULL,
+                wo TEXT DEFAULT NULL,
                 points REAL NOT NULL,
                 source_file TEXT NOT NULL,
                 source_row INTEGER NOT NULL,
@@ -578,13 +578,9 @@ def init_database() -> None:
                 "ALTER TABLE production_records ADD COLUMN project TEXT NOT NULL DEFAULT 'Sem projeto'"
             )
         if "contract" not in columns:
-            connection.execute(
-                "ALTER TABLE production_records ADD COLUMN contract TEXT NOT NULL DEFAULT 'Sem contrato'"
-            )
+            connection.execute("ALTER TABLE production_records ADD COLUMN contract TEXT")
         if "wo" not in columns:
-            connection.execute(
-                "ALTER TABLE production_records ADD COLUMN wo TEXT NOT NULL DEFAULT 'Sem WO'"
-            )
+            connection.execute("ALTER TABLE production_records ADD COLUMN wo TEXT")
         connection.execute(
             "CREATE INDEX IF NOT EXISTS idx_production_project ON production_records(project)"
         )
@@ -656,8 +652,8 @@ def save_records(records: Iterable[dict], is_demo: bool = False) -> int:
                     row["reference_date"],
                     row["source_sheet"],
                     clean_project(row.get("project", "Sem projeto")),
-                    clean_contract(row.get("contract", "Sem contrato")),
-                    clean_wo(row.get("wo", "Sem WO")),
+                    clean_contract(row.get("contract")),
+                    clean_wo(row.get("wo")),
                     row["points"],
                     row["source_file"],
                     row["source_row"],
@@ -738,8 +734,8 @@ def sync_drive_records(
                     row["reference_date"],
                     row["source_sheet"],
                     clean_project(row.get("project", "Sem projeto")),
-                    clean_contract(row.get("contract", "Sem contrato")),
-                    clean_wo(row.get("wo", "Sem WO")),
+                    clean_contract(row.get("contract")),
+                    clean_wo(row.get("wo")),
                     row["points"],
                     row["source_file"],
                     row["source_row"],
@@ -784,9 +780,13 @@ def load_records() -> pd.DataFrame:
     if frame.empty:
         return frame
     if "contract" not in frame.columns:
-        frame["contract"] = "Sem contrato"
+        frame["contract"] = None
+    else:
+        frame["contract"] = frame["contract"].map(clean_contract)
     if "wo" not in frame.columns:
-        frame["wo"] = "Sem WO"
+        frame["wo"] = None
+    else:
+        frame["wo"] = frame["wo"].map(clean_wo)
     frame["reference_date"] = pd.to_datetime(frame["reference_date"])
     frame["period"] = frame["reference_date"].dt.to_period("M").dt.to_timestamp()
     return frame
@@ -851,9 +851,13 @@ def load_dashboard_snapshot() -> tuple[pd.DataFrame, dict]:
         )
     if not frame.empty:
         if "contract" not in frame.columns:
-            frame["contract"] = "Sem contrato"
+            frame["contract"] = None
+        else:
+            frame["contract"] = frame["contract"].map(clean_contract)
         if "wo" not in frame.columns:
-            frame["wo"] = "Sem WO"
+            frame["wo"] = None
+        else:
+            frame["wo"] = frame["wo"].map(clean_wo)
         frame["reference_date"] = pd.to_datetime(frame["reference_date"])
         frame["period"] = frame["reference_date"].dt.to_period("M").dt.to_timestamp()
     return frame, stats
