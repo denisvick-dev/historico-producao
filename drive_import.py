@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+from copy import copy
 from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
-from typing import Any, Mapping
+from threading import Lock, local
+from time import perf_counter
+from typing import Any, Callable, Mapping
 from urllib.parse import quote
 
 import pandas as pd
@@ -13,7 +16,7 @@ import structlog
 from google.auth.exceptions import GoogleAuthError
 from google.auth.transport.requests import AuthorizedSession
 from google.oauth2.service_account import Credentials
-from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
 from production import PROD, process_upload
 
@@ -55,7 +58,17 @@ def create_drive_session(
     return AuthorizedSession(credentials)
 
 
+def _is_transient_error(error: BaseException) -> bool:
+    cause = error.__cause__
+    if isinstance(cause, requests.HTTPError):
+        return cause.response is not None and (
+            cause.response.status_code == 429 or cause.response.status_code >= 500
+        )
+    return isinstance(cause, (requests.ConnectionError, requests.Timeout))
+
+
 @retry(
+    retry=retry_if_exception(_is_transient_error),
     stop=stop_after_attempt(3),
     wait=wait_exponential(multiplier=1, min=2, max=10),
     reraise=True,
@@ -87,11 +100,12 @@ def _request(
 def list_folder_files(session: Any, folder_id: str) -> list[dict[str, str]]:
     files: list[dict[str, str]] = []
     page_token: str | None = None
+    seen_tokens: set[str] = set()
     while True:
         params: dict[str, str | int | bool] = {
             "q": f"'{folder_id}' in parents and trashed = false",
             "fields": (
-                "nextPageToken,files(id,name,mimeType,modifiedTime,md5Checksum,size)"
+                "nextPageToken,incompleteSearch,files(id,name,mimeType,modifiedTime,md5Checksum,size)"
             ),
             "pageSize": 1000,
             "supportsAllDrives": True,
@@ -106,17 +120,41 @@ def list_folder_files(session: Any, folder_id: str) -> list[dict[str, str]]:
             raise DriveImportError(
                 "O Google Drive retornou uma resposta inválida."
             ) from error
-        if not isinstance(page, dict) or not isinstance(page.get("files", []), list):
-            raise DriveImportError(
-                "O Google Drive retornou uma lista de arquivos inválida."
+        if (
+            not isinstance(page, dict)
+            or not isinstance(page.get("files"), list)
+            or page.get("incompleteSearch", False) is not False
+            or any(
+                not isinstance(item, dict)
+                or any(
+                    not isinstance(item.get(key), str) or not item[key].strip()
+                    for key in ("id", "name", "mimeType")
+                )
+                or any(
+                    key in item and not isinstance(item[key], str)
+                    for key in ("modifiedTime", "md5Checksum", "size")
+                )
+                for item in page["files"]
             )
-        files.extend(file for file in page.get("files", []) if isinstance(file, dict))
+        ):
+            raise DriveImportError(
+                "O Google Drive retornou uma lista de arquivos incompleta ou inválida."
+            )
+        files.extend(page["files"])
         page_token = page.get("nextPageToken")
-        if not page_token:
+        if page_token is None or page_token == "":
             return files
+        if not isinstance(page_token, str) or page_token in seen_tokens:
+            raise DriveImportError("O Google Drive retornou uma paginação inválida.")
+        seen_tokens.add(page_token)
 
 
-def _file_fingerprint(drive_file: dict[str, str]) -> str | None:
+def _file_fingerprint(
+    drive_file: dict[str, str],
+    *,
+    csv_origin: str = PROD,
+    default_date: date | datetime | pd.Timestamp | None = None,
+) -> str | None:
     modified_time = drive_file.get("modifiedTime", "")
     checksum = drive_file.get("md5Checksum", "")
     size = drive_file.get("size", "")
@@ -130,6 +168,8 @@ def _file_fingerprint(drive_file: dict[str, str]) -> str | None:
             checksum,
             size,
             IMPORT_PARSER_VERSION,
+            csv_origin,
+            str(default_date) if default_date is not None else "",
         )
     )
 
@@ -167,14 +207,13 @@ def download_file(session: Any, file: dict[str, str]) -> tuple[str, bytes] | Non
         response = _request(
             session,
             f"{DRIVE_API_URL}/files/{file_id}",
-            params={"alt": "media"},
+            params={"alt": "media", "supportsAllDrives": True},
         )
     return filename, response.content
 
 
 def _import_drive_file(
-    credentials: Any,
-    service_account_info: Mapping[str, Any],
+    get_session: Callable[[], Any],
     drive_file: dict[str, str],
     *,
     csv_origin: str,
@@ -191,12 +230,7 @@ def _import_drive_file(
         )
 
     try:
-        worker_session = (
-            AuthorizedSession(credentials)
-            if credentials is not None
-            else create_drive_session(service_account_info)
-        )
-        downloaded = download_file(worker_session, drive_file)
+        downloaded = download_file(get_session(), drive_file)
     except DriveImportError as error:
         return [], [f"{drive_name} · {error}"], False
     if downloaded is None:
@@ -236,9 +270,18 @@ def import_drive_folder_snapshot(
     default_date: date | datetime | pd.Timestamp | None = None,
     known_file_fingerprints: Mapping[str, str] | None = None,
 ) -> DriveFolderImport:
+    started = perf_counter()
     logger.info("iniciando_sincronizacao_drive", pasta_id=folder_id)
     session = create_drive_session(service_account_info)
-    files = list_folder_files(session, folder_id)
+    try:
+        files = list_folder_files(session, folder_id)
+        # Cada worker recebe uma cópia independente com o token já obtido na
+        # listagem. Renovações posteriores não compartilham estado mutável.
+        credentials = getattr(session, "credentials", None)
+    finally:
+        if callable(getattr(session, "close", None)):
+            session.close()
+    listing_seconds = perf_counter() - started
     records: list[dict] = []
     issues: list[str] = []
     successful_files = 0
@@ -247,43 +290,69 @@ def import_drive_folder_snapshot(
     }
     refreshed_file_ids: set[str] = set()
     file_fingerprints: dict[str, str] = {}
-    credentials = getattr(session, "credentials", None)
     known_file_fingerprints = known_file_fingerprints or {}
     changed_files: list[dict[str, str]] = []
     for drive_file in files:
-        fingerprint = _file_fingerprint(drive_file)
+        fingerprint = _file_fingerprint(
+            drive_file, csv_origin=csv_origin, default_date=default_date
+        )
         file_id = drive_file.get("id", "")
         if fingerprint is None or fingerprint != known_file_fingerprints.get(file_id):
             changed_files.append(drive_file)
 
     if changed_files:
-        with ThreadPoolExecutor(
-            max_workers=min(MAX_PARALLEL_DOWNLOADS, len(changed_files))
-        ) as executor:
-            results = executor.map(
-                lambda drive_file: _import_drive_file(
-                    credentials,
-                    service_account_info,
-                    drive_file,
-                    csv_origin=csv_origin,
-                    default_date=default_date,
-                ),
-                changed_files,
-            )
-            for drive_file, (file_records, file_issues, refreshed) in zip(
-                changed_files, results
-            ):
-                if refreshed:
-                    file_id = drive_file.get("id", "").strip()
-                    if file_id:
-                        refreshed_file_ids.add(file_id)
-                        fingerprint = _file_fingerprint(drive_file)
-                        if fingerprint is not None:
-                            file_fingerprints[file_id] = fingerprint
-                if file_records:
-                    records.extend(file_records)
-                    successful_files += 1
-                issues.extend(file_issues)
+        thread_state = local()
+        sessions: list[Any] = []
+        sessions_lock = Lock()
+
+        def get_worker_session() -> Any:
+            worker_session = getattr(thread_state, "session", None)
+            if worker_session is None:
+                worker_session = (
+                    AuthorizedSession(copy(credentials))
+                    if credentials is not None
+                    else create_drive_session(service_account_info)
+                )
+                thread_state.session = worker_session
+                with sessions_lock:
+                    sessions.append(worker_session)
+            return worker_session
+
+        try:
+            with ThreadPoolExecutor(
+                max_workers=min(MAX_PARALLEL_DOWNLOADS, len(changed_files))
+            ) as executor:
+                results = executor.map(
+                    lambda drive_file: _import_drive_file(
+                        get_worker_session,
+                        drive_file,
+                        csv_origin=csv_origin,
+                        default_date=default_date,
+                    ),
+                    changed_files,
+                )
+                for drive_file, (file_records, file_issues, refreshed) in zip(
+                    changed_files, results
+                ):
+                    if refreshed:
+                        file_id = drive_file.get("id", "").strip()
+                        if file_id:
+                            refreshed_file_ids.add(file_id)
+                            fingerprint = _file_fingerprint(
+                                drive_file,
+                                csv_origin=csv_origin,
+                                default_date=default_date,
+                            )
+                            if fingerprint is not None:
+                                file_fingerprints[file_id] = fingerprint
+                    if file_records:
+                        records.extend(file_records)
+                        successful_files += 1
+                    issues.extend(file_issues)
+        finally:
+            for worker_session in sessions:
+                if callable(getattr(worker_session, "close", None)):
+                    worker_session.close()
 
     if not files:
         issues.append("A pasta do Google Drive não contém arquivos.")
@@ -295,6 +364,8 @@ def import_drive_folder_snapshot(
         arquivos_sem_alteracao=len(files) - len(changed_files),
         total_registros=len(records),
         total_issues=len(issues),
+        duracao_listagem_segundos=round(listing_seconds, 3),
+        duracao_total_segundos=round(perf_counter() - started, 3),
     )
     return DriveFolderImport(
         records=records,

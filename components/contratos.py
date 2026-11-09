@@ -473,9 +473,7 @@ def render_contratos(frame: pd.DataFrame) -> None:
     registros_validos, ausentes = _registros_com_contrato(frame)
     resumo, _, _ = resumir_contratos(registros_validos, _prevalidated=True)
     total, arquivos = somar_qtde_contrato(frame, _validos=registros_validos)
-    por_tecnico = contar_contratos_por_tecnico(
-        registros_validos, _prevalidated=True
-    )
+    por_tecnico = contar_contratos_por_tecnico(registros_validos, _prevalidated=True)
     mensal = contar_contratos_por_mes(frame)
 
     ticker_items: list[tuple[str, str]] = [
@@ -608,9 +606,7 @@ def render_contratos(frame: pd.DataFrame) -> None:
             "técnico aparece em verde; a participação é a fatia na soma dos "
             "totais; a linha 'Total geral' soma a matriz.",
         )
-        matriz = contar_contratos_por_tecnico_mes(
-            registros_validos, _prevalidated=True
-        )
+        matriz = contar_contratos_por_tecnico_mes(registros_validos, _prevalidated=True)
         if matriz.empty:
             st.info("Não há registros com contrato para montar a matriz.")
         else:
