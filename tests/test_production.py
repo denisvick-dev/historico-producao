@@ -492,6 +492,22 @@ class PersistenceTests(unittest.TestCase):
 
         self.assertEqual(production.get_drive_file_fingerprints("folder-id"), {})
 
+    def test_drive_sync_removes_stale_fingerprint_when_metadata_missing(self) -> None:
+        production.sync_drive_records(
+            [],
+            {"live-id"},
+            {"live-id"},
+            folder_id="folder-id",
+            file_fingerprints={"live-id": "old"},
+        )
+        production.sync_drive_records(
+            [],
+            {"live-id"},
+            {"live-id"},
+            folder_id="folder-id",
+        )
+        self.assertEqual(production.get_drive_file_fingerprints("folder-id"), {})
+
     def test_clear_database_invalidates_drive_file_fingerprints(self) -> None:
         production.sync_drive_records(
             [],

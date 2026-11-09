@@ -874,6 +874,16 @@ def sync_drive_records(
                     if row["file_id"] not in live_file_ids
                 ],
             )
+            # Um arquivo atualizado sem metadados verificáveis não pode manter
+            # o fingerprint anterior: ele precisa ser reprocessado na próxima vez.
+            connection.executemany(
+                "DELETE FROM drive_file_metadata WHERE folder_id = ? AND file_id = ?",
+                [
+                    (folder_id, file_id)
+                    for file_id in refreshed_file_ids
+                    if file_id not in (file_fingerprints or {})
+                ],
+            )
             connection.executemany(
                 """
                 INSERT INTO drive_file_metadata (folder_id, file_id, fingerprint)

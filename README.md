@@ -111,7 +111,7 @@ token_uri = "https://oauth2.googleapis.com/token"
 ```
 
 Os arquivos Excel devem conter as abas `Prod` e/ou `Gpon`; arquivos CSV são lidos como `Prod` por padrão.
-Para reduzir o tempo das sincronizações seguintes, os metadados dos arquivos são comparados e somente arquivos novos ou alterados são baixados e processados.
+Para reduzir o tempo das sincronizações seguintes, os metadados dos arquivos são comparados e somente arquivos novos ou alterados são baixados e processados. Arquivos sem metadados suficientes são reprocessados; alterações nas opções de importação também invalidam a comparação. Falhas individuais preservam os registros anteriores, e listagens incompletas interrompem a sincronização antes de qualquer exclusão. Erros temporários de conexão, HTTP 429 e erros 5xx recebem até três tentativas; erros permanentes são informados imediatamente. O download e processamento são paralelos (até 8 arquivos), com reutilização da conexão e do token por worker. Os logs incluem a duração da listagem e o tempo total da importação para facilitar o diagnóstico de lentidão.
 
 ## Persistência
 
