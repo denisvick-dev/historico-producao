@@ -934,12 +934,17 @@ def create_demonstration() -> None:
             )
             if (tech_index + month_index) % 11 == 0:
                 gpon = 0
+            # Carteira demonstrativa: o pool de contratos cresce mês a mês,
+            # exercitando o contador por técnico e a evolução mensal.
+            pool = 8 + month_index % 6
+            contract = f"CT-{((tech_index + month_index * 3) % pool) + 1:03d}"
             for origin, points in ((PROD, prod), (GPON, gpon)):
                 records.append(
                     {
                         "technician": technician,
                         "reference_date": period.to_timestamp().strftime("%Y-%m-%d"),
                         "source_sheet": origin,
+                        "contract": contract,
                         "points": float(points),
                         "source_file": DEMO_SOURCE,
                         "source_row": tech_index * len(periods) + month_index + 2,
