@@ -90,6 +90,17 @@ class StreamlitAppTests(unittest.TestCase):
         self.assertTrue(arquivos)
         self.assertIn("Arquivo", arquivos[0].columns)
 
+    def test_aba_saude_dados_exibe_qtde_contrato_por_arquivo(self):
+        """O detalhamento do arquivo deve trazer a coluna Qtde_Contrato."""
+        app = AppTest.from_file(_APP_PATH).run(timeout=30)
+        app.radio(key="navigation").set_value("Saúde dos dados").run(timeout=30)
+        self.assertFalse(app.exception)
+        tabelas = [item.value for item in app.get("dataframe")]
+        detalhes = [tabela for tabela in tabelas if "Qtde_Contrato" in tabela.columns]
+        self.assertTrue(detalhes)
+        self.assertIn("Contrato", detalhes[0].columns)
+        self.assertTrue(detalhes[0]["Qtde_Contrato"].gt(0).all())
+
     def test_novas_visoes_carregam_sem_erro(self):
         """As páginas complementares devem abrir sem exceções."""
         app = AppTest.from_file(_APP_PATH).run(timeout=30)

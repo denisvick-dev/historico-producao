@@ -323,6 +323,40 @@ class PersistenceTests(unittest.TestCase):
         lotes = production.import_batches()
         self.assertEqual(int(lotes.iloc[0]["contracts_count"]), 0)
 
+    def test_load_records_inclui_qtde_contrato_por_arquivo(self):
+        primeiro = self.record(row=2)
+        primeiro["contract"] = "001"
+        segundo = self.record(row=3)
+        segundo["contract"] = "002"
+        repetido = self.record(row=4)
+        repetido["contract"] = "001"
+        sem_contrato = self.record(row=5)
+        sem_contrato["contract"] = "Sem contrato"
+        outro_arquivo = self.record(row=6)
+        outro_arquivo["source_file"] = "outro.xlsx"
+        outro_arquivo["contract"] = "009"
+        production.save_records(
+            [primeiro, segundo, repetido, sem_contrato, outro_arquivo]
+        )
+
+        for frame in (production.load_records(), production.load_dashboard_snapshot()[0]):
+            por_arquivo = frame.groupby("source_file")["contracts_qty"].unique()
+            self.assertEqual(list(por_arquivo["producao.xlsx"]), [2])
+            self.assertEqual(list(por_arquivo["outro.xlsx"]), [1])
+
+    def test_add_contracts_qty_ignora_sem_contrato_e_arquivo_vazio(self):
+        frame = pd.DataFrame(
+            {
+                "source_file": ["a.xlsx", "a.xlsx", "b.xlsx"],
+                "contract": ["001", "Sem contrato", "NULL"],
+            }
+        )
+        resultado = production.add_contracts_qty(frame)
+        self.assertEqual(resultado["contracts_qty"].tolist(), [1, 1, 0])
+        vazio = production.add_contracts_qty(pd.DataFrame())
+        self.assertTrue(vazio.empty)
+        self.assertIn("contracts_qty", vazio.columns)
+
     def test_first_real_import_removes_demonstration(self):
         demo = self.record(points=999)
         demo["source_file"] = production.DEMO_SOURCE

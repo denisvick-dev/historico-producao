@@ -230,6 +230,31 @@ def is_valid_contract(value: object) -> bool:
     )
 
 
+def add_contracts_qty(frame: pd.DataFrame) -> pd.DataFrame:
+    """Adiciona a coluna ``contracts_qty`` (Qtde_Contrato) ao frame.
+
+    O valor repete, em todas as linhas de um arquivo, o total de contratos
+    distintos identificados naquele arquivo. Registros sem contrato não entram
+    na contagem; arquivos sem nenhum contrato ficam com zero.
+    """
+    if frame.empty:
+        frame["contracts_qty"] = pd.Series(dtype="int64")
+        return frame
+    if "source_file" not in frame.columns or "contract" not in frame.columns:
+        frame["contracts_qty"] = 0
+        return frame
+    validos = frame[frame["contract"].map(is_valid_contract)]
+    contagem = (
+        validos.groupby("source_file")["contract"].nunique().astype(int)
+        if not validos.empty
+        else pd.Series(dtype="int64")
+    )
+    frame["contracts_qty"] = (
+        frame["source_file"].map(contagem).fillna(0).astype(int)
+    )
+    return frame
+
+
 def clean_wo(value: object) -> str | None:
     """Normaliza a identificação da WO/OS."""
     if value is None or value is pd.NA or value is pd.NaT:
@@ -815,7 +840,7 @@ def load_records() -> pd.DataFrame:
             connection,
         )
     if frame.empty:
-        return frame
+        return add_contracts_qty(frame)
     if "contract" not in frame.columns:
         frame["contract"] = "Sem contrato"
     else:
@@ -824,6 +849,7 @@ def load_records() -> pd.DataFrame:
         frame["wo"] = "Sem WO"
     else:
         frame["wo"] = frame["wo"].map(_wo_or_placeholder)
+    frame = add_contracts_qty(frame)
     frame["reference_date"] = pd.to_datetime(frame["reference_date"])
     frame["period"] = frame["reference_date"].dt.to_period("M").dt.to_timestamp()
     return frame
@@ -895,6 +921,7 @@ def load_dashboard_snapshot() -> tuple[pd.DataFrame, dict]:
             frame["wo"] = "Sem WO"
         else:
             frame["wo"] = frame["wo"].map(_wo_or_placeholder)
+        frame = add_contracts_qty(frame)
         frame["reference_date"] = pd.to_datetime(frame["reference_date"])
         frame["period"] = frame["reference_date"].dt.to_period("M").dt.to_timestamp()
     return frame, stats
@@ -926,21 +953,15 @@ def import_batches() -> pd.DataFrame:
             "SELECT source_file, contract FROM production_records",
             connection,
         )
-    if "contract" not in contratos.columns:
-        contratos["contract"] = None
+    contratos = add_contracts_qty(contratos)
+    contagem = (
+        contratos.groupby("source_file")["contracts_qty"].max()
+        if not contratos.empty
+        else pd.Series(dtype="int64")
+    )
     if frame.empty:
         frame["contracts_count"] = pd.Series(dtype="int64")
         return frame
-    validos = (
-        contratos[contratos["contract"].map(is_valid_contract)]
-        if not contratos.empty
-        else contratos
-    )
-    contagem = (
-        validos.groupby("source_file")["contract"].nunique().astype(int)
-        if not validos.empty
-        else pd.Series(dtype="int64")
-    )
     frame.insert(
         3,
         "contracts_count",

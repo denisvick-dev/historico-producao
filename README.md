@@ -13,7 +13,7 @@ Painel em Streamlit para acompanhar a produção dos técnicos ao longo do tempo
 - **Sazonalidade** com mapa de calor de Pontos Totais por competência e técnico ou projeto, além de tabela exportável em CSV.
 - Página **Quantidade de O.S.** com evolução por competência e ranking dos 15 técnicos com mais ordens (cada linha válida da aba `Prod` conta como uma O.S.).
 - Página **Contratos** com contador de contratos distintos em destaque, contador por técnico, contador por arquivo importado e evolução mensal de contratos ativos e acumulados, com exportação em CSV.
-- **Saúde dos dados** com cobertura de projetos, dados de demonstração, status de sincronização e histórico de arquivos importados com o contador de contratos distintos de cada arquivo.
+- **Saúde dos dados** com cobertura de projetos, dados de demonstração, status de sincronização, histórico de arquivos importados com o contador de contratos distintos de cada arquivo e detalhamento dos registros com a coluna **Qtde_Contrato**, exportável em CSV.
 - Filtros compartilhados por período, projeto e técnico; a página de técnicos permite escolher o projeto e o perfil individual.
 - Evolução mensal e ranking da equipe.
 - Histórico mensal detalhado e exportação em CSV.

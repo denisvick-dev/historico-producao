@@ -1228,8 +1228,8 @@ def render_dashboard() -> None:
         ),
         "Saúde dos dados": (
             "Saúde dos dados e importações",
-            "Confira a cobertura dos registros, a sincronização e o contador "
-            "de contratos de cada arquivo importado.",
+            "Confira a cobertura, a sincronização e o contador de contratos de "
+            "cada arquivo importado, com detalhamento e download em CSV.",
         ),
     }
     title, subtitle = page_titles[navigation]
