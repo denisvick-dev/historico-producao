@@ -20,8 +20,7 @@ identidade visual. Este módulo resolve isso sem depender de Plotly no cartão
   calcula valor atual, variação contra D-1 e desenho da tendência.
 • ``render_kpi_row``: fileira declarativa de cartões (menos ``st.columns``
   repetido nas páginas).
-• ``calcular_variacao_pct`` / ``rotulo_tendencia``: matemática pura das
-  variações (fonte única — ``components.dashboard_kit`` reutiliza daqui).
+• ``calcular_variacao_pct`` / ``rotulo_tendencia``: matemática pura das variações.
 • ``css_kpi_avancado``: estilos dos cartões, agregados pelo CSS global
   (``components.css_global``) e injetados uma vez por sessão.
 

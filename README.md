@@ -12,7 +12,7 @@ Painel em Streamlit para acompanhar a produção dos técnicos ao longo do tempo
 - **Regularidade da produção** com média e mediana mensal, coeficiente de variação, destaques de oscilação e competências sem registros por técnico.
 - **Sazonalidade** com mapa de calor de Pontos Totais por competência e técnico ou projeto, além de tabela exportável em CSV.
 - Página **Quantidade de O.S.** com evolução por competência e ranking dos 15 técnicos com mais ordens (cada linha válida da aba `Prod` conta como uma O.S.).
-- Página **Contratos** com contador em destaque construído a partir da coluna **Qtde_Contrato** (soma, por arquivo presente no recorte, dos contratos distintos do arquivo — o mesmo contrato reconta a cada mês), ranking por técnico com contratos distintos, evolução mensal por competência, tabela por arquivo importado e seção **Eficiência por contrato** (faixas de pontos por contrato·mês, resumo por contrato com a faixa mais frequente e detalhamento mensal, exportáveis em CSV), com exportação em CSV.
+- Página **Contratos**, no mesmo padrão do painel **Quantidade de O.S.** — ticker com os indicadores do recorte, linha de KPIs, contador em destaque a partir da coluna **Qtde_Contrato** (soma, por arquivo presente no recorte, dos contratos distintos do arquivo — o mesmo contrato reconta a cada mês), evolução mensal, ranking e matriz **Técnico × Competência** de contratos distintos com o melhor mês em verde e linha **Total geral**, tabela por arquivo importado e seção **Eficiência por contrato** (faixas de pontos por contrato·mês, resumo por contrato com a faixa mais frequente e detalhamento mensal, exportáveis em CSV).
 - **Saúde dos dados** com cobertura de projetos, dados de demonstração, status de sincronização, histórico de arquivos importados com o contador de contratos distintos de cada arquivo e detalhamento dos registros com a coluna **Qtde_Contrato**, exportável em CSV.
 - Filtros compartilhados por período, projeto e técnico; a página de técnicos permite escolher o projeto e o perfil individual.
 - Evolução mensal e ranking da equipe.
@@ -165,29 +165,31 @@ historico-producao/
 ├── streamlit_app.py              # Ponto de entrada da aplicação
 ├── production.py                 # Regras de negócio e persistência (SQLite)
 ├── drive_import.py               # Sincronização com Google Drive
+├── config/                       # Configurações do portal (versão e ambiente)
+│   ├── __init__.py
+│   └── settings.py
 ├── components/                   # Design System e componentes UI
 │   ├── __init__.py
 │   ├── componentes.py            # Design System base (cores, fontes, KPI, heróis)
+│   ├── contratos.py              # Página Contratos (Qtde_Contrato e eficiência)
 │   ├── css_global.py             # CSS global dos componentes nativos
-│   ├── css_paginas.py            # CSS compartilhado de páginas
-│   ├── criterios.py              # Detecção e classificação de colunas
-│   ├── dashboard_kit.py          # Kit de dashboards (CSS v2, KPI, filtros)
-│   ├── dashboards.py
+│   ├── eficiencia.py             # Eficiência por técnico e por contrato
 │   ├── graficos.py               # Fábrica de gráficos Plotly
 │   ├── kpi_cards.py              # Cartões de KPI avançados
 │   ├── layout_pagina.py          # Hierarquia de leitura das páginas
-│   ├── metricas_executivas.py    # Cálculos de tendências executivas
 │   ├── prod_os.py                # Página de quantidade de O.S.
-│   ├── saude_dados.py            # Avaliação de frescor e consistência
-│   ├── sidebar.py                # Sidebar corporativa
+│   ├── sidebar.py                # Sidebar corporativa e temas
 │   └── visoes_dashboards.py      # Projetos, resumo executivo e saúde da base
 └── tests/
+    ├── test_config_settings.py   # Configuração do portal (versão/ambiente)
+    ├── test_contratos.py         # Contador e matriz Técnico × Competência
     ├── test_css_global.py        # Testes de fonte em dataframes
     ├── test_drive_import.py      # Testes de importação do Drive
+    ├── test_eficiencia.py        # Eficiência por técnico e por contrato
     ├── test_prod_os.py           # Testes da página de O.S.
     ├── test_production.py        # Testes de regras de negócio
     ├── test_streamlit_app.py     # Testes de integração da UI
-    └── test_visoes_dashboards.py # Testes das novas visões
+    └── test_visoes_dashboards.py # Testes das visões e saúde da base
 ```
 
 ## Troubleshooting

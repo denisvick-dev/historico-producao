@@ -203,26 +203,6 @@ st.markdown(
     .badge--roxo { background:#FAF5FF; color:#6D28D9; border:1px solid #E9D5FF; }
     .badge--vermelho { background:#FEF2F2; color:#B91C1C; border:1px solid #FECACA; }
 
-    /* Cards de destaque com gradiente vibrante */
-    .highlight-card {
-        position:relative; isolation:isolate; overflow:hidden;
-        min-height:120px; border-radius:16px; padding:1.25rem 1.4rem;
-        display:flex; flex-direction:column; justify-content:space-between;
-        color:#fff; box-shadow:0 8px 24px rgba(0,0,0,.12);
-        transition:transform .2s ease;
-    }
-    .highlight-card:hover { transform:translateY(-2px); }
-    .highlight-card::before {
-        content:""; position:absolute; z-index:0; inset:0;
-        background:linear-gradient(115deg, #012869, #1E40AF);
-    }
-    .highlight-card > * { position:relative; z-index:1; }
-    .highlight-card--azul::before { background:linear-gradient(115deg, #012869, #1E40AF); }
-    .highlight-card--laranja::before { background:linear-gradient(115deg, #F37C04, #FB923C); }
-    .highlight-card--verde::before { background:linear-gradient(115deg, #047857, #10B981); }
-    .highlight-card h3 { color:#fff !important; margin:0 0 .5rem; font-size:1rem; font-weight:750; opacity:.95; }
-    .highlight-card .big-number { color:#fff !important; font-size:2.2rem; font-weight:800; letter-spacing:-.03em; margin:0; }
-
     /* Barra de progresso colorida */
     .progress-track {
         width:100%; height:8px; background:#E2E8F0; border-radius:999px;
@@ -1206,9 +1186,9 @@ def render_dashboard() -> None:
         ),
         "Contratos": (
             "Contratos e eficiência por contrato",
-            "Acompanhe a soma da Qtde_Contrato dos arquivos do recorte, a carteira por "
-            "técnico, a evolução mensal, os contratos de cada arquivo e a eficiência "
-            "(faixas de pontos) por contrato.",
+            "Acompanhe os indicadores no topo, a soma da Qtde_Contrato no "
+            "recorte, a matriz técnico × competência, os contratos de cada "
+            "arquivo e a eficiência (faixas de pontos) por contrato.",
         ),
         "Regularidade": (
             "Regularidade da produção",
