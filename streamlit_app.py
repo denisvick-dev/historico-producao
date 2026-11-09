@@ -1061,6 +1061,19 @@ def _drive_service_account() -> Mapping[str, Any] | None:
         return None
 
 
+def render_column_check(records: pd.DataFrame) -> None:
+    """Exibe as colunas disponíveis nos registros carregados do Drive."""
+    if records.empty:
+        st.info("Não há registros importados para conferir as colunas.")
+        return
+
+    st.dataframe(
+        pd.DataFrame({"Coluna disponível": records.columns}),
+        hide_index=True,
+        width="stretch",
+    )
+
+
 logger.info("aplicacao_iniciando", pasta_drive=DRIVE_FOLDER_ID)
 
 # Preserva a sincronização automática da pasta do Drive: ela ocorre ao abrir uma
@@ -1312,3 +1325,13 @@ def render_dashboard() -> None:
 
 
 render_dashboard()
+
+# Conferência das colunas dos arquivos importados do Drive referente ao contrato
+with st.expander("Conferência de colunas dos arquivos importados do Drive"):
+    st.markdown(
+        """
+        <p>Esta seção exibe as colunas disponíveis nos registros importados do Drive.</p>
+        """,
+        unsafe_allow_html=True,
+    )
+    render_column_check(records)

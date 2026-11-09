@@ -73,9 +73,14 @@ CONTRACT_ALIASES = {
     "contrato",
     "contract",
     "codigocontrato",
+    "codigodocontrato",
     "numerocontrato",
+    "numerodocontrato",
+    "numero_contrato",
+    "numcontrato",
     "ncontrato",
     "idcontrato",
+    "contratoid",
 }
 WO_ALIASES = {
     "wo",
@@ -198,7 +203,19 @@ def clean_contract(value: object) -> str | None:
 
 
 #: Valores normalizados que representam ausência de contrato (nunca um contrato).
-CONTRACT_PLACEHOLDERS = {"semcontrato", "null", "na", "nan", "none", "nat"}
+CONTRACT_PLACEHOLDERS = {
+    "semcontrato",
+    "seminformacao",
+    "naoinformado",
+    "naoinformacao",
+    "naoinformacaocontrato",
+    "notavailable",
+    "null",
+    "na",
+    "nan",
+    "none",
+    "nat",
+}
 
 
 def is_valid_contract(value: object) -> bool:

@@ -165,6 +165,19 @@ class ContadorContratosTests(unittest.TestCase):
             list(contagem.columns), ["Técnico", "Contratos", "Participação (%)"]
         )
 
+    def test_identifica_numero_do_contrato_em_cabecalho_variado(self) -> None:
+        frame = pd.DataFrame(
+            {
+                "Técnico": ["Ana"],
+                "Pontos": [10],
+                "Data": ["01/01/2026"],
+                "Número do Contrato": ["00123"],
+            }
+        )
+        registros, problemas = production.process_dataframe(frame, "Prod", "teste.csv")
+        self.assertFalse(problemas)
+        self.assertEqual(registros[0]["contract"], "00123")
+
     def test_contador_mensal_preenche_lacunas_e_acumula_distintos(self) -> None:
         from components.contratos import contar_contratos_por_mes
 

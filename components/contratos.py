@@ -125,8 +125,8 @@ def contar_contratos_por_arquivo(frame: pd.DataFrame) -> pd.DataFrame:
     resumo = (
         work.groupby("Arquivo", as_index=False)["contract"]
         .agg(Registros="size", Contratos="nunique")
-        .rename(columns={"Registros": "Registros com contrato"})
     )
+    resumo["Registros com contrato"] = resumo.pop("Registros")
     if "source_sheet" in work.columns:
         origens = work.groupby("Arquivo")["source_sheet"].agg(
             lambda valores: " / ".join(
@@ -136,9 +136,15 @@ def contar_contratos_por_arquivo(frame: pd.DataFrame) -> pd.DataFrame:
         resumo["Origem"] = resumo["Arquivo"].map(origens).fillna("—")
     else:
         resumo["Origem"] = "—"
-    return resumo.sort_values(
-        ["Contratos", "Arquivo"], ascending=[False, True]
-    ).reset_index(drop=True)[COLUNAS_ARQUIVO]
+    return (
+        resumo.sort_values(
+            by=["Contratos", "Arquivo"],
+            ascending=[False, True],
+            kind="mergesort",
+            na_position="last",
+        )
+        .reset_index(drop=True)[COLUNAS_ARQUIVO]
+    )
 
 
 def _competencias(frame: pd.DataFrame) -> pd.Series | None:
