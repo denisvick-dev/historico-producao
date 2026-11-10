@@ -2141,13 +2141,6 @@ def render_skeleton(
     _safe_render_html(f'<div style="margin:12px 0;">{"".join(rows)}</div>')
 
 
-def render_metric(*args: Any, **kwargs: Any) -> None:
-    """Delega para ``components.kpi_cards.render_metric`` (drop-in replacement de ``st.metric``)."""
-    from components.kpi_cards import render_metric as _render_metric_kpi
-
-    _render_metric_kpi(*args, **kwargs)
-
-
 __all__ = [
     "COR_LARANJA_SUAVE",
     "CSSInjector",
@@ -2204,7 +2197,6 @@ __all__ = [
     "render_kpi",
     "render_kpi_card",
     "render_kpi_sm",
-    "render_metric",
     "render_metric_card",
     "render_notification",
     "render_page_sidebar_theme_selector",

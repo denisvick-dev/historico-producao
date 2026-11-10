@@ -1,8 +1,0 @@
-{
-    "chat.tools.terminal.autoApprove": {
-        "/^py \"C:\\\\Users\\\\denis\\.vick\\\\\\.agents\\\\skills\\\\developing-with-streamlit\\\\scripts\\\\discover\\.py\" --project-dir \"C:\\\\Users\\\\denis\\.vick\\\\Projects\\\\historico-producao\"$/": {
-            "approve": true,
-            "matchCommandLine": true
-        }
-    }
-}

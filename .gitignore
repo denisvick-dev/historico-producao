@@ -18,6 +18,8 @@ out.txt
 
 # Streamlit e arquivos locais
 .streamlit/secrets.toml
+.vscode/
+.devcontainer/
 .env
 .env.*
 !.env.example

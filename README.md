@@ -199,24 +199,17 @@ historico-producao/
 ├── production.py                 # Regras de negócio e persistência (SQLite)
 ├── drive_import.py               # Sincronização com Google Drive
 ├── scripts/                      # Verificações locais/CI e benchmark sintético
-├── config/                       # Configurações do portal (versão e ambiente)
-│   ├── __init__.py
-│   └── settings.py
 ├── components/                   # Design System e componentes UI
 │   ├── __init__.py
 │   ├── componentes.py            # Design System base (cores, fontes, KPI, heróis)
 │   ├── contratos.py              # Quantidade de contratos por técnico e competência
 │   ├── css_global.py             # CSS global dos componentes nativos
 │   ├── eficiencia.py             # Eficiência por técnico e por contrato
-│   ├── graficos.py               # Tokens de identidade visual (cores TOTALE)
-│   ├── kpi_cards.py              # Cartões de KPI avançados
-│   ├── layout_pagina.py          # Hierarquia de leitura das páginas
 │   ├── painel_quantidades.py     # Componentes compartilhados dos painéis O.S. e contratos
 │   ├── prod_os.py                # Página de quantidade de O.S.
 │   ├── sidebar.py                # Sidebar corporativa e temas
 │   └── visoes_dashboards.py      # Projetos, resumo executivo e saúde da base
 └── tests/
-    ├── test_config_settings.py   # Configuração do portal (versão/ambiente)
     ├── test_contratos.py         # Importação e persistência de contratos
     ├── test_css_global.py        # Testes de fonte em dataframes
     ├── test_data_optimization.py # Normalização e carregamento compartilhado

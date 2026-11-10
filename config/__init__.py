@@ -1,1 +1,0 @@
-"""Configurações compartilhadas do portal."""
