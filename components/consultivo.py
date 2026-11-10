@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import calendar
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, timedelta
-from typing import Any
+from typing import Any, TypeAlias
 
 import numpy as np
 import pandas as pd
@@ -45,6 +46,61 @@ class ConfiguracoesConsultivo:
 
 
 CONFIG_CONSULTIVO = ConfiguracoesConsultivo()
+
+
+def formatar_data_brasileira(
+    valor: date | pd.Timestamp | str | None,
+    *,
+    incluir_hora: bool = False,
+) -> str:
+    """Padroniza datas para o formato brasileiro DD/MM/AAAA."""
+    if valor is None or (isinstance(valor, float) and pd.isna(valor)):
+        return "—"
+
+    data = valor
+    if isinstance(valor, str):
+        texto = valor.strip()
+        if not texto:
+            return "—"
+
+        if re.fullmatch(r"\d{4}[-/]\d{1,2}[-/]\d{1,2}(?:[ T].+)?", texto):
+            data = pd.to_datetime(texto, errors="coerce")
+        elif re.fullmatch(r"\d{1,2}[-/]\d{1,2}[-/]\d{4}(?:[ T].+)?", texto):
+            data = pd.to_datetime(texto, errors="coerce", dayfirst=True)
+        else:
+            data = pd.to_datetime(texto, errors="coerce")
+            if pd.isna(data):
+                data = pd.to_datetime(texto, errors="coerce", dayfirst=True)
+
+    if pd.isna(data):
+        return "—"
+
+    try:
+        data = pd.Timestamp(data)  # pyright: ignore[reportArgumentType]
+    except (TypeError, ValueError):
+        return "—"
+
+    if pd.isna(data):
+        return "—"
+
+    formato = "%d/%m/%Y %H:%M" if incluir_hora else "%d/%m/%Y"
+    return data.strftime(formato)
+
+
+def formatar_numero_inteiro_br(valor: Any) -> str:
+    """Converte valores numéricos ou nulos em texto inteiro com separador brasileiro."""
+    if pd.isna(valor):
+        return "0"
+
+    try:
+        numero = int(valor)
+    except (TypeError, ValueError):
+        try:
+            numero = int(float(valor))
+        except (TypeError, ValueError):
+            return "0"
+
+    return f"{numero:,}".replace(",", ".")
 
 
 class CalculosConsultivo:
@@ -372,7 +428,7 @@ def preparar_resumo_diario_monitor(
         "Meta atingida",
         "Abaixo da meta",
     )
-    resumo["Data"] = pd.to_datetime(resumo["Data_Ref"]).dt.strftime("%d/%m/%Y")
+    resumo["Data"] = resumo["Data_Ref"].map(formatar_data_brasileira)
     return resumo[
         [
             "Data",
@@ -965,7 +1021,9 @@ def render_consultivo(
     proj_cons = int(round(tot_cons * fator_proj))
     proj_prod = int(round(tot_prod * fator_proj))
 
-    periodo_txt = f"{data_ini.strftime('%d/%m/%Y')} a {data_fim.strftime('%d/%m/%Y')}"
+    periodo_txt = (
+        f"{formatar_data_brasileira(data_ini)} a {formatar_data_brasileira(data_fim)}"
+    )
 
     # ── Hero Banner Corporativo ──
     render_hero_totale_2(
@@ -1172,7 +1230,11 @@ def render_consultivo(
                     name="Total Consultivos",
                     marker_color=Cores.PRIMARIA,
                     text=df_mensal["Total Consultivos"].map(
-                        lambda v: f"{int(v):,}".replace(",", ".")
+                        lambda v: (
+                            f"{int(v):,}".replace(",", ".")
+                            if pd.notna(v)
+                            else "0"
+                        )
                     ),
                     textposition="outside",
                 )
@@ -1186,7 +1248,11 @@ def render_consultivo(
                     line={"color": Cores.SECUNDARIA, "width": 3},
                     marker={"size": 8, "color": Cores.SECUNDARIA},
                     text=df_mensal["Total Produtos"].map(
-                        lambda v: f"{int(v):,}".replace(",", ".")
+                        lambda v: (
+                            f"{int(v):,}".replace(",", ".")
+                            if pd.notna(v)
+                            else "0"
+                        )
                     ),
                     textposition="top center",
                 )
