@@ -251,5 +251,114 @@ class QtdeContratoTests(unittest.TestCase):
                 self.assertTrue(frame["contract_flag"].isna().all())
 
 
+class PainelContratosTests(unittest.TestCase):
+    def test_distintos_por_tecnico_mes_consistentes_com_totais(self) -> None:
+        from components.contratos import resumir_contratos
+
+        frame = pd.DataFrame(
+            {
+                "technician": ["Ana", "Ana", "Ana", "Ana", "Bia", "Bia", "Ana", "Ana"],
+                "contract": [
+                    " 001 ",
+                    "001",
+                    "002",
+                    "001",
+                    "001",
+                    "003",
+                    "Sem contrato",
+                    "Não informado",
+                ],
+                "period": pd.to_datetime(
+                    ["2026-01-01"] * 3
+                    + [
+                        "2026-02-01",
+                        "2026-01-01",
+                        "2026-02-01",
+                        "2026-01-01",
+                        "2026-01-01",
+                    ]
+                ),
+                "source_sheet": [
+                    "Prod",
+                    "Gpon",
+                    "Prod",
+                    "Prod",
+                    "Gpon",
+                    "Prod",
+                    "Prod",
+                    "Prod",
+                ],
+                "source_file": [
+                    "a.xlsx",
+                    "b.xlsx",
+                    "a.xlsx",
+                    "b.xlsx",
+                    "b.xlsx",
+                    "b.xlsx",
+                    "a.xlsx",
+                    "a.xlsx",
+                ],
+                "contracts_qty": [999] * 8,
+            }
+        )
+        mensal, ranking, matriz, sem_contrato, incompletos = resumir_contratos(frame)
+        self.assertEqual(mensal["contratos"].tolist(), [3, 2])
+        self.assertEqual(
+            ranking.set_index("technician")["contratos"].to_dict(), {"Ana": 3, "Bia": 2}
+        )
+        linhas = matriz.set_index("Técnico")
+        self.assertEqual(
+            linhas.loc["Ana"].to_dict(), {"jan/26": 2, "fev/26": 1, "Total": 3}
+        )
+        self.assertEqual(
+            linhas.loc["Bia"].to_dict(), {"jan/26": 1, "fev/26": 1, "Total": 2}
+        )
+        self.assertEqual(
+            linhas.loc["Total geral"].to_dict(), {"jan/26": 3, "fev/26": 2, "Total": 5}
+        )
+        self.assertEqual((sem_contrato, incompletos), (2, 0))
+
+    def test_filtros_e_competencia_de_referencia(self) -> None:
+        from components.contratos import resumir_contratos
+
+        frame = pd.DataFrame(
+            {
+                "contract": ["001", "002", "003", "004", None],
+                "technician": ["Ana", "Bia", None, "Ana", "Ana"],
+                "period": pd.to_datetime(
+                    ["2026-01-01", None, "2026-01-01", None, "2026-01-01"]
+                ),
+                "reference_date": pd.to_datetime(
+                    ["2026-01-05", "2026-02-05", "2026-01-01", None, "2026-01-01"]
+                ),
+            }
+        )
+        mensal, ranking, matriz, ausentes, incompletos = resumir_contratos(frame)
+        self.assertEqual(mensal["contratos"].tolist(), [1, 1])
+        self.assertEqual((ausentes, incompletos), (1, 2))
+        self.assertEqual(matriz.iloc[-1]["Total"], 2)
+        mensal, ranking, matriz, ausentes, incompletos = resumir_contratos(
+            frame[frame["technician"].eq("Ana")]
+        )
+        self.assertEqual(mensal["contratos"].tolist(), [1])
+        self.assertEqual(ranking["technician"].tolist(), ["Ana"])
+        self.assertEqual((ausentes, incompletos), (1, 1))
+
+    def test_sem_contratos_ou_colunas_obrigatorias(self) -> None:
+        from components.contratos import resumir_contratos
+
+        for frame, ausentes, incompletos in (
+            (pd.DataFrame(), 0, 0),
+            (pd.DataFrame({"technician": ["Ana"]}), 1, 0),
+            (pd.DataFrame({"contract": ["Sem contrato", "NULL"]}), 2, 0),
+            (pd.DataFrame({"contract": ["001"]}), 0, 1),
+        ):
+            mensal, ranking, matriz, qtd_ausentes, qtd_incompletos = resumir_contratos(
+                frame
+            )
+            self.assertTrue(mensal.empty and ranking.empty and matriz.empty)
+            self.assertEqual((qtd_ausentes, qtd_incompletos), (ausentes, incompletos))
+
+
 if __name__ == "__main__":
     unittest.main()
