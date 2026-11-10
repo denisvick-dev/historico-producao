@@ -24,6 +24,18 @@ GPON = "Gpon"
 ORIGINS = (PROD, GPON)
 DEMO_SOURCE = "dados_demonstracao"
 DB_PATH = Path(os.getenv("PRODUCAO_DB_PATH", "data/producao.db"))
+DEFAULT_ROSTER_SHEET_ID = "1LQKDcLshC6XSXLBVWaEYSpxrro6uydyU9pwDLc38pEg"
+ROSTER_METADATA_SCOPE = "__roster_sheet__"
+ROSTER_ACTIVE_TAB = "lista_ativos"
+ROSTER_TERMINATED_TAB = "desligados"
+ROSTER_STATUS_ORDER = (
+    "ATIVO",
+    "FÉRIAS",
+    "AFASTADO",
+    "INOPERANTE",
+    "DESLIGADO",
+    "Não cadastrado",
+)
 
 RECORD_COLUMNS = [
     "technician",
@@ -131,6 +143,15 @@ DATE_COLUMN_PREFERENCE = (
     "periodo",
     "referencia",
 )
+ROSTER_RE_ALIASES = {"re", "matricula", "codequipe", "registro", "recolaborador"}
+ROSTER_LOGIN_ALIASES = {"login", "codauxequipe", "usuario", "logintecnico"}
+ROSTER_MONITOR_ALIASES = {"monitor", "supervisor", "gestor", "lider"}
+ROSTER_UN_ALIASES = {"un", "unidadenegocio", "unidade"}
+ROSTER_BASE_ALIASES = {"base", "operacao", "regional"}
+ROSTER_STATUS_ALIASES = {"situacao", "status", "condicao"}
+ROSTER_MODIFIED_ALIASES = {"ultimamodificacao", "atualizadoem", "modificacao"}
+ROSTER_TERM_DATE_ALIASES = {"datadesligamento", "desligamento"}
+ROSTER_TERM_REASON_ALIASES = {"motivo", "motivodesligamento"}
 
 MONTHS_PT = {
     "jan": 1,
@@ -202,6 +223,82 @@ def clean_project(value: object) -> str:
     text = re.sub(r"\s+", " ", str(value)).strip()
     if not text or normalize_text(text) in {"nan", "none", "nat", "semprojeto"}:
         return "Sem projeto"
+    return text
+
+
+def extract_spreadsheet_id(value: str | None) -> str:
+    """Extrai o ID de uma planilha Google a partir da URL completa ou do ID puro."""
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    match = re.search(r"/spreadsheets/d/([a-zA-Z0-9-_]+)", text)
+    if match:
+        return match.group(1)
+    if re.fullmatch(r"[a-zA-Z0-9-_]{10,}", text):
+        return text
+    return ""
+
+
+def clean_code(value: object) -> str:
+    """Normaliza matrículas/RE e logins, removendo sufixo ``.0`` de leitura numérica."""
+    if value is None or value is pd.NA or value is pd.NaT:
+        return ""
+    if isinstance(value, float) and pd.isna(value):
+        return ""
+    if isinstance(value, int) and not isinstance(value, bool):
+        return str(value)
+    if isinstance(value, float):
+        return str(int(value)) if value.is_integer() else str(value).strip()
+    text = re.sub(r"\s+", " ", str(value)).strip()
+    if not text or normalize_text(text) in {"nan", "none", "nat", "null"}:
+        return ""
+    if re.fullmatch(r"\d+\.0+", text):
+        return text.split(".", 1)[0]
+    return text
+
+
+def clean_roster_status(value: object, *, default: str = "ATIVO") -> str:
+    """Padroniza a situação cadastral do técnico (ATIVO, FÉRIAS, AFASTADO, etc.)."""
+    if value is None or value is pd.NA or value is pd.NaT:
+        return default
+    text = re.sub(r"\s+", " ", str(value)).strip()
+    norm = normalize_text(text)
+    if not norm or norm in {"nan", "none", "nat", "null"}:
+        return default
+    canonical = {
+        "ativo": "ATIVO",
+        "ativos": "ATIVO",
+        "ferias": "FÉRIAS",
+        "afastado": "AFASTADO",
+        "afastada": "AFASTADO",
+        "inoperante": "INOPERANTE",
+        "desligado": "DESLIGADO",
+        "desligada": "DESLIGADO",
+        "inativo": "DESLIGADO",
+    }
+    return canonical.get(norm, text.upper())
+
+
+def _clean_optional_label(
+    value: object, placeholder: str, *, upper: bool = False
+) -> str:
+    if value is None or value is pd.NA or value is pd.NaT:
+        return placeholder
+    text = re.sub(r"\s+", " ", str(value)).strip()
+    if not text or normalize_text(text) in {"nan", "none", "nat", "null"}:
+        return placeholder
+    return text.upper() if upper else text
+
+
+def _clean_optional_date_str(value: object) -> str:
+    parsed = parse_reference_date(value)
+    if parsed is not None:
+        return parsed.strftime("%Y-%m-%d")
+    if value is None or value is pd.NA or value is pd.NaT:
+        return ""
+    text = re.sub(r"\s+", " ", str(value)).strip()
+    if not text or normalize_text(text) in {"nan", "none", "nat", "null"}:
+        return ""
     return text
 
 
@@ -696,6 +793,145 @@ def process_upload(
     return records, issues
 
 
+def process_roster_dataframe(
+    frame: pd.DataFrame,
+    *,
+    source_tab: str = ROSTER_ACTIVE_TAB,
+) -> tuple[list[dict], list[str]]:
+    """Converte uma aba da planilha cadastral (lista_ativos ou desligados) em registros."""
+    if frame.empty:
+        return [], [f"A aba {source_tab} está vazia."]
+
+    tech_col = find_column(frame, TECHNICIAN_ALIASES)
+    if tech_col is None:
+        available = ", ".join(str(col) for col in frame.columns)
+        raise ValueError(
+            f"Coluna de técnico não encontrada na aba {source_tab}. "
+            f"Colunas disponíveis: {available or 'nenhuma'}."
+        )
+
+    re_col = find_column(frame, ROSTER_RE_ALIASES)
+    login_col = find_column(frame, ROSTER_LOGIN_ALIASES)
+    monitor_col = find_column(frame, ROSTER_MONITOR_ALIASES)
+    un_col = find_column(frame, ROSTER_UN_ALIASES)
+    base_col = find_column(frame, ROSTER_BASE_ALIASES)
+    status_col = find_column(frame, ROSTER_STATUS_ALIASES)
+    modified_col = find_column(frame, ROSTER_MODIFIED_ALIASES)
+    term_date_col = find_column(frame, ROSTER_TERM_DATE_ALIASES)
+    term_reason_col = find_column(frame, ROSTER_TERM_REASON_ALIASES)
+
+    default_status = (
+        "DESLIGADO"
+        if normalize_text(source_tab) == normalize_text(ROSTER_TERMINATED_TAB)
+        else "ATIVO"
+    )
+    rows: list[dict] = []
+    issues: list[str] = []
+    for _, series in frame.iterrows():
+        technician = clean_technician(series.get(tech_col))
+        tech_key = normalize_text(technician)
+        if not technician or not tech_key:
+            continue
+        monitor_raw = series.get(monitor_col) if monitor_col is not None else None
+        monitor = clean_technician(monitor_raw) or "Sem monitor"
+        rows.append(
+            {
+                "technician_key": tech_key,
+                "technician": technician,
+                "re_code": clean_code(series.get(re_col)) if re_col is not None else "",
+                "login": (
+                    clean_code(series.get(login_col)).upper()
+                    if login_col is not None
+                    else ""
+                ),
+                "monitor": monitor,
+                "un": (
+                    _clean_optional_label(series.get(un_col), "Sem U.N.", upper=True)
+                    if un_col is not None
+                    else "Sem U.N."
+                ),
+                "base": (
+                    _clean_optional_label(series.get(base_col), "Sem base", upper=True)
+                    if base_col is not None
+                    else "Sem base"
+                ),
+                "status": clean_roster_status(
+                    series.get(status_col) if status_col is not None else None,
+                    default=default_status,
+                ),
+                "source_tab": source_tab,
+                "last_modified": (
+                    _clean_optional_date_str(series.get(modified_col))
+                    if modified_col is not None
+                    else ""
+                ),
+                "termination_date": (
+                    _clean_optional_date_str(series.get(term_date_col))
+                    if term_date_col is not None
+                    else ""
+                ),
+                "termination_reason": (
+                    _clean_optional_label(series.get(term_reason_col), "")
+                    if term_reason_col is not None
+                    else ""
+                ),
+            }
+        )
+    if not rows:
+        issues.append(f"Nenhum técnico válido encontrado na aba {source_tab}.")
+    return rows, issues
+
+
+def process_roster_workbook(
+    content: bytes,
+    *,
+    filename: str = "lista_ativos.xlsx",
+) -> tuple[list[dict], list[str]]:
+    """Lê a planilha cadastral (XLSX com lista_ativos/desligados ou CSV)."""
+    suffix = Path(filename).suffix.lower()
+    if suffix == ".csv":
+        return process_roster_dataframe(read_csv(content), source_tab=ROSTER_ACTIVE_TAB)
+
+    try:
+        workbook = pd.ExcelFile(io.BytesIO(content))
+    except Exception as error:
+        raise ValueError(
+            f"Não foi possível abrir a planilha cadastral ({filename}): {error}"
+        ) from error
+
+    normalized_sheets = {normalize_text(sheet): sheet for sheet in workbook.sheet_names}
+    target_tabs: list[tuple[str, str]] = []
+    for canonical in (ROSTER_ACTIVE_TAB, ROSTER_TERMINATED_TAB):
+        key = normalize_text(canonical)
+        if key in normalized_sheets:
+            target_tabs.append((canonical, normalized_sheets[key]))
+
+    if not target_tabs and workbook.sheet_names:
+        target_tabs.append((ROSTER_ACTIVE_TAB, str(workbook.sheet_names[0])))
+
+    by_key: dict[str, dict] = {}
+    issues: list[str] = []
+    for canonical, actual_sheet in target_tabs:
+        frame = pd.read_excel(workbook, sheet_name=actual_sheet)
+        try:
+            tab_rows, tab_issues = process_roster_dataframe(frame, source_tab=canonical)
+        except ValueError as error:
+            issues.append(str(error))
+            continue
+        issues.extend(tab_issues)
+        for item in tab_rows:
+            # A aba lista_ativos tem precedência sobre desligados em caso de homônimo/readmissão.
+            if item["technician_key"] not in by_key or canonical == ROSTER_ACTIVE_TAB:
+                by_key[item["technician_key"]] = item
+
+    if not by_key:
+        raise ValueError(
+            "Nenhum colaborador válido encontrado na planilha cadastral "
+            f"({', '.join(map(str, workbook.sheet_names))})."
+        )
+    return list(by_key.values()), issues
+
+
 @contextmanager
 def connect() -> Generator[sqlite3.Connection, None, None]:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -742,6 +978,28 @@ def init_database() -> None:
                 fingerprint TEXT NOT NULL,
                 PRIMARY KEY(folder_id, file_id)
             );
+            CREATE TABLE IF NOT EXISTS technician_roster (
+                technician_key TEXT PRIMARY KEY,
+                technician TEXT NOT NULL,
+                re_code TEXT NOT NULL DEFAULT '',
+                login TEXT NOT NULL DEFAULT '',
+                monitor TEXT NOT NULL DEFAULT 'Sem monitor',
+                un TEXT NOT NULL DEFAULT 'Sem U.N.',
+                base TEXT NOT NULL DEFAULT 'Sem base',
+                status TEXT NOT NULL DEFAULT 'ATIVO',
+                source_tab TEXT NOT NULL DEFAULT 'lista_ativos',
+                last_modified TEXT NOT NULL DEFAULT '',
+                termination_date TEXT NOT NULL DEFAULT '',
+                termination_reason TEXT NOT NULL DEFAULT '',
+                is_demo INTEGER NOT NULL DEFAULT 0,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE INDEX IF NOT EXISTS idx_roster_status
+                ON technician_roster(status);
+            CREATE INDEX IF NOT EXISTS idx_roster_monitor
+                ON technician_roster(monitor);
+            CREATE INDEX IF NOT EXISTS idx_roster_base
+                ON technician_roster(base);
             """
         )
         columns = {
@@ -804,6 +1062,144 @@ def get_drive_file_fingerprints(folder_id: str) -> dict[str, str]:
     return {row["file_id"]: row["fingerprint"] for row in rows}
 
 
+def get_roster_fingerprint(sheet_id: str) -> str | None:
+    clean_id = extract_spreadsheet_id(sheet_id)
+    if not clean_id:
+        return None
+    return get_drive_file_fingerprints(ROSTER_METADATA_SCOPE).get(clean_id)
+
+
+def save_roster_records(
+    records: Iterable[dict],
+    *,
+    is_demo: bool = False,
+    sheet_id: str | None = None,
+    fingerprint: str | None = None,
+) -> int:
+    """Persiste o quadro cadastral de técnicos (lista_ativos + desligados)."""
+    rows = list(records)
+    if not rows:
+        return 0
+    init_database()
+    clean_id = extract_spreadsheet_id(sheet_id)
+    with connect() as connection:
+        if is_demo:
+            existing = connection.execute(
+                "SELECT COUNT(*) AS total FROM technician_roster WHERE is_demo = 0"
+            ).fetchone()
+            if existing and existing["total"] > 0:
+                return 0
+            connection.execute("DELETE FROM technician_roster WHERE is_demo = 1")
+        else:
+            connection.execute("DELETE FROM technician_roster")
+            if clean_id and fingerprint:
+                connection.execute(
+                    """
+                    INSERT INTO drive_file_metadata (folder_id, file_id, fingerprint)
+                    VALUES (?, ?, ?)
+                    ON CONFLICT(folder_id, file_id)
+                    DO UPDATE SET fingerprint = excluded.fingerprint
+                    """,
+                    (ROSTER_METADATA_SCOPE, clean_id, fingerprint),
+                )
+        connection.executemany(
+            """
+            INSERT INTO technician_roster (
+                technician_key, technician, re_code, login, monitor, un, base,
+                status, source_tab, last_modified, termination_date,
+                termination_reason, is_demo
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(technician_key) DO UPDATE SET
+                technician = excluded.technician,
+                re_code = excluded.re_code,
+                login = excluded.login,
+                monitor = excluded.monitor,
+                un = excluded.un,
+                base = excluded.base,
+                status = excluded.status,
+                source_tab = excluded.source_tab,
+                last_modified = excluded.last_modified,
+                termination_date = excluded.termination_date,
+                termination_reason = excluded.termination_reason,
+                is_demo = excluded.is_demo,
+                updated_at = CURRENT_TIMESTAMP
+            """,
+            [
+                (
+                    row.get("technician_key") or normalize_text(row["technician"]),
+                    clean_technician(row["technician"]) or str(row["technician"]),
+                    clean_code(row.get("re_code", "")),
+                    clean_code(row.get("login", "")).upper(),
+                    clean_technician(row.get("monitor", "")) or "Sem monitor",
+                    _clean_optional_label(row.get("un"), "Sem U.N.", upper=True),
+                    _clean_optional_label(row.get("base"), "Sem base", upper=True),
+                    clean_roster_status(row.get("status"), default="ATIVO"),
+                    str(row.get("source_tab") or ROSTER_ACTIVE_TAB),
+                    str(row.get("last_modified") or ""),
+                    str(row.get("termination_date") or ""),
+                    str(row.get("termination_reason") or ""),
+                    1 if is_demo else 0,
+                )
+                for row in rows
+                if clean_technician(row.get("technician"))
+            ],
+        )
+    return len(rows)
+
+
+def _read_roster_rows(connection: sqlite3.Connection) -> pd.DataFrame:
+    return pd.read_sql_query(
+        """
+        SELECT technician_key, technician, re_code, login, monitor, un, base,
+               status, source_tab, last_modified, termination_date,
+               termination_reason, is_demo, updated_at
+        FROM technician_roster
+        ORDER BY technician
+        """,
+        connection,
+    )
+
+
+def load_roster() -> pd.DataFrame:
+    """Retorna o cadastro completo de colaboradores (ativos e desligados)."""
+    init_database()
+    with connect() as connection:
+        return _read_roster_rows(connection)
+
+
+def enrich_records_with_roster(
+    frame: pd.DataFrame,
+    roster: pd.DataFrame | None = None,
+) -> pd.DataFrame:
+    """Cruza registros de produção com ``lista_ativos``/``desligados`` por nome normalizado."""
+    work = frame.copy()
+    if work.empty:
+        for col in ("re_code", "login", "monitor", "un", "base", "roster_status"):
+            work[col] = pd.Series(dtype="object")
+        return work
+
+    if roster is None or roster.empty:
+        work["re_code"] = ""
+        work["login"] = ""
+        work["monitor"] = "Sem monitor"
+        work["un"] = "Sem U.N."
+        work["base"] = "Sem base"
+        work["roster_status"] = "Sem cadastro"
+        return work
+
+    indexed = roster.drop_duplicates("technician_key").set_index("technician_key")
+    keys = _map_repeated_text(work["technician"], normalize_text, null_value="")
+    canonical_names = keys.map(indexed["technician"])
+    work["technician"] = canonical_names.fillna(work["technician"])
+    work["re_code"] = keys.map(indexed["re_code"]).fillna("")
+    work["login"] = keys.map(indexed["login"]).fillna("")
+    work["monitor"] = keys.map(indexed["monitor"]).fillna("Sem monitor")
+    work["un"] = keys.map(indexed["un"]).fillna("Sem U.N.")
+    work["base"] = keys.map(indexed["base"]).fillna("Sem base")
+    work["roster_status"] = keys.map(indexed["status"]).fillna("Não cadastrado")
+    return work
+
+
 def save_records(records: Iterable[dict], is_demo: bool = False) -> int:
     rows = list(records)
     if not rows:
@@ -813,6 +1209,7 @@ def save_records(records: Iterable[dict], is_demo: bool = False) -> int:
     with connect() as connection:
         if not is_demo:
             connection.execute("DELETE FROM production_records WHERE is_demo = 1")
+            connection.execute("DELETE FROM technician_roster WHERE is_demo = 1")
             connection.execute(
                 "INSERT INTO app_settings(key, value) VALUES ('demo_disabled', '1') "
                 "ON CONFLICT(key) DO UPDATE SET value = '1'"
@@ -861,6 +1258,7 @@ def sync_drive_records(
     init_database()
     with connect() as connection:
         connection.execute("DELETE FROM production_records WHERE is_demo = 1")
+        connection.execute("DELETE FROM technician_roster WHERE is_demo = 1")
         connection.execute(
             "INSERT INTO app_settings(key, value) VALUES ('demo_disabled', '1') "
             "ON CONFLICT(key) DO UPDATE SET value = '1'"
@@ -977,10 +1375,12 @@ def _read_record_rows(connection: sqlite3.Connection) -> pd.DataFrame:
     )
 
 
-def _prepare_loaded_records(frame: pd.DataFrame) -> pd.DataFrame:
+def _prepare_loaded_records(
+    frame: pd.DataFrame, roster: pd.DataFrame | None = None
+) -> pd.DataFrame:
     """Normaliza o frame carregado, sem consultar ou alterar o banco."""
     if frame.empty:
-        return frame
+        return enrich_records_with_roster(frame, roster)
     if "contract" not in frame.columns:
         frame["contract"] = "Sem contrato"
     else:
@@ -996,16 +1396,17 @@ def _prepare_loaded_records(frame: pd.DataFrame) -> pd.DataFrame:
     frame = add_contracts_qty(frame)
     frame["reference_date"] = pd.to_datetime(frame["reference_date"])
     frame["period"] = frame["reference_date"].dt.to_period("M").dt.to_timestamp()
-    return frame
+    return enrich_records_with_roster(frame, roster)
 
 
 def load_records() -> pd.DataFrame:
     init_database()
     with connect() as connection:
         frame = _read_record_rows(connection)
+        roster = _read_roster_rows(connection)
     if frame.empty:
-        return add_contracts_qty(frame)
-    return _prepare_loaded_records(frame)
+        return enrich_records_with_roster(add_contracts_qty(frame), roster)
+    return _prepare_loaded_records(frame, roster)
 
 
 def database_stats() -> dict:
@@ -1027,6 +1428,7 @@ def load_dashboard_snapshot() -> tuple[pd.DataFrame, dict]:
     init_database()
     with connect() as connection:
         frame = _read_record_rows(connection)
+        roster = _read_roster_rows(connection)
         stats = dict(
             connection.execute(
                 """
@@ -1038,7 +1440,13 @@ def load_dashboard_snapshot() -> tuple[pd.DataFrame, dict]:
                 """
             ).fetchone()
         )
-    return _prepare_loaded_records(frame), stats
+    stats["roster_total"] = int(len(roster))
+    stats["roster_active"] = (
+        int(roster["status"].eq("ATIVO").sum()) if not roster.empty else 0
+    )
+    if frame.empty:
+        return enrich_records_with_roster(add_contracts_qty(frame), roster), stats
+    return _prepare_loaded_records(frame, roster), stats
 
 
 def import_batches() -> pd.DataFrame:
@@ -1088,6 +1496,7 @@ def clear_demonstration() -> None:
     init_database()
     with connect() as connection:
         connection.execute("DELETE FROM production_records WHERE is_demo = 1")
+        connection.execute("DELETE FROM technician_roster WHERE is_demo = 1")
     set_setting("demo_disabled", "1")
 
 
@@ -1095,6 +1504,7 @@ def clear_database() -> None:
     init_database()
     with connect() as connection:
         connection.execute("DELETE FROM production_records")
+        connection.execute("DELETE FROM technician_roster")
         connection.execute("DELETE FROM drive_file_metadata")
     set_setting("demo_disabled", "1")
 
@@ -1160,6 +1570,54 @@ def create_demonstration() -> None:
                     }
                 )
     save_records(records, is_demo=True)
+    demo_monitors = [
+        ("Edson Marco Pinheiro", "ABCDM-TOTALE", "NET-ABCDM"),
+        ("Adriano Nascimento da Silva", "GRS-TOTALE", "NET-GUARULHOS"),
+        ("Elisangela Cassimiro Goncalves", "SPO-TOTALLESTE", "NET-LESTE"),
+    ]
+    demo_roster = [
+        {
+            "technician": technician,
+            "re_code": str(8100 + index),
+            "login": f"Z64{index:04d}",
+            "monitor": demo_monitors[index % len(demo_monitors)][0],
+            "un": demo_monitors[index % len(demo_monitors)][1],
+            "base": demo_monitors[index % len(demo_monitors)][2],
+            "status": "ATIVO",
+            "source_tab": ROSTER_ACTIVE_TAB,
+            "last_modified": pd.Timestamp.today().strftime("%Y-%m-%d"),
+        }
+        for index, technician in enumerate(names)
+    ]
+    demo_roster.extend(
+        [
+            {
+                "technician": "Rafael Augusto Pereira",
+                "re_code": "8290",
+                "login": "Z649001",
+                "monitor": demo_monitors[0][0],
+                "un": demo_monitors[0][1],
+                "base": demo_monitors[0][2],
+                "status": "FÉRIAS",
+                "source_tab": ROSTER_ACTIVE_TAB,
+                "last_modified": pd.Timestamp.today().strftime("%Y-%m-%d"),
+            },
+            {
+                "technician": "Tiago Henrique Mendes",
+                "re_code": "7980",
+                "login": "Z649002",
+                "monitor": demo_monitors[1][0],
+                "un": demo_monitors[1][1],
+                "base": demo_monitors[1][2],
+                "status": "DESLIGADO",
+                "source_tab": ROSTER_TERMINATED_TAB,
+                "last_modified": pd.Timestamp.today().strftime("%Y-%m-%d"),
+                "termination_date": pd.Timestamp.today().strftime("%Y-%m-%d"),
+                "termination_reason": "Encerramento de contrato",
+            },
+        ]
+    )
+    save_roster_records(demo_roster, is_demo=True)
 
 
 def summarize(frame: pd.DataFrame, keys: str | list[str]) -> pd.DataFrame:

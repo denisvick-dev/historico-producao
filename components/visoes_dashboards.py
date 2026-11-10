@@ -1029,6 +1029,35 @@ def render_saude_dados(
             "tratados como produção real."
         )
 
+    st.markdown("### Cobertura cadastral (lista_ativos)")
+    roster_total = int(stats.get("roster_total") or 0)
+    roster_active = int(stats.get("roster_active") or 0)
+    nao_cadastrados = 0
+    if not frame.empty and "roster_status" in frame.columns:
+        nao_cadastrados = int(
+            frame.loc[
+                frame["roster_status"].fillna("Não cadastrado").astype(str)
+                == "Não cadastrado",
+                "technician",
+            ].nunique()
+        )
+    roster_cards = st.columns(3)
+    roster_cards[0].metric(
+        "Colaboradores na planilha",
+        f"{roster_total:,}".replace(",", "."),
+    )
+    roster_cards[1].metric(
+        "Situação ATIVO",
+        f"{roster_active:,}".replace(",", "."),
+    )
+    roster_cards[2].metric(
+        "Técnicos sem vínculo cadastral",
+        f"{nao_cadastrados:,}".replace(",", "."),
+    )
+    st.caption(
+        "Cruzamento da produção com as abas lista_ativos e desligados da planilha oficial."
+    )
+
     st.markdown("### Sincronização com Google Drive")
     if status_sincronizacao:
         tipo = str(status_sincronizacao.get("type", "info"))

@@ -1,3 +1,7 @@
+<p align="left">
+  <img src="assets/novo-logo-totale.png" alt="Logo Totale" width="220">
+</p>
+
 # Histórico de produção — Totale
 
 Painel em Streamlit para acompanhar a produção dos técnicos ao longo do tempo. A regra central do sistema é:
@@ -14,8 +18,9 @@ Painel em Streamlit para acompanhar a produção dos técnicos ao longo do tempo
 - Página **Quantidade de O.S.** com evolução por competência e ranking dos 15 técnicos com mais ordens (cada linha válida da aba `Prod` conta como uma O.S.).
 - Página **Contratos** com duas sub-abas: **Quantidade de contratos** (indicadores, evolução mensal, ranking e matriz por técnico com meses com produção, média mensal e exportação CSV) e **Eficiência de contratos** (classificação mensal dos contratos nas Faixas 1 a 5 de pontuação, filtros por técnico e faixa predominante, distribuição e evolução mensal das faixas, matriz de frequência por contrato e detalhamento mensal exportáveis em CSV). A contagem de quantidade considera contratos distintos por técnico e competência em todas as origens filtradas; a média mensal divide o total pelos meses com ao menos um contrato válido (e, na linha Total geral, usa os meses com contratos de qualquer técnico).
 - Página **Produtividade unitária** cruzando volume e complexidade: indicadores de **Pontos por O.S. (`Prod`)** e **Pontos por Contrato**, evolução mensal do ticket médio de pontos, gráfico de dispersão em 4 quadrantes (*Volume × Pontos unitários*), rankings Top 15 e tabela consolidada com exportação CSV.
+- Página **Quadro de técnicos** interligada à planilha oficial [`lista_ativos`](https://docs.google.com/spreadsheets/d/1LQKDcLshC6XSXLBVWaEYSpxrro6uydyU9pwDLc38pEg) (abas `lista_ativos` e `desligados`), conciliando **RE**, **Login**, **Situação**, **Monitor**, **U.N.** e **Base** com os pontos (`Prod + Gpon`), O.S. e contratos no período.
 - **Saúde dos dados** com cobertura de projetos, dados de demonstração, status de sincronização, histórico de arquivos importados com o contador de contratos distintos de cada arquivo e detalhamento dos registros com a coluna **Qtde_Contrato**, exportável em CSV.
-- Filtros compartilhados por período, projeto e técnico; a página de técnicos permite escolher o projeto e o perfil individual.
+- Filtros compartilhados por **Situação cadastral** (padrão restrito a `ATIVO`), **Monitor**, **Base**, período, projeto e técnico; a página de técnicos exibe matrícula/RE, login, monitor e base no perfil individual.
 - Evolução mensal e ranking da equipe.
 - Histórico mensal detalhado e exportação em CSV.
 - Perfil individual com melhor competência e comparação com a média da equipe.
@@ -91,15 +96,18 @@ O painel estará disponível em `http://localhost:8501`.
 | --- | --- | --- | --- |
 | `PRODUCAO_DB_PATH` | Não | `data/producao.db` | Caminho do banco SQLite |
 | `DRIVE_FOLDER_ID` | Não | `1P0ComfPrfZiq-bHfOi8fWJeAE4GAEkBq` | ID da pasta no Google Drive |
+| `ROSTER_SHEET_ID` | Não | `1LQKDcLshC6XSXLBVWaEYSpxrro6uydyU9pwDLc38pEg` | ID ou URL da planilha cadastral (`lista_ativos`) |
+| `ROSTER_PUBLIC_SYNC` | Não | `0` | Define como `1` para sincronizar `lista_ativos` via link público mesmo sem conta de serviço |
 | `SHOW_DEMO_DATA` | Não | `1` | Define como `0` para desativar dados de demonstração |
 
 ## Sincronização automática do Google Drive
 
-Habilite a Google Drive API, compartilhe a pasta de produção com a conta de serviço e configure suas credenciais em `.streamlit/secrets.toml` (não versione esse arquivo):
+Habilite a Google Drive API, compartilhe a pasta de produção e a planilha cadastral `lista_ativos` com a conta de serviço e configure suas credenciais em `.streamlit/secrets.toml` (não versione esse arquivo):
 
 ```toml
-# Opcional: sobrescreve o ID padrão da pasta
+# Opcional: sobrescreve os IDs padrão da pasta e da planilha cadastral
 drive_folder_id = "id_da_pasta"
+roster_sheet_id = "1LQKDcLshC6XSXLBVWaEYSpxrro6uydyU9pwDLc38pEg"
 
 [gcp_service_account]
 type = "service_account"
@@ -196,6 +204,8 @@ historico-producao/
 ├── mypy.ini                      # Configuração de type checking
 ├── requirements.txt              # Dependências Python
 ├── README.md                     # Este documento
+├── assets/
+│   └── novo-logo-totale.png      # Logotipo oficial da Totale
 ├── streamlit_app.py              # Ponto de entrada da aplicação
 ├── production.py                 # Regras de negócio e persistência (SQLite)
 ├── drive_import.py               # Sincronização com Google Drive
@@ -209,6 +219,7 @@ historico-producao/
 │   ├── painel_quantidades.py     # Componentes compartilhados dos painéis O.S. e contratos
 │   ├── prod_os.py                # Página de quantidade de O.S.
 │   ├── produtividade_unitaria.py # Página de produtividade unitária (pontos por O.S. e contrato)
+│   ├── quadro_tecnicos.py        # Página de conciliação do cadastro lista_ativos/desligados
 │   ├── sidebar.py                # Sidebar corporativa e temas
 │   └── visoes_dashboards.py      # Projetos, resumo executivo e saúde da base
 └── tests/
@@ -220,6 +231,7 @@ historico-producao/
     ├── test_prod_os.py           # Testes da página de O.S.
     ├── test_production.py        # Testes de regras de negócio
     ├── test_produtividade_unitaria.py # Testes da página de produtividade unitária
+    ├── test_roster_integration.py # Testes da integração com lista_ativos e Quadro de técnicos
     ├── test_streamlit_app.py     # Testes de integração da UI
     └── test_visoes_dashboards.py # Testes das visões e saúde da base
 ```

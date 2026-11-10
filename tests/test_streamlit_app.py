@@ -250,11 +250,43 @@ render_contratos(pd.DataFrame({"contract": ["Sem contrato"], "technician": ["Ana
             "Produtividade unitária",
             "Regularidade",
             "Eficiência",
+            "Quadro de técnicos",
             "Saúde dos dados",
         ):
             with self.subTest(pagina=pagina):
                 app.radio(key="navigation").set_value(pagina).run(timeout=30)
                 self.assertFalse(app.exception)
+
+    def test_sidebar_exibe_novo_logo_totale_em_temas_escuro_e_claro(self) -> None:
+        """O arquivo assets/novo-logo-totale.png existe e é renderizado na sidebar."""
+        from components.sidebar import LOGO_PADRAO_TOTALE, _resolver_src_imagem
+
+        self.assertTrue(LOGO_PADRAO_TOTALE.is_file())
+        data_uri = _resolver_src_imagem(LOGO_PADRAO_TOTALE)
+        self.assertIsNotNone(data_uri)
+        assert data_uri is not None
+        self.assertTrue(data_uri.startswith("data:image/png;base64,"))
+        self.assertIsNone(_resolver_src_imagem("assets/arquivo-inexistente.png"))
+
+        app = AppTest.from_file(_APP_PATH).run(timeout=30)
+        self.assertFalse(app.exception)
+        html_azul = "\n".join(
+            str(getattr(item, "body", getattr(item, "value", "")))
+            for item in app.get("html")
+        )
+        self.assertIn("sidebar-brand-wordmark", html_azul)
+        self.assertIn("sidebar-brand-banner--plate", html_azul)
+        self.assertIn("data:image/png;base64,", html_azul)
+
+        app.selectbox(key="_totale_sidebar_theme_select").set_value("claro").run(
+            timeout=30
+        )
+        self.assertFalse(app.exception)
+        html_claro = "\n".join(
+            str(getattr(item, "body", getattr(item, "value", "")))
+            for item in app.get("html")
+        )
+        self.assertIn("sidebar-brand-banner--clean", html_claro)
 
 
 if __name__ == "__main__":

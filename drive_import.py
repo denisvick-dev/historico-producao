@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Callable, Mapping
 from concurrent.futures import ThreadPoolExecutor
 from copy import copy
@@ -19,14 +20,21 @@ from google.auth.transport.requests import AuthorizedSession
 from google.oauth2.service_account import Credentials
 from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
-from production import PROD, process_upload
+from production import (
+    PROD,
+    extract_spreadsheet_id,
+    process_roster_workbook,
+    process_upload,
+)
 
 DRIVE_API_URL = "https://www.googleapis.com/drive/v3"
+GOOGLE_SHEETS_EXPORT_URL = "https://docs.google.com/spreadsheets/d/{sheet_id}/export"
 DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.readonly"
 GOOGLE_SHEET_MIME_TYPE = "application/vnd.google-apps.spreadsheet"
 SUPPORTED_SUFFIXES = {".csv", ".xls", ".xlsx"}
 MAX_PARALLEL_DOWNLOADS = 8
 IMPORT_PARSER_VERSION = "contracts-v2"
+ROSTER_PARSER_VERSION = "roster-v1"
 
 logger = structlog.get_logger(__name__)
 
@@ -43,6 +51,16 @@ class DriveFolderImport:
     file_ids: set[str]
     refreshed_file_ids: set[str]
     file_fingerprints: dict[str, str]
+
+
+@dataclass(frozen=True)
+class RosterSheetImport:
+    records: list[dict]
+    issues: list[str]
+    refreshed: bool
+    unchanged: bool
+    fingerprint: str | None
+    sheet_name: str
 
 
 def create_drive_session(
@@ -392,3 +410,159 @@ def import_drive_folder(
         default_date=default_date,
     )
     return result.records, result.issues, result.successful_files
+
+
+def _roster_fingerprint(drive_file: Mapping[str, str]) -> str | None:
+    modified_time = drive_file.get("modifiedTime", "")
+    checksum = drive_file.get("md5Checksum", "")
+    size = drive_file.get("size", "")
+    if not (modified_time or checksum or size):
+        return None
+    return "|".join(
+        (
+            drive_file.get("name", ""),
+            drive_file.get("mimeType", ""),
+            modified_time,
+            checksum,
+            size,
+            ROSTER_PARSER_VERSION,
+        )
+    )
+
+
+def get_file_metadata(session: Any, file_id: str) -> dict[str, str]:
+    encoded_id = quote(file_id, safe="")
+    response = _request(
+        session,
+        f"{DRIVE_API_URL}/files/{encoded_id}",
+        params={
+            "fields": "id,name,mimeType,modifiedTime,md5Checksum,size",
+            "supportsAllDrives": True,
+        },
+    )
+    try:
+        payload = response.json()
+    except ValueError as error:
+        raise DriveImportError(
+            "O Google Drive retornou metadados inválidos da planilha cadastral."
+        ) from error
+    if not isinstance(payload, dict) or not payload.get("id"):
+        raise DriveImportError(
+            "Não foi possível obter os metadados da planilha cadastral."
+        )
+    return {str(k): str(v) for k, v in payload.items() if v is not None}
+
+
+def import_roster_spreadsheet(
+    service_account_info: Mapping[str, Any] | None,
+    spreadsheet_id: str,
+    *,
+    known_fingerprint: str | None = None,
+    allow_public_fallback: bool = True,
+) -> RosterSheetImport:
+    """Sincroniza a planilha cadastral (lista_ativos / desligados) pelo ID."""
+    clean_id = extract_spreadsheet_id(spreadsheet_id)
+    if not clean_id:
+        raise DriveImportError("O identificador da planilha cadastral é inválido.")
+
+    started = perf_counter()
+    last_drive_error: DriveImportError | None = None
+    if service_account_info is not None:
+        session = create_drive_session(service_account_info)
+        try:
+            metadata = get_file_metadata(session, clean_id)
+            sheet_name = metadata.get("name", "lista_ativos")
+            fingerprint = _roster_fingerprint(metadata)
+            if fingerprint is not None and fingerprint == known_fingerprint:
+                return RosterSheetImport(
+                    records=[],
+                    issues=[],
+                    refreshed=False,
+                    unchanged=True,
+                    fingerprint=fingerprint,
+                    sheet_name=sheet_name,
+                )
+            downloaded = download_file(session, metadata)
+            if downloaded is None:
+                raise DriveImportError(
+                    f"O arquivo '{sheet_name}' não é uma planilha suportada."
+                )
+            filename, content = downloaded
+            try:
+                records, issues = process_roster_workbook(content, filename=filename)
+            except ValueError as error:
+                raise DriveImportError(f"{sheet_name} · {error}") from error
+            logger.info(
+                "sincronizacao_cadastro_concluida",
+                planilha_id=clean_id,
+                total_colaboradores=len(records),
+                duracao_segundos=round(perf_counter() - started, 3),
+                modo="service_account",
+            )
+            return RosterSheetImport(
+                records=records,
+                issues=issues,
+                refreshed=True,
+                unchanged=False,
+                fingerprint=fingerprint,
+                sheet_name=sheet_name,
+            )
+        except DriveImportError as error:
+            if not allow_public_fallback:
+                raise
+            last_drive_error = error
+        finally:
+            if callable(getattr(session, "close", None)):
+                session.close()
+
+    if not allow_public_fallback and last_drive_error is not None:
+        raise last_drive_error
+
+    export_url = GOOGLE_SHEETS_EXPORT_URL.format(sheet_id=quote(clean_id, safe=""))
+    http_session = requests.Session()
+    try:
+        response = _request(
+            http_session,
+            export_url,
+            params={"format": "xlsx"},
+        )
+    except DriveImportError as error:
+        if last_drive_error is not None:
+            raise last_drive_error from error
+        raise
+    finally:
+        http_session.close()
+
+    content = response.content
+    digest = hashlib.sha256(content).hexdigest()
+    fingerprint = f"public-sha256|{digest}|{ROSTER_PARSER_VERSION}"
+    if fingerprint == known_fingerprint:
+        return RosterSheetImport(
+            records=[],
+            issues=[],
+            refreshed=False,
+            unchanged=True,
+            fingerprint=fingerprint,
+            sheet_name="lista_ativos",
+        )
+    try:
+        records, issues = process_roster_workbook(
+            content, filename=f"lista_ativos [{clean_id}].xlsx"
+        )
+    except ValueError as error:
+        raise DriveImportError(f"lista_ativos · {error}") from error
+    logger.info(
+        "sincronizacao_cadastro_concluida",
+        planilha_id=clean_id,
+        total_colaboradores=len(records),
+        duracao_segundos=round(perf_counter() - started, 3),
+        modo="public_export",
+    )
+    return RosterSheetImport(
+        records=records,
+        issues=issues,
+        refreshed=True,
+        unchanged=False,
+        fingerprint=fingerprint,
+        sheet_name="lista_ativos",
+    )
