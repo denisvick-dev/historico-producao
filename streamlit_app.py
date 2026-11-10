@@ -589,17 +589,14 @@ def apply_filters(
         roster_scoped = records
         if has_roster:
             if selected_statuses:
-                roster_scoped = roster_scoped[
-                    roster_scoped["roster_status"].isin(selected_statuses)
-                ]
+                roster_status_mask = roster_scoped["roster_status"].isin(selected_statuses)
+                roster_scoped = roster_scoped.loc[roster_status_mask].copy()
             if selected_monitors:
-                roster_scoped = roster_scoped[
-                    roster_scoped["monitor"].isin(selected_monitors)
-                ]
+                monitor_mask = roster_scoped["monitor"].isin(selected_monitors)
+                roster_scoped = roster_scoped.loc[monitor_mask].copy()
             if selected_bases:
-                roster_scoped = roster_scoped[
-                    roster_scoped["base"].isin(selected_bases)
-                ]
+                base_mask = roster_scoped["base"].isin(selected_bases)
+                roster_scoped = roster_scoped.loc[base_mask].copy()
 
         all_technicians = sorted(roster_scoped["technician"].unique())
         filter_columns = st.columns(
