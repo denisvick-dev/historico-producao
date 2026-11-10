@@ -161,3 +161,41 @@ class StreamlitAppTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ContratosPaginacaoTests(unittest.TestCase):
+    def test_paginacao_busca_e_exportacao_completa(self) -> None:
+        app = AppTest.from_string("""
+import pandas as pd
+from components.contratos import render_contratos
+frame = pd.DataFrame({"contract": [f"C{i:03d}" for i in range(450)],
+    "project": ["Projeto"] * 450, "technician": ["Ana"] * 450,
+    "points": [1.0] * 450, "reference_date": pd.to_datetime(["2026-01-01"] * 450)})
+render_contratos(frame)
+""").run(timeout=30)
+        self.assertFalse(app.exception)
+        carteira = next(
+            item.value for item in app.dataframe if "Contrato" in item.value.columns
+        )
+        self.assertEqual(len(carteira), 200)
+        app.number_input(key="contratos_pagina").set_value(3).run(timeout=30)
+        self.assertFalse(app.exception)
+        carteira = next(
+            item.value for item in app.dataframe if "Contrato" in item.value.columns
+        )
+        self.assertEqual(len(carteira), 50)
+        app.button(key="contratos_preparar_csv").click().run(timeout=30)
+        self.assertFalse(app.exception)
+        csv = app.session_state["contratos_exportacao"][1].decode("utf-8-sig")
+        self.assertEqual(len(csv.splitlines()), 451)
+        self.assertIn("C000", csv)
+        self.assertIn("C449", csv)
+        app.text_input(key="contratos_busca").set_value("C0").run(timeout=30)
+        self.assertFalse(app.exception)
+        carteira = next(
+            item.value for item in app.dataframe if "Contrato" in item.value.columns
+        )
+        self.assertEqual(len(carteira), 100)
+        self.assertNotIn("contratos_exportacao", app.session_state)
+        app.text_input(key="contratos_busca").set_value("").run(timeout=30)
+        self.assertEqual(app.number_input(key="contratos_pagina").value, 1)

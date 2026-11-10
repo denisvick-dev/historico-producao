@@ -7,6 +7,9 @@ registros fora do filtro. As duas métricas não são intercambiáveis.
 
 from __future__ import annotations
 
+import hashlib
+
+import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
@@ -42,10 +45,23 @@ def _registros_com_contrato(frame: pd.DataFrame) -> tuple[pd.DataFrame, int]:
     """
     if frame.empty or "contract" not in frame.columns:
         return frame.iloc[0:0].copy(), len(frame)
-    work = frame.copy()
-    work["contract"] = work["contract"].map(clean_contract)
-    ausente = ~work["contract"].map(is_valid_contract)
-    return work.loc[~ausente].reset_index(drop=True), int(ausente.sum())
+    # Identificadores importados são textos; normalizá-los uma única vez por
+    # valor repetido evita milhares de chamadas Python redundantes. Para tipos
+    # mistos preservamos a distinção original entre, por exemplo, 1 e 1.0.
+    if pd.api.types.infer_dtype(frame["contract"], skipna=True) != "string":
+        work = frame.copy()
+        work["contract"] = work["contract"].map(clean_contract)
+        ausente = ~work["contract"].map(is_valid_contract)
+        return work.loc[~ausente].reset_index(drop=True), int(ausente.sum())
+    codigos, valores = pd.factorize(frame["contract"], sort=False)
+    normalizados = [clean_contract(valor) for valor in valores]
+    validos_unicos = [is_valid_contract(valor) for valor in normalizados]
+    # O código -1 representa qualquer valor nulo e aponta para o último item.
+    contratos = np.asarray([*normalizados, None], dtype=object)[codigos]
+    mascara = np.asarray([*validos_unicos, False], dtype=bool)[codigos]
+    work = frame.loc[mascara].copy().reset_index(drop=True)
+    work["contract"] = contratos[mascara]
+    return work, int((~mascara).sum())
 
 
 def _rotulo_tecnico(valor: object) -> str:
@@ -154,7 +170,10 @@ def contar_contratos_por_tecnico(
 
 
 def contar_contratos_por_arquivo(
-    frame: pd.DataFrame, *, _prevalidated: bool = False
+    frame: pd.DataFrame,
+    *,
+    _prevalidated: bool = False,
+    _validos: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Contador de contratos em cada arquivo importado, a partir da Qtde_Contrato.
 
@@ -165,7 +184,9 @@ def contar_contratos_por_arquivo(
     """
     if frame.empty or "source_file" not in frame.columns:
         return pd.DataFrame(columns=COLUNAS_ARQUIVO)
-    validos, _ = (frame, 0) if _prevalidated else _registros_com_contrato(frame)
+    validos = _validos
+    if validos is None:
+        validos, _ = (frame, 0) if _prevalidated else _registros_com_contrato(frame)
     work = frame.assign(Arquivo=_chave_arquivo(frame["source_file"]))
     validos = validos.assign(Arquivo=_chave_arquivo(validos["source_file"]))
     resumo = pd.DataFrame({"Arquivo": sorted(work["Arquivo"].unique())})
@@ -459,23 +480,29 @@ def resumir_carteira(
         datas = datas.fillna(pd.to_datetime(work["period"], errors="coerce"))
     work["_data"] = datas
 
-    def juntar(valores: pd.Series) -> str:
-        return " · ".join(sorted(set(valores)))
-
-    resultado = (
-        work.groupby("contract", as_index=False)
-        .agg(
-            Projetos=("project", juntar),
-            Técnicos=("technician", juntar),
-            Registros=("contract", "size"),
-            Pontos=("_pontos", "sum"),
-            **{
-                "Primeiro registro": ("_data", "min"),
-                "Último registro": ("_data", "max"),
-            },
-        )
-        .rename(columns={"contract": "Contrato"})
+    # Agregações numéricas usam operações nativas. Projetos e técnicos são
+    # deduplicados antes de concatenar: carteiras grandes costumam ter apenas
+    # um valor por contrato, evitando duas chamadas Python por grupo.
+    resultado = work.groupby("contract", as_index=False).agg(
+        Registros=("contract", "size"),
+        Pontos=("_pontos", "sum"),
+        **{
+            "Primeiro registro": ("_data", "min"),
+            "Último registro": ("_data", "max"),
+        },
     )
+    for coluna, nome in (("project", "Projetos"), ("technician", "Técnicos")):
+        pares = (
+            work[["contract", coluna]]
+            .drop_duplicates()
+            .sort_values(["contract", coluna])
+        )
+        repetidos = pares["contract"].duplicated(keep=False)
+        unicos = pares.loc[~repetidos].set_index("contract")[coluna]
+        multiplos = pares.loc[repetidos].groupby("contract")[coluna].agg(" · ".join)
+        resultado[nome] = resultado["contract"].map(pd.concat([unicos, multiplos]))
+    resultado = resultado.rename(columns={"contract": "Contrato"})
+
     return resultado.sort_values(
         ["Registros", "Contrato"], ascending=[False, True]
     ).reset_index(drop=True)[COLUNAS_CARTEIRA]
@@ -522,6 +549,68 @@ def _grafico_carteira_mensal(mensal: pd.DataFrame) -> go.Figure:
     return _estilizar_figura(fig)
 
 
+# Apenas colunas usadas nesta página participam do cache. O hash completo evita
+# a amostragem automática de DataFrames grandes pelo Streamlit, que poderia
+# reutilizar resultados obsoletos após alterações fora da amostra.
+_COLUNAS_PAINEL = (
+    "contract",
+    "technician",
+    "project",
+    "points",
+    "reference_date",
+    "period",
+    "source_file",
+    "source_sheet",
+    "contracts_qty",
+)
+_TAMANHO_PAGINA = 200
+
+
+def _chave_painel(frame: pd.DataFrame) -> str:
+    colunas = [coluna for coluna in _COLUNAS_PAINEL if coluna in frame.columns]
+    recorte = frame.loc[:, colunas]
+    digest = hashlib.sha256()
+    digest.update(
+        repr([(coluna, str(recorte[coluna].dtype)) for coluna in colunas]).encode()
+    )
+    digest.update(pd.util.hash_pandas_object(recorte, index=True).values.tobytes())
+    # pandas pode produzir o mesmo hash para 1 e "1" em colunas object.
+    # A distinção importa para datas e para misturas de tipos no recorte.
+    for coluna in colunas:
+        serie = recorte[coluna]
+        if serie.dtype == object:
+            tipo = pd.api.types.infer_dtype(serie, skipna=True)
+            digest.update(tipo.encode())
+            if tipo.startswith("mixed"):
+                tipos = serie.map(
+                    lambda valor: f"{type(valor).__module__}.{type(valor).__qualname__}"
+                )
+                digest.update(
+                    pd.util.hash_pandas_object(tipos, index=False).values.tobytes()
+                )
+    return digest.hexdigest()
+
+
+@st.cache_data(max_entries=4, show_spinner=False)
+def _dados_painel(chave: str, _frame: pd.DataFrame) -> dict:
+    """Calcula uma vez por conteúdo e retorna apenas agregados da página."""
+    validos, ausentes = _registros_com_contrato(_frame)
+    total_arquivos, _ = somar_qtde_contrato(_frame, _validos=validos)
+    resumo, _, _ = resumir_contratos(validos, _prevalidated=True)
+    return {
+        "ausentes": ausentes,
+        "registros_validos": len(validos),
+        "carteira": resumir_carteira(validos, _prevalidated=True),
+        "tecnicos": contar_contratos_por_tecnico(validos, _prevalidated=True),
+        "mensal": contratos_distintos_por_mes(validos, _prevalidated=True),
+        "total_arquivos": total_arquivos,
+        "matriz": contar_contratos_por_tecnico_mes(validos, _prevalidated=True),
+        "resumo": resumo,
+        "por_arquivo": contar_contratos_por_arquivo(_frame, _validos=validos),
+        "mensal_arquivos": contar_contratos_por_mes(_frame),
+    }
+
+
 def render_contratos(frame: pd.DataFrame) -> None:
     """Painel da carteira e suas fontes, respeitando os filtros globais."""
     if frame.empty:
@@ -530,11 +619,16 @@ def render_contratos(frame: pd.DataFrame) -> None:
         )
         return
 
-    validos, ausentes = _registros_com_contrato(frame)
-    carteira = resumir_carteira(validos, _prevalidated=True)
-    tecnicos = contar_contratos_por_tecnico(validos, _prevalidated=True)
-    mensal = contratos_distintos_por_mes(validos, _prevalidated=True)
-    total_arquivos, _ = somar_qtde_contrato(frame, _validos=validos)
+    recorte = frame.loc[
+        :, [coluna for coluna in _COLUNAS_PAINEL if coluna in frame.columns]
+    ]
+    chave = _chave_painel(recorte)
+    dados = _dados_painel(chave, recorte)
+    carteira = dados["carteira"]
+    tecnicos = dados["tecnicos"]
+    mensal = dados["mensal"]
+    total_arquivos = dados["total_arquivos"]
+    ausentes = dados["ausentes"]
 
     cards = st.columns(4)
     indicadores = [
@@ -547,7 +641,7 @@ def render_contratos(frame: pd.DataFrame) -> None:
         ),
         (
             "REGISTROS COM CONTRATO",
-            len(validos),
+            dados["registros_validos"],
             "Linhas com contrato identificado",
             "RG",
             "kpi-card--verde",
@@ -631,6 +725,11 @@ def render_contratos(frame: pd.DataFrame) -> None:
             placeholder="Digite o número ou identificador",
             key="contratos_busca",
         )
+        consulta_key = (chave, busca.strip())
+        if st.session_state.get("contratos_consulta_atual") != consulta_key:
+            st.session_state["contratos_consulta_atual"] = consulta_key
+            st.session_state["contratos_pagina"] = 1
+            st.session_state.pop("contratos_exportacao", None)
         encontrados = (
             carteira[
                 carteira["Contrato"].str.contains(
@@ -646,8 +745,24 @@ def render_contratos(frame: pd.DataFrame) -> None:
         if encontrados.empty:
             st.info("Nenhum contrato encontrado para essa busca.")
         else:
+            total_paginas = (len(encontrados) - 1) // _TAMANHO_PAGINA + 1
+            pagina = 1
+            if total_paginas > 1:
+                pagina = st.number_input(
+                    "Página",
+                    min_value=1,
+                    max_value=total_paginas,
+                    value=1,
+                    step=1,
+                    key="contratos_pagina",
+                    help=f"Até {_TAMANHO_PAGINA} contratos por página.",
+                )
+                st.caption(
+                    f"Página {pagina} de {total_paginas} · até {_TAMANHO_PAGINA} contratos por página."
+                )
+            inicio = (pagina - 1) * _TAMANHO_PAGINA
             st.dataframe(
-                encontrados,
+                encontrados.iloc[inicio : inicio + _TAMANHO_PAGINA],
                 hide_index=True,
                 width="stretch",
                 column_config={
@@ -662,23 +777,56 @@ def render_contratos(frame: pd.DataFrame) -> None:
                 },
                 alt="Carteira de contratos do recorte",
             )
-            _baixar_csv(encontrados, "carteira_contratos.csv")
+            if len(encontrados) <= _TAMANHO_PAGINA:
+                _baixar_csv(encontrados, "carteira_contratos.csv")
+            else:
+                # Preparação explícita evita converter uma grande carteira em
+                # CSV a cada interação; o download inclui todos os resultados.
+                export_key = consulta_key
+                export = st.session_state.get("contratos_exportacao")
+                if st.button("Preparar CSV completo", key="contratos_preparar_csv"):
+                    export = (
+                        export_key,
+                        encontrados.to_csv(index=False, sep=";", decimal=",").encode(
+                            "utf-8-sig"
+                        ),
+                    )
+                    st.session_state["contratos_exportacao"] = export
+                if export:
+                    st.download_button(
+                        "Baixar carteira completa em CSV",
+                        data=export[1],
+                        file_name="carteira_contratos.csv",
+                        mime="text/csv",
+                        key="download_contratos_carteira_completa",
+                    )
 
         _section_heading(
             "Detalhamento da equipe",
             "Compare os contratos atendidos por técnico em cada competência.",
         )
-        matriz = contar_contratos_por_tecnico_mes(validos, _prevalidated=True)
+        matriz = dados["matriz"]
         if matriz.empty:
             st.info("Não há competências válidas para montar a matriz por técnico.")
         else:
+            destacar = matriz.size <= 10_000
             st.caption(
-                "Cada célula conta contratos distintos no mês. O total soma os meses, não os contratos únicos do período. O melhor mês aparece em verde."
+                "Cada célula conta contratos distintos no mês. O total soma os meses, não os contratos únicos do período. "
+                + (
+                    "O melhor mês aparece em verde."
+                    if destacar
+                    else "Destaque de cores desativado para matrizes grandes."
+                )
             )
-            st.dataframe(
+            visualizacao = (
                 matriz.style.apply(_best_month_style, axis=1).map(
                     _total_column_style, subset=["Total"]
-                ),
+                )
+                if destacar
+                else matriz
+            )
+            st.dataframe(
+                visualizacao,
                 width="stretch",
                 hide_index=True,
                 column_config={
@@ -692,7 +840,7 @@ def render_contratos(frame: pd.DataFrame) -> None:
                 alt="Contratos distintos por técnico e competência",
             )
             _baixar_csv(matriz, "contratos_por_tecnico_mes.csv")
-        resumo, _, _ = resumir_contratos(validos, _prevalidated=True)
+        resumo = dados["resumo"]
         with st.expander("Ver contratos por projeto e técnico"):
             st.caption(
                 "Contratos distintos em cada combinação de projeto e técnico; um contrato pode aparecer em mais de uma combinação."
@@ -710,13 +858,13 @@ def render_contratos(frame: pd.DataFrame) -> None:
             if "contracts_qty" in frame.columns
             else "Sem contagem de origem disponível, cada arquivo mostra os contratos distintos de suas linhas no recorte. A soma dos arquivos pode superar os contratos distintos do recorte."
         )
-        por_arquivo = contar_contratos_por_arquivo(frame)
+        por_arquivo = dados["por_arquivo"]
         if por_arquivo.empty:
             st.info("Não há arquivo de origem associado aos registros deste recorte.")
         else:
             st.dataframe(por_arquivo, hide_index=True, width="stretch")
             _baixar_csv(por_arquivo, "contratos_por_arquivo.csv")
-        mensal_arquivos = contar_contratos_por_mes(frame)
+        mensal_arquivos = dados["mensal_arquivos"]
         if not mensal_arquivos.empty:
             st.markdown("**Contagem de origem por competência**")
             st.caption(
