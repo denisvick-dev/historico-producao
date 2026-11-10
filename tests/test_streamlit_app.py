@@ -73,17 +73,60 @@ class StreamlitAppTests(unittest.TestCase):
                 row["Pontos Totais"] / active_months,
             )
 
-    def test_aba_contratos_nao_aparece_na_navegacao(self) -> None:
-        """A aba removida não deve aparecer no menu."""
+    def test_aba_contratos_exibe_graficos_matriz_e_download(self) -> None:
         app = AppTest.from_file(_APP_PATH).run(timeout=30)
+        app.radio(key="navigation").set_value("Contratos").run(timeout=30)
         self.assertFalse(app.exception)
-        self.assertFalse(
-            any("Contratos" in opcao for opcao in app.radio(key="navigation").options)
+        markdown = " ".join(str(item.value) for item in app.markdown)
+        self.assertIn("TOTAL DE CONTRATOS", markdown)
+        self.assertIn("Evolução mensal de contratos", markdown)
+        self.assertIn("Contratos por técnico · Top 15", markdown)
+        self.assertIn("não são contratos únicos", markdown)
+        self.assertGreaterEqual(len(app.get("plotly_chart")), 2)
+        tabelas = [
+            cast("pd.DataFrame", cast("Any", item).value)
+            for item in app.get("dataframe")
+        ]
+        matriz = next(
+            t for t in tabelas if "Técnico" in t.columns and "Total" in t.columns
+        )
+        self.assertEqual(matriz.iloc[-1]["Técnico"], "Total geral")
+        self.assertEqual(matriz.iloc[-1]["Total"], matriz.iloc[:-1]["Total"].sum())
+        self.assertTrue(
+            any(
+                "Baixar quantidade de contratos" in str(cast("Any", item).label)
+                for item in app.get("download_button")
+            )
         )
 
-    def test_sessao_com_aba_removida_volta_para_visao_geral(self) -> None:
+    def test_contratos_respeita_filtro_global_de_tecnico(self) -> None:
+        app = AppTest.from_file(_APP_PATH).run(timeout=30)
+        app.radio(key="navigation").set_value("Contratos").run(timeout=30)
+        tecnico = app.multiselect(key="technician_filter").options[0]
+        app.multiselect(key="technician_filter").set_value([tecnico]).run(timeout=30)
+        self.assertFalse(app.exception)
+        tabelas = [
+            cast("pd.DataFrame", cast("Any", item).value)
+            for item in app.get("dataframe")
+        ]
+        matriz = next(
+            t for t in tabelas if "Técnico" in t.columns and "Total" in t.columns
+        )
+        self.assertEqual(matriz["Técnico"].tolist(), [tecnico, "Total geral"])
+
+    def test_aba_contratos_sem_identificador_valido(self) -> None:
+        app = AppTest.from_string("""
+import pandas as pd
+from components.contratos import render_contratos
+render_contratos(pd.DataFrame({"contract": ["Sem contrato"], "technician": ["Ana"], "period": pd.to_datetime(["2026-01-01"])}))
+""").run(timeout=30)
+        self.assertFalse(app.exception)
+        self.assertTrue(any("Não há contratos" in str(item.value) for item in app.info))
+        self.assertFalse(app.get("plotly_chart"))
+
+    def test_navegacao_desconhecida_volta_para_visao_geral(self) -> None:
         app = AppTest.from_file(_APP_PATH)
-        app.session_state["navigation"] = "Contratos"
+        app.session_state["navigation"] = "Página removida"
         app.run(timeout=30)
         self.assertFalse(app.exception)
         self.assertEqual(app.radio(key="navigation").value, "Visão geral")
@@ -120,6 +163,7 @@ class StreamlitAppTests(unittest.TestCase):
         app = AppTest.from_file(_APP_PATH).run(timeout=30)
         for pagina in (
             "Projetos",
+            "Contratos",
             "Regularidade",
             "Eficiência",
             "Saúde dos dados",
