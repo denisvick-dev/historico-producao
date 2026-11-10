@@ -12,7 +12,6 @@ Painel em Streamlit para acompanhar a produção dos técnicos ao longo do tempo
 - **Regularidade da produção** com média e mediana mensal, coeficiente de variação, destaques de oscilação e competências sem registros por técnico.
 - **Sazonalidade** com mapa de calor de Pontos Totais por competência e técnico ou projeto, além de tabela exportável em CSV.
 - Página **Quantidade de O.S.** com evolução por competência e ranking dos 15 técnicos com mais ordens (cada linha válida da aba `Prod` conta como uma O.S.).
-- Página **Contratos** com carteira pesquisável e paginada (com exportação completa sob demanda), contratos distintos no recorte, evolução mensal e distribuição por técnico, matriz por competência e conferência dos totais por arquivo. A contagem por arquivo considera o arquivo inteiro e pode divergir dos contratos distintos filtrados.
 - **Saúde dos dados** com cobertura de projetos, dados de demonstração, status de sincronização, histórico de arquivos importados com o contador de contratos distintos de cada arquivo e detalhamento dos registros com a coluna **Qtde_Contrato**, exportável em CSV.
 - Filtros compartilhados por período, projeto e técnico; a página de técnicos permite escolher o projeto e o perfil individual.
 - Evolução mensal e ranking da equipe.
@@ -171,7 +170,6 @@ historico-producao/
 ├── components/                   # Design System e componentes UI
 │   ├── __init__.py
 │   ├── componentes.py            # Design System base (cores, fontes, KPI, heróis)
-│   ├── contratos.py              # Página Contratos (Qtde_Contrato)
 │   ├── css_global.py             # CSS global dos componentes nativos
 │   ├── eficiencia.py             # Eficiência por técnico e por contrato
 │   ├── graficos.py               # Tokens de identidade visual (cores TOTALE)
@@ -182,7 +180,7 @@ historico-producao/
 │   └── visoes_dashboards.py      # Projetos, resumo executivo e saúde da base
 └── tests/
     ├── test_config_settings.py   # Configuração do portal (versão/ambiente)
-    ├── test_contratos.py         # Contador e matriz Técnico × Competência
+    ├── test_contratos.py         # Importação e persistência de contratos
     ├── test_css_global.py        # Testes de fonte em dataframes
     ├── test_drive_import.py      # Testes de importação do Drive
     ├── test_eficiencia.py        # Eficiência por técnico e por contrato

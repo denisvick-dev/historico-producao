@@ -1732,7 +1732,7 @@ def render_kpi_card(
     card_class: str = "",
     note_class: str = "",
 ) -> None:
-    """Cartão de KPI compacto usado nas páginas analíticas (aba Contratos)."""
+    """Cartão de KPI compacto usado nas páginas analíticas."""
     st.markdown(
         f"""
         <div class="kpi-card {card_class}">

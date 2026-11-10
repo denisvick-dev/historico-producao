@@ -73,49 +73,20 @@ class StreamlitAppTests(unittest.TestCase):
                 row["Pontos Totais"] / active_months,
             )
 
-    def test_aba_contratos_exibe_contador(self) -> None:
-        """A aba Contratos deve abrir com o contador e sem a seção de eficiência."""
+    def test_aba_contratos_nao_aparece_na_navegacao(self) -> None:
+        """A aba removida não deve aparecer no menu."""
         app = AppTest.from_file(_APP_PATH).run(timeout=30)
-        app.radio(key="navigation").set_value("Contratos").run(timeout=30)
         self.assertFalse(app.exception)
-        markdown = " ".join(str(item.value) for item in app.markdown)
-        self.assertIn("CONTRATOS DISTINTOS", markdown)
-        self.assertIn("CONTAGEM POR ARQUIVO", markdown)
-        self.assertIn("Visão da carteira", markdown)
-        self.assertIn("Explorar contratos", markdown)
-        self.assertIn("Conferência das origens", markdown)
-        self.assertGreaterEqual(len(app.get("plotly_chart")), 2)
-        tabelas = [
-            cast("pd.DataFrame", cast("Any", item).value)
-            for item in app.get("dataframe")
-        ]
-        carteira = next(
-            t for t in tabelas if "Contrato" in t.columns and "Registros" in t.columns
-        )
-        contrato = carteira.iloc[0]["Contrato"]
-        app.text_input(key="contratos_busca").set_value(contrato).run(timeout=30)
-        self.assertFalse(app.exception)
-        tabelas = [
-            cast("pd.DataFrame", cast("Any", item).value)
-            for item in app.get("dataframe")
-        ]
-        filtrada = next(
-            t for t in tabelas if "Contrato" in t.columns and "Registros" in t.columns
-        )
-        self.assertEqual(filtrada["Contrato"].tolist(), [contrato])
-        app.text_input(key="contratos_busca").set_value("[sem resultado]").run(
-            timeout=30
-        )
-        self.assertFalse(app.exception)
-        self.assertTrue(
-            any("Nenhum contrato encontrado" in str(item.value) for item in app.info)
+        self.assertFalse(
+            any("Contratos" in opcao for opcao in app.radio(key="navigation").options)
         )
 
-    def test_aba_contratos_unifica_eficiencia_por_contrato(self) -> None:
-        """A navegação não deve mais separar Eficiência por contrato."""
-        app = AppTest.from_file(_APP_PATH).run(timeout=30)
-        radio = app.radio(key="navigation")
-        self.assertNotIn("Eficiência por contrato", radio.options)
+    def test_sessao_com_aba_removida_volta_para_visao_geral(self) -> None:
+        app = AppTest.from_file(_APP_PATH)
+        app.session_state["navigation"] = "Contratos"
+        app.run(timeout=30)
+        self.assertFalse(app.exception)
+        self.assertEqual(app.radio(key="navigation").value, "Visão geral")
 
     def test_aba_saude_dados_mostra_contratos_por_arquivo(self) -> None:
         """A lista de arquivos importados deve exibir o contador de contratos."""
@@ -149,7 +120,6 @@ class StreamlitAppTests(unittest.TestCase):
         app = AppTest.from_file(_APP_PATH).run(timeout=30)
         for pagina in (
             "Projetos",
-            "Contratos",
             "Regularidade",
             "Eficiência",
             "Saúde dos dados",
@@ -161,41 +131,3 @@ class StreamlitAppTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
-
-class ContratosPaginacaoTests(unittest.TestCase):
-    def test_paginacao_busca_e_exportacao_completa(self) -> None:
-        app = AppTest.from_string("""
-import pandas as pd
-from components.contratos import render_contratos
-frame = pd.DataFrame({"contract": [f"C{i:03d}" for i in range(450)],
-    "project": ["Projeto"] * 450, "technician": ["Ana"] * 450,
-    "points": [1.0] * 450, "reference_date": pd.to_datetime(["2026-01-01"] * 450)})
-render_contratos(frame)
-""").run(timeout=30)
-        self.assertFalse(app.exception)
-        carteira = next(
-            item.value for item in app.dataframe if "Contrato" in item.value.columns
-        )
-        self.assertEqual(len(carteira), 200)
-        app.number_input(key="contratos_pagina").set_value(3).run(timeout=30)
-        self.assertFalse(app.exception)
-        carteira = next(
-            item.value for item in app.dataframe if "Contrato" in item.value.columns
-        )
-        self.assertEqual(len(carteira), 50)
-        app.button(key="contratos_preparar_csv").click().run(timeout=30)
-        self.assertFalse(app.exception)
-        csv = app.session_state["contratos_exportacao"][1].decode("utf-8-sig")
-        self.assertEqual(len(csv.splitlines()), 451)
-        self.assertIn("C000", csv)
-        self.assertIn("C449", csv)
-        app.text_input(key="contratos_busca").set_value("C0").run(timeout=30)
-        self.assertFalse(app.exception)
-        carteira = next(
-            item.value for item in app.dataframe if "Contrato" in item.value.columns
-        )
-        self.assertEqual(len(carteira), 100)
-        self.assertNotIn("contratos_exportacao", app.session_state)
-        app.text_input(key="contratos_busca").set_value("").run(timeout=30)
-        self.assertEqual(app.number_input(key="contratos_pagina").value, 1)

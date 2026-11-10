@@ -1152,8 +1152,7 @@ def create_demonstration() -> None:
             )
             if (tech_index + month_index) % 11 == 0:
                 gpon = 0
-            # Carteira demonstrativa: o pool de contratos cresce mês a mês,
-            # exercitando o contador por técnico e a evolução mensal.
+            # Carteira demonstrativa: o pool de contratos cresce mês a mês.
             pool = 8 + month_index % 6
             contract = f"CT-{((tech_index + month_index * 3) % pool) + 1:03d}"
             for origin, points in ((PROD, prod), (GPON, gpon)):
@@ -1164,9 +1163,7 @@ def create_demonstration() -> None:
                         "source_sheet": origin,
                         "contract": contract,
                         "points": float(points),
-                        # Um arquivo por competência (como as exportações reais
-                        # do Drive), para que a aba Contratos reflita a
-                        # Qtde_Contrato arquivo a arquivo.
+                        # Um arquivo por competência, como nas exportações do Drive.
                         "source_file": f"{DEMO_SOURCE}_{period.strftime('%Y-%m')}",
                         "source_row": tech_index * len(periods) + month_index + 2,
                     }

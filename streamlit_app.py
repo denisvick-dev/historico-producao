@@ -35,7 +35,6 @@ from components.componentes import (
     render_ticker,
     render_sidebar_theme_selector,
 )
-from components.contratos import render_contratos
 from components.eficiencia import render_eficiencia
 from components.prod_os import render_prod_orders
 from components.visoes_dashboards import (
@@ -1125,12 +1124,14 @@ with st.sidebar:
         "Visão geral": "▦  Visão geral",
         "Projetos": "◈  Projetos",
         "Quantidade de O.S.": "▤  Quantidade de O.S.",
-        "Contratos": "◈  Contratos",
         "Regularidade": "◌  Regularidade",
         "Eficiência": "▧  Eficiência por técnico",
         "Técnicos": "♙  Técnicos",
         "Saúde dos dados": "◉  Saúde dos dados",
     }
+    # Uma sessão aberta antes da remoção da página pode conservar a seleção antiga.
+    if st.session_state.get("navigation") not in (None, *nav_labels):
+        st.session_state["navigation"] = "Visão geral"
     navigation = st.radio(
         "Navegação",
         list(nav_labels),
@@ -1170,10 +1171,6 @@ def render_dashboard() -> None:
         "Quantidade de O.S.": (
             "Quantidade de O.S.",
             "Ordens de serviço registradas na aba Prod, por competência e técnico.",
-        ),
-        "Contratos": (
-            "Contratos",
-            "Explore a carteira de contratos, sua evolução e a distribuição por técnico.",
         ),
         "Regularidade": (
             "Regularidade da produção",
@@ -1267,8 +1264,6 @@ def render_dashboard() -> None:
             render_projetos(filtered)
         elif navigation == "Quantidade de O.S.":
             render_prod_orders(filtered)
-        elif navigation == "Contratos":
-            render_contratos(filtered)
         elif navigation == "Regularidade":
             render_regularidade_producao(filtered, period_start, period_end)
         elif navigation == "Eficiência":
