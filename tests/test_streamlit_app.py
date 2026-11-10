@@ -39,6 +39,10 @@ class StreamlitAppTests(unittest.TestCase):
     def test_sidebar_tem_navegacao(self) -> None:
         """A sidebar deve conter o rádio de navegação."""
         self.assertIsNotNone(self.at.sidebar)
+        botoes = self.at.get("button")
+        self.assertTrue(
+            any(getattr(botao, "key", None) == "refresh_data_button" for botao in botoes)
+        )
 
     def test_metricas_renderizadas(self) -> None:
         """Os cards de KPI devem ser renderizados na visão geral."""

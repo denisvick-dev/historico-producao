@@ -105,9 +105,17 @@ COLORS = {
     "background": Cores.FUNDO,
 }
 
+ICONE_PAGINA_TOTALE = LOGO_PADRAO_TOTALE.parent / "totale.ico"
+
 st.set_page_config(
     page_title="Histórico de produção | Totale",
-    page_icon=str(LOGO_PADRAO_TOTALE) if LOGO_PADRAO_TOTALE.is_file() else "📈",
+    page_icon=(
+        str(ICONE_PAGINA_TOTALE)
+        if ICONE_PAGINA_TOTALE.is_file()
+        else str(LOGO_PADRAO_TOTALE)
+        if LOGO_PADRAO_TOTALE.is_file()
+        else "📈"
+    ),
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -712,7 +720,7 @@ def render_metrics(
     if previous_total > 0:
         variation = (current_total / previous_total - 1) * 100
         arrow = "↑" if variation >= 0 else "↓"
-        variation_label = f"{abs(variation):.1f}%".replace(".", ",")
+        variation_label = f"{abs(variation):.2f}%".replace(".", ",")
         note = f"{arrow} {variation_label} vs. período anterior"
         note_class = "positive" if variation >= 0 else "negative"
     else:
@@ -896,7 +904,7 @@ def render_overview(
             "Pontos Totais": st.column_config.NumberColumn(format="%.2f"),
             "Meses com produção": st.column_config.NumberColumn(format="%d"),
             "Melhor mês": st.column_config.TextColumn(width="small"),
-            "Média mensal": st.column_config.NumberColumn(format="%.0f"),
+            "Média mensal": st.column_config.NumberColumn(format="%.2f"),
             "Variação no último mês": st.column_config.TextColumn(width="small"),
         },
     )
@@ -929,12 +937,12 @@ def _status_value(var: float | None) -> str:
     if var is None:
         return "Sem dado"
     if var >= 10:
-        return f"↑ {var:.1f}%"
+        return f"↑ {var:.2f}%"
     if var >= 0:
-        return f"→ {var:.1f}%"
+        return f"→ {var:.2f}%"
     if var >= -10:
-        return f"↓ {abs(var):.1f}%"
-    return f"↓ {abs(var):.1f}%"
+        return f"↓ {abs(var):.2f}%"
+    return f"↓ {abs(var):.2f}%"
 
 
 def _status_badge_style(value: object) -> str:
@@ -1127,16 +1135,16 @@ def _initialize_demo_once(db_path_key: str) -> None:
     create_demonstration()
 
 
-@st.cache_data(ttl=60, show_spinner=False)
+@st.cache_data(show_spinner=False)
 def _load_dashboard_snapshot(db_path_key: str) -> tuple[pd.DataFrame, dict]:
-    """Mantém a consulta da base em cache curto para navegação mais fluida."""
+    """Mantém a leitura da base em cache até uma atualização explícita."""
     del db_path_key
     return load_dashboard_snapshot()
 
 
-@st.cache_data(ttl=60, show_spinner=False)
+@st.cache_data(show_spinner=False)
 def _load_roster_cached(db_path_key: str) -> pd.DataFrame:
-    """Mantém o quadro cadastral (lista_ativos / desligados) em cache curto."""
+    """Mantém o quadro cadastral em cache até uma atualização explícita."""
     del db_path_key
     return load_roster()
 
@@ -1166,7 +1174,7 @@ def _drive_service_account() -> Mapping[str, Any] | None:
 
 
 def _sync_roster_sheet(*, force: bool = False) -> tuple[bool, str]:
-    """Sincroniza a planilha lista_ativos sob demanda ou na abertura da sessão."""
+    """Sincroniza a planilha lista_ativos sob demanda ou ao abrir a sessão."""
     known_fp = None if force else get_roster_fingerprint(ROSTER_SHEET_ID)
     try:
         roster_result = import_roster_spreadsheet(
@@ -1195,6 +1203,71 @@ def _sync_roster_sheet(*, force: bool = False) -> tuple[bool, str]:
     return True, f"Cadastro '{roster_result.sheet_name}' já está atualizado."
 
 
+def _sync_external_data(*, force: bool = False) -> dict[str, Any]:
+    """Sincroniza Drive e cadastro, retornando um status para a interface."""
+    drive_service_account = _drive_service_account()
+    if drive_service_account is None:
+        if os.getenv("ROSTER_PUBLIC_SYNC", "0") == "1":
+            roster_ok, roster_msg = _sync_roster_sheet(force=force)
+            return {
+                "type": "success" if roster_ok else "warning",
+                "message": roster_msg,
+                "issues": [],
+            }
+        return {
+            "type": "info",
+            "message": (
+                "Atualização automática do Drive não configurada. "
+                "Configure a conta de serviço para habilitá-la."
+            ),
+            "issues": [],
+        }
+
+    roster_ok, roster_msg = _sync_roster_sheet(force=force)
+    try:
+        known_file_fingerprints = get_drive_file_fingerprints(DRIVE_FOLDER_ID)
+        drive_result = import_drive_folder_snapshot(
+            drive_service_account,
+            DRIVE_FOLDER_ID,
+            known_file_fingerprints=known_file_fingerprints,
+        )
+    except DriveImportError as error:
+        logger.error("falha_sincronizacao_drive", erro=str(error))
+        return {
+            "type": "warning",
+            "message": f"Falha ao atualizar os dados do Drive: {error} · {roster_msg}",
+            "issues": [],
+        }
+
+    count = sync_drive_records(
+        drive_result.records,
+        drive_result.file_ids,
+        drive_result.refreshed_file_ids,
+        folder_id=DRIVE_FOLDER_ID,
+        file_fingerprints=drive_result.file_fingerprints,
+    )
+    _load_dashboard_snapshot.clear()
+    all_issues = list(drive_result.issues[:10])
+    if not roster_ok:
+        all_issues.insert(0, roster_msg)
+    status = {
+        "type": "warning" if all_issues else "success",
+        "message": (
+            f"Drive sincronizado: {count} registros atualizados; "
+            f"{drive_result.successful_files} arquivo(s) processado(s) "
+            f"de {len(drive_result.file_ids)}. {roster_msg}"
+        ),
+        "issues": all_issues,
+    }
+    logger.info(
+        "sincronizacao_drive_sucesso",
+        registros_sincronizados=count,
+        arquivos_processados=drive_result.successful_files,
+        total_issues=len(all_issues),
+    )
+    return status
+
+
 logger.info(
     "aplicacao_iniciando",
     pasta_drive=DRIVE_FOLDER_ID,
@@ -1207,68 +1280,7 @@ init_database()
 logger.info("banco_dados_inicializado")
 if "drive_auto_sync_attempted" not in st.session_state:
     st.session_state["drive_auto_sync_attempted"] = True
-    drive_service_account = _drive_service_account()
-    if drive_service_account is not None:
-        roster_ok, roster_msg = _sync_roster_sheet(force=False)
-        try:
-            known_file_fingerprints = get_drive_file_fingerprints(DRIVE_FOLDER_ID)
-            drive_result = import_drive_folder_snapshot(
-                drive_service_account,
-                DRIVE_FOLDER_ID,
-                known_file_fingerprints=known_file_fingerprints,
-            )
-        except DriveImportError as error:
-            logger.error("falha_sincronizacao_drive", erro=str(error))
-            st.session_state["drive_auto_sync_status"] = {
-                "type": "warning",
-                "message": (
-                    f"Falha ao atualizar os dados do Drive: {error} · {roster_msg}"
-                ),
-                "issues": [],
-            }
-        else:
-            count = sync_drive_records(
-                drive_result.records,
-                drive_result.file_ids,
-                drive_result.refreshed_file_ids,
-                folder_id=DRIVE_FOLDER_ID,
-                file_fingerprints=drive_result.file_fingerprints,
-            )
-            _load_dashboard_snapshot.clear()
-            all_issues = list(drive_result.issues[:10])
-            if not roster_ok:
-                all_issues.insert(0, roster_msg)
-            st.session_state["drive_auto_sync_status"] = {
-                "type": "warning" if all_issues else "success",
-                "message": (
-                    f"Drive sincronizado: {count} registros atualizados; "
-                    f"{drive_result.successful_files} arquivo(s) processado(s) "
-                    f"de {len(drive_result.file_ids)}. {roster_msg}"
-                ),
-                "issues": all_issues,
-            }
-            logger.info(
-                "sincronizacao_drive_sucesso",
-                registros_sincronizados=count,
-                arquivos_processados=drive_result.successful_files,
-                total_issues=len(all_issues),
-            )
-    elif os.getenv("ROSTER_PUBLIC_SYNC", "0") == "1":
-        roster_ok, roster_msg = _sync_roster_sheet(force=False)
-        st.session_state["drive_auto_sync_status"] = {
-            "type": "success" if roster_ok else "warning",
-            "message": roster_msg,
-            "issues": [],
-        }
-    else:
-        st.session_state["drive_auto_sync_status"] = {
-            "type": "info",
-            "message": (
-                "Atualização automática do Drive não configurada. "
-                "Configure a conta de serviço para habilitá-la."
-            ),
-            "issues": [],
-        }
+    st.session_state["drive_auto_sync_status"] = _sync_external_data(force=False)
 
 _active_db_key = str(production_mod.DB_PATH)
 _initialize_demo_once(_active_db_key)
@@ -1317,17 +1329,37 @@ with st.sidebar:
         key="navigation",
     )
     render_sidebar_divider(label="Sincronização", estilo="gradiente")
+    if st.button(
+        "Atualizar dados",
+        key="refresh_data_button",
+        type="primary",
+        icon=":material/refresh:",
+        width="stretch",
+    ):
+        with st.spinner("Atualizando os dados da base..."):
+            sync_status = _sync_external_data(force=True)
+            _load_dashboard_snapshot.clear()
+            _load_roster_cached.clear()
+            st.session_state["drive_auto_sync_status"] = sync_status
+            records, stats = _load_dashboard_snapshot(_active_db_key)
+            records, stats = _trim_for_test_runtime(records, stats)
+        status_renderer = {
+            "success": st.success,
+            "warning": st.warning,
+            "error": st.error,
+            "info": st.info,
+        }.get(str(sync_status["type"]), st.info)
+        status_renderer(str(sync_status["message"]))
     render_sidebar_footer_info(
         itens={"Registros": stats["records"], "Técnicos": stats["technicians"]},
-        unidade="Consulta automática a cada 120s",
+        unidade="Atualização manual pela barra lateral",
         ambiente="Produção",
         copyright="Totale · Histórico de produção",
     )
 
 
-@st.fragment(run_every="120s")
 def render_dashboard() -> None:
-    """Painel principal, atualizado em segundo plano sem recarregar a página toda."""
+    """Renderiza o painel com os dados carregados na abertura ou na atualização manual."""
     db_key = str(production_mod.DB_PATH)
     current_records, current_stats = _load_dashboard_snapshot(db_key)
     current_records, current_stats = _trim_for_test_runtime(
@@ -1420,7 +1452,6 @@ def render_dashboard() -> None:
                 current_records,
                 current_roster,
                 sheet_id=ROSTER_SHEET_ID,
-                on_sync_callback=lambda: _sync_roster_sheet(force=True),
             )
         else:
             filtered_quadro, *_ = apply_filters(
@@ -1432,7 +1463,6 @@ def render_dashboard() -> None:
                 filtered_quadro,
                 current_roster,
                 sheet_id=ROSTER_SHEET_ID,
-                on_sync_callback=lambda: _sync_roster_sheet(force=True),
             )
     elif current_records.empty:
         st.markdown(
@@ -1440,7 +1470,7 @@ def render_dashboard() -> None:
             <div class="empty-state">
                 <div class="empty-icon">↻</div>
                 <h2>Nenhum registro disponível</h2>
-                <p>O painel consulta a base automaticamente a cada 120 segundos e exibirá os dados assim que estiverem disponíveis.</p>
+                <p>A base é carregada ao abrir o painel. Use “Atualizar dados” na barra lateral para buscar os dados novamente.</p>
             </div>
             """,
             unsafe_allow_html=True,
@@ -1490,7 +1520,7 @@ def render_dashboard() -> None:
 
     st.markdown(
         '<div class="footer">Totale · Histórico de produção &nbsp;•&nbsp; '
-        "Pontos Totais = Prod + Gpon · Sincronização automática</div>",
+        "Pontos Totais = Prod + Gpon · Atualize os dados pela barra lateral</div>",
         unsafe_allow_html=True,
     )
 

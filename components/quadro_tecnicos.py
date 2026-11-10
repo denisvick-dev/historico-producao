@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
@@ -300,36 +298,23 @@ def render_quadro_tecnicos(
     roster: pd.DataFrame,
     *,
     sheet_id: str = DEFAULT_ROSTER_SHEET_ID,
-    on_sync_callback: Callable[[], tuple[bool, str]] | None = None,
 ) -> None:
     """Renderiza a aba dedicada de conciliação entre lista_ativos/desligados e produção."""
     clean_id = extract_spreadsheet_id(sheet_id) or DEFAULT_ROSTER_SHEET_ID
     sheet_url = f"https://docs.google.com/spreadsheets/d/{clean_id}"
 
     with st.container(border=True):
-        col_info, col_btn = st.columns([3.4, 1.1])
-        with col_info:
-            st.markdown(
-                f"**Planilha cadastral vinculada:** "
-                f"[lista_ativos (`{clean_id}`)]({sheet_url})  \n"
-                "<span style='color:#64748B;font-size:12.5px;'>"
-                "Abas monitoradas: <code>lista_ativos</code> (ATIVO, FÉRIAS, AFASTADO, INOPERANTE) "
-                "e <code>desligados</code>. Nos demais painéis, o filtro padrão restringe a "
-                "<strong>Situação = ATIVO</strong>."
-                "</span>",
-                unsafe_allow_html=True,
-            )
-        with col_btn:
-            if on_sync_callback is not None and st.button(
-                "↻ Atualizar planilha",
-                key="roster_sync_now_button",
-                use_container_width=True,
-            ):
-                ok, msg = on_sync_callback()
-                if ok:
-                    st.success(msg)
-                else:
-                    st.warning(msg)
+        st.markdown(
+            f"**Planilha cadastral vinculada:** "
+            f"[lista_ativos (`{clean_id}`)]({sheet_url})  \n"
+            "<span style='color:#64748B;font-size:12.5px;'>"
+            "Abas monitoradas: <code>lista_ativos</code> (ATIVO, FÉRIAS, AFASTADO, INOPERANTE) "
+            "e <code>desligados</code>. Nos demais painéis, o filtro padrão restringe a "
+            "<strong>Situação = ATIVO</strong>. Use “Atualizar dados” na barra lateral "
+            "para sincronizar a planilha."
+            "</span>",
+            unsafe_allow_html=True,
+        )
 
     quadro_completo = conciliar_quadro_tecnicos(roster, production_frame)
     if quadro_completo.empty:

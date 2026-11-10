@@ -26,7 +26,7 @@ Painel em Streamlit para acompanhar a produção dos técnicos ao longo do tempo
 - Perfil individual com melhor competência e comparação com a média da equipe.
 - Persistência local em SQLite.
 - Dados de demonstração identificados.
-- Sincronização automática com Google Drive via conta de serviço.
+- Sincronização automática única ao abrir a sessão e atualização manual pelo botão na barra lateral.
 - Logs estruturados em JSON para observabilidade.
 - Health check para orquestradores (Docker, Kubernetes).
 - CI/CD com GitHub Actions (testes, lint, type check).
@@ -100,9 +100,9 @@ O painel estará disponível em `http://localhost:8501`.
 | `ROSTER_PUBLIC_SYNC` | Não | `0` | Define como `1` para sincronizar `lista_ativos` via link público mesmo sem conta de serviço |
 | `SHOW_DEMO_DATA` | Não | `1` | Define como `0` para desativar dados de demonstração |
 
-## Sincronização automática do Google Drive
+## Sincronização do Google Drive
 
-Habilite a Google Drive API, compartilhe a pasta de produção e a planilha cadastral `lista_ativos` com a conta de serviço e configure suas credenciais em `.streamlit/secrets.toml` (não versione esse arquivo):
+Habilite a Google Drive API, compartilhe a pasta de produção e a planilha cadastral `lista_ativos` com a conta de serviço e configure suas credenciais em `.streamlit/secrets.toml` (não versione esse arquivo). O app sincroniza automaticamente uma vez ao abrir uma sessão; para buscar novamente durante o uso, clique em **Atualizar dados** na barra lateral:
 
 ```toml
 # Opcional: sobrescreve os IDs padrão da pasta e da planilha cadastral
