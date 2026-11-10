@@ -15,7 +15,7 @@ import unicodedata
 from contextlib import contextmanager
 from datetime import date, datetime
 from pathlib import Path
-from typing import Generator, Iterable, Mapping
+from typing import Callable, Generator, Iterable, Mapping
 
 import pandas as pd
 
@@ -274,6 +274,21 @@ def parse_contract_flag(value: object) -> int | None:
     return 1 if number == 1 else 0 if number == 0 else None
 
 
+def _map_repeated_text(
+    values: pd.Series, transform: Callable[[object], object], *, null_value: object
+) -> pd.Series:
+    """Aplica transformações textuais uma vez por valor distinto.
+
+    Os registros importados são textuais e frequentemente se repetem em muitas
+    linhas. Para tipos mistos mantemos o mapeamento por linha, pois pandas pode
+    considerar valores como 1 e 1.0 iguais apesar de seus textos diferentes.
+    """
+    if pd.api.types.infer_dtype(values, skipna=True) != "string":
+        return values.map(transform)
+    mapped = {value: transform(value) for value in values.dropna().unique()}
+    return values.map(mapped).fillna(null_value)
+
+
 def add_contracts_qty(frame: pd.DataFrame) -> pd.DataFrame:
     """Adiciona a coluna ``contracts_qty`` (Qtde_Contrato) ao frame.
 
@@ -290,7 +305,10 @@ def add_contracts_qty(frame: pd.DataFrame) -> pd.DataFrame:
     if "source_file" not in frame.columns or "contract" not in frame.columns:
         frame["contracts_qty"] = 0
         return frame
-    validos = frame[frame["contract"].map(is_valid_contract)]
+    mascara_valida = _map_repeated_text(
+        frame["contract"], is_valid_contract, null_value=False
+    ).astype(bool)
+    validos = frame.loc[mascara_valida]
     contagem = (
         validos.groupby("source_file")["contract"].nunique().astype(int)
         if not validos.empty
@@ -923,55 +941,71 @@ def sync_drive_records(
     return len(rows)
 
 
-def load_records() -> pd.DataFrame:
-    init_database()
-    with connect() as connection:
-        available_columns = {
-            row["name"]
-            for row in connection.execute(
-                "PRAGMA table_info(production_records)"
-            ).fetchall()
-        }
-        select_columns = [
-            "id",
-            "technician",
-            "reference_date",
-            "source_sheet",
-            "project",
-            "points",
-            "source_file",
-            "source_row",
-            "is_demo",
-            "imported_at",
-        ]
-        if "contract" in available_columns:
-            select_columns.insert(5, "contract")
-        if "wo" in available_columns:
-            select_columns.insert(6 if "contract" not in available_columns else 6, "wo")
-        if "contract_flag" in available_columns:
-            select_columns.append("contract_flag")
-        frame = pd.read_sql_query(
-            f"""
-            SELECT {", ".join(select_columns)}
-            FROM production_records
-            ORDER BY reference_date, technician, source_sheet
-            """,
-            connection,
-        )
+def _read_record_rows(connection: sqlite3.Connection) -> pd.DataFrame:
+    """Consulta comum aos carregamentos de registros e do dashboard."""
+    available_columns = {
+        row["name"]
+        for row in connection.execute(
+            "PRAGMA table_info(production_records)"
+        ).fetchall()
+    }
+    select_columns = [
+        "id",
+        "technician",
+        "reference_date",
+        "source_sheet",
+        "project",
+        "points",
+        "source_file",
+        "source_row",
+        "is_demo",
+        "imported_at",
+    ]
+    if "contract" in available_columns:
+        select_columns.insert(5, "contract")
+    if "wo" in available_columns:
+        select_columns.insert(6, "wo")
+    if "contract_flag" in available_columns:
+        select_columns.append("contract_flag")
+    return pd.read_sql_query(
+        f"""
+        SELECT {", ".join(select_columns)}
+        FROM production_records
+        ORDER BY reference_date, technician, source_sheet
+        """,
+        connection,
+    )
+
+
+def _prepare_loaded_records(frame: pd.DataFrame) -> pd.DataFrame:
+    """Normaliza o frame carregado, sem consultar ou alterar o banco."""
     if frame.empty:
-        return add_contracts_qty(frame)
+        return frame
     if "contract" not in frame.columns:
         frame["contract"] = "Sem contrato"
     else:
-        frame["contract"] = frame["contract"].map(_contract_or_placeholder)
+        frame["contract"] = _map_repeated_text(
+            frame["contract"], _contract_or_placeholder, null_value="Sem contrato"
+        )
     if "wo" not in frame.columns:
         frame["wo"] = "Sem WO"
     else:
-        frame["wo"] = frame["wo"].map(_wo_or_placeholder)
+        frame["wo"] = _map_repeated_text(
+            frame["wo"], _wo_or_placeholder, null_value="Sem WO"
+        )
     frame = add_contracts_qty(frame)
     frame["reference_date"] = pd.to_datetime(frame["reference_date"])
     frame["period"] = frame["reference_date"].dt.to_period("M").dt.to_timestamp()
     return frame
+
+
+def load_records() -> pd.DataFrame:
+    init_database()
+    with connect() as connection:
+        frame = _read_record_rows(connection)
+    if frame.empty:
+        return add_contracts_qty(frame)
+    return _prepare_loaded_records(frame)
 
 
 def database_stats() -> dict:
@@ -992,38 +1026,7 @@ def load_dashboard_snapshot() -> tuple[pd.DataFrame, dict]:
     """Carrega os registros e seus metadados numa única conexão SQLite."""
     init_database()
     with connect() as connection:
-        available_columns = {
-            row["name"]
-            for row in connection.execute(
-                "PRAGMA table_info(production_records)"
-            ).fetchall()
-        }
-        select_columns = [
-            "id",
-            "technician",
-            "reference_date",
-            "source_sheet",
-            "project",
-            "points",
-            "source_file",
-            "source_row",
-            "is_demo",
-            "imported_at",
-        ]
-        if "contract" in available_columns:
-            select_columns.insert(5, "contract")
-        if "wo" in available_columns:
-            select_columns.insert(6 if "contract" not in available_columns else 6, "wo")
-        if "contract_flag" in available_columns:
-            select_columns.append("contract_flag")
-        frame = pd.read_sql_query(
-            f"""
-            SELECT {", ".join(select_columns)}
-            FROM production_records
-            ORDER BY reference_date, technician, source_sheet
-            """,
-            connection,
-        )
+        frame = _read_record_rows(connection)
         stats = dict(
             connection.execute(
                 """
@@ -1035,19 +1038,7 @@ def load_dashboard_snapshot() -> tuple[pd.DataFrame, dict]:
                 """
             ).fetchone()
         )
-    if not frame.empty:
-        if "contract" not in frame.columns:
-            frame["contract"] = "Sem contrato"
-        else:
-            frame["contract"] = frame["contract"].map(_contract_or_placeholder)
-        if "wo" not in frame.columns:
-            frame["wo"] = "Sem WO"
-        else:
-            frame["wo"] = frame["wo"].map(_wo_or_placeholder)
-        frame = add_contracts_qty(frame)
-        frame["reference_date"] = pd.to_datetime(frame["reference_date"])
-        frame["period"] = frame["reference_date"].dt.to_period("M").dt.to_timestamp()
-    return frame, stats
+    return _prepare_loaded_records(frame), stats
 
 
 def import_batches() -> pd.DataFrame:
@@ -1073,7 +1064,7 @@ def import_batches() -> pd.DataFrame:
             connection,
         )
         contratos = pd.read_sql_query(
-            "SELECT source_file, contract FROM production_records",
+            "SELECT DISTINCT source_file, contract FROM production_records",
             connection,
         )
     contratos = add_contracts_qty(contratos)
@@ -1178,7 +1169,7 @@ def summarize(frame: pd.DataFrame, keys: str | list[str]) -> pd.DataFrame:
     columns = keys + ["points_prod", "points_gpon", "points_total"]
     if frame.empty:
         return pd.DataFrame(columns=columns)
-    work = frame.copy()
+    work = frame.copy(deep=False)
     work["points_prod"] = work["points"].where(work["source_sheet"].eq(PROD), 0.0)
     work["points_gpon"] = work["points"].where(work["source_sheet"].eq(GPON), 0.0)
     if not keys:

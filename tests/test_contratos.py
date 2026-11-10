@@ -308,15 +308,103 @@ class PainelContratosTests(unittest.TestCase):
         )
         linhas = matriz.set_index("Técnico")
         self.assertEqual(
-            linhas.loc["Ana"].to_dict(), {"jan/26": 2, "fev/26": 1, "Total": 3}
+            linhas.loc["Ana"].to_dict(),
+            {
+                "jan/26": 2,
+                "fev/26": 1,
+                "Total": 3,
+                "Meses com produção": 2,
+                "Média mensal": 1.5,
+            },
         )
         self.assertEqual(
-            linhas.loc["Bia"].to_dict(), {"jan/26": 1, "fev/26": 1, "Total": 2}
+            linhas.loc["Bia"].to_dict(),
+            {
+                "jan/26": 1,
+                "fev/26": 1,
+                "Total": 2,
+                "Meses com produção": 2,
+                "Média mensal": 1.0,
+            },
         )
         self.assertEqual(
-            linhas.loc["Total geral"].to_dict(), {"jan/26": 3, "fev/26": 2, "Total": 5}
+            linhas.loc["Total geral"].to_dict(),
+            {
+                "jan/26": 3,
+                "fev/26": 2,
+                "Total": 5,
+                "Meses com produção": 2,
+                "Média mensal": 2.5,
+            },
         )
         self.assertEqual((sem_contrato, incompletos), (2, 0))
+
+    def test_media_considera_apenas_meses_com_contrato_por_tecnico(self) -> None:
+        from components.contratos import resumir_contratos
+
+        frame = pd.DataFrame(
+            {
+                "technician": ["Ana", "Ana", "Ana", "Ana", "Bia", "Bia", "Bia"],
+                "contract": ["001", "002", "001", "Sem contrato", "010", "011", "011"],
+                "period": pd.to_datetime(
+                    [
+                        "2026-01-01",
+                        "2026-01-01",
+                        "2026-03-01",
+                        "2026-02-01",
+                        "2026-02-01",
+                        "2026-02-01",
+                        "2026-02-01",
+                    ]
+                ),
+                "source_sheet": [
+                    "Prod",
+                    "Prod",
+                    "Gpon",
+                    "Prod",
+                    "Prod",
+                    "Prod",
+                    "Gpon",
+                ],
+            }
+        )
+        _, _, matriz, _, _ = resumir_contratos(frame)
+        linhas = matriz.set_index("Técnico")
+        self.assertEqual(linhas.loc["Ana", "fev/26"], 0)
+        self.assertEqual(linhas.loc["Ana", "Meses com produção"], 2)
+        self.assertAlmostEqual(linhas.loc["Ana", "Média mensal"], 1.5)
+        self.assertEqual(linhas.loc["Bia", "Meses com produção"], 1)
+        self.assertEqual(linhas.loc["Bia", "Média mensal"], 2.0)
+        self.assertEqual(linhas.loc["Total geral", "Meses com produção"], 3)
+        self.assertAlmostEqual(linhas.loc["Total geral", "Média mensal"], 5 / 3)
+        _, _, filtrada, _, _ = resumir_contratos(frame[frame["technician"] == "Ana"])
+        self.assertEqual(filtrada.iloc[0]["Meses com produção"], 2)
+        self.assertEqual(filtrada.iloc[0]["Média mensal"], 1.5)
+
+    def test_destaque_e_csv_nao_confundem_resumos_com_competencias(self) -> None:
+        from components.painel_quantidades import best_month_style, csv_download
+        from components.contratos import resumir_contratos
+
+        frame = pd.DataFrame(
+            {
+                "technician": ["Ana", "Bia"],
+                "contract": ["001", "002"],
+                "period": pd.to_datetime(["2026-01-01", "2026-02-01"]),
+            }
+        )
+        _, _, matriz, _, _ = resumir_contratos(frame)
+        row = matriz.iloc[0].copy()
+        row["Meses com produção"] = 100
+        row["Média mensal"] = 50.0
+        styles = best_month_style(
+            row, exclude_columns=("Meses com produção", "Média mensal")
+        )
+        self.assertIn("#DCFCE7", styles["jan/26"])
+        self.assertEqual(styles["Meses com produção"], "")
+        self.assertEqual(styles["Média mensal"], "")
+        csv = csv_download(matriz).decode("utf-8-sig")
+        self.assertIn("Meses com produção;Média mensal", csv)
+        self.assertIn("Ana;1;0;1;1;1,0", csv)
 
     def test_filtros_e_competencia_de_referencia(self) -> None:
         from components.contratos import resumir_contratos
