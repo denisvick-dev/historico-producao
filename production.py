@@ -25,7 +25,12 @@ ORIGINS = (PROD, GPON)
 DEMO_SOURCE = "dados_demonstracao"
 DB_PATH = Path(os.getenv("PRODUCAO_DB_PATH", "data/producao.db"))
 DEFAULT_ROSTER_SHEET_ID = "1LQKDcLshC6XSXLBVWaEYSpxrro6uydyU9pwDLc38pEg"
+DEFAULT_CONSULTIVO_FOLDER_ID = "1xMwEgPm9udFoGobv9cCUoMmuoxuFiPB2"
 ROSTER_METADATA_SCOPE = "__roster_sheet__"
+CONSULTIVO_PRODUCT_REGEX = re.compile(r"\b\d{9,12}\b")
+_CONSULTIVO_EMPTY_RE = re.compile(
+    r"^(?:-|nan|none|na|n/a|<na>|nat|null)$", re.IGNORECASE
+)
 ROSTER_ACTIVE_TAB = "lista_ativos"
 ROSTER_TERMINATED_TAB = "desligados"
 ROSTER_STATUS_ORDER = (
@@ -232,6 +237,19 @@ def extract_spreadsheet_id(value: str | None) -> str:
     if not text:
         return ""
     match = re.search(r"/spreadsheets/d/([a-zA-Z0-9-_]+)", text)
+    if match:
+        return match.group(1)
+    if re.fullmatch(r"[a-zA-Z0-9-_]{10,}", text):
+        return text
+    return ""
+
+
+def extract_drive_folder_id(value: str | None) -> str:
+    """Extrai o ID de uma pasta do Google Drive a partir da URL ou do ID puro."""
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    match = re.search(r"/folders/([a-zA-Z0-9-_]+)", text)
     if match:
         return match.group(1)
     if re.fullmatch(r"[a-zA-Z0-9-_]{10,}", text):
@@ -932,6 +950,346 @@ def process_roster_workbook(
     return list(by_key.values()), issues
 
 
+def _normalize_consultivo_series(serie: pd.Series) -> pd.Series:
+    texto = serie.fillna("").astype(str).str.strip()
+    return texto.where(~texto.str.match(_CONSULTIVO_EMPTY_RE), "")
+
+
+def _separar_internet_tv(internet_bruta: pd.Series) -> tuple[pd.Series, pd.Series]:
+    """Separa TV embutida depois do ponto em PLANO INTERNET."""
+    bruto = _normalize_consultivo_series(internet_bruta)
+    partes = bruto.str.split(".", n=1, expand=True)
+    primeira = _normalize_consultivo_series(partes[0])
+    if partes.shape[1] < 2:
+        return primeira, pd.Series("", index=bruto.index, dtype="object")
+
+    segunda = _normalize_consultivo_series(partes[1])
+    tem_letra = segunda.str.contains(r"[A-Za-z]", na=False)
+    comeca_digito = segunda.str.match(r"\d", na=False)
+    parece_tv = tem_letra & ~comeca_digito
+    decimal_puro = segunda.str.fullmatch(r"\d+", na=False)
+    preservar = segunda.ne("") & ~decimal_puro & ~parece_tv
+    internet = primeira.where(~preservar, bruto)
+    tv = segunda.where(parece_tv, "")
+    return internet, tv
+
+
+def tratar_planos_consultivo(df: pd.DataFrame) -> pd.DataFrame:
+    """Aplica as regras oficiais de separação de planos e contagem de consultivos."""
+    if not {"PLANO TV", "PLANO INTERNET"}.issubset(df.columns):
+        return df
+
+    work = df.copy()
+    internet_limpa, tv_embutida = _separar_internet_tv(work["PLANO INTERNET"])
+    tv_original = _normalize_consultivo_series(work["PLANO TV"])
+    tv_final = tv_original.mask(tv_original.eq(""), tv_embutida).str.replace(
+        "SERVIÇOS AVANÇADOS", "CLARO TV+ BOX", regex=False
+    )
+
+    tem_tv = tv_final.ne("")
+    tem_net = internet_limpa.ne("")
+    work["QTDE_CONSULTIVO"] = tem_tv.astype(int) + tem_net.astype(int)
+
+    tipo_servico = pd.Series("Sem Tipo", index=work.index, dtype="object")
+    mask_ambos = tem_tv & tem_net
+    mask_tv = tem_tv & ~tem_net
+    mask_net = ~tem_tv & tem_net
+    tipo_servico.loc[mask_ambos] = (
+        tv_final.loc[mask_ambos] + " & " + internet_limpa.loc[mask_ambos]
+    )
+    tipo_servico.loc[mask_tv] = tv_final.loc[mask_tv]
+    tipo_servico.loc[mask_net] = internet_limpa.loc[mask_net]
+
+    work["TIPO SERVIÇO"] = tipo_servico
+    work["PLANO TV"] = tv_final
+    work["PLANO INTERNET"] = internet_limpa
+    return work
+
+
+def processar_quantidades_consultivo(df: pd.DataFrame) -> pd.DataFrame:
+    """Calcula QTDE_PRODUTOS, QTDE_TV, QTDE_VIRTUA e QTDE_MESH a partir de OBSERVACAO e TIPO SERVIÇO."""
+    work = df.copy()
+    if "OBSERVACAO" in work.columns and "QTDE_PRODUTOS" not in work.columns:
+        obs = work["OBSERVACAO"].fillna("").astype(str)
+        produtos_encontrados = obs.str.findall(CONSULTIVO_PRODUCT_REGEX)
+        work["QTDE_PRODUTOS"] = (
+            produtos_encontrados.map(
+                lambda item: len(item) if isinstance(item, (list, tuple)) else 0
+            )
+            .fillna(0)
+            .astype(int)
+        )
+    elif "QTDE_PRODUTOS" in work.columns:
+        work["QTDE_PRODUTOS"] = (
+            pd.to_numeric(work["QTDE_PRODUTOS"], errors="coerce").fillna(0).astype(int)
+        )
+    else:
+        work["QTDE_PRODUTOS"] = 0
+
+    if {"QTDE_TV", "QTDE_VIRTUA", "QTDE_MESH"}.issubset(work.columns):
+        for col in ("QTDE_TV", "QTDE_VIRTUA", "QTDE_MESH"):
+            work[col] = pd.to_numeric(work[col], errors="coerce").fillna(0).astype(int)
+        return work
+
+    tipo_servico = (
+        work["TIPO SERVIÇO"].fillna("").astype(str)
+        if "TIPO SERVIÇO" in work.columns
+        else pd.Series("", index=work.index, dtype="object")
+    )
+    qtde_prod = work["QTDE_PRODUTOS"].fillna(0).astype(int)
+
+    tem_tv_bool = tipo_servico.str.contains("TV", case=False, regex=False, na=False)
+    tem_virtua_bool = tipo_servico.str.contains(
+        r"MEGA|GIGA", case=False, regex=True, na=False
+    )
+    is_combinado = tipo_servico.str.contains("&", case=False, regex=False, na=False) | (
+        tem_tv_bool & tem_virtua_bool
+    )
+    tem_tv = tem_tv_bool.astype(int)
+    tem_virtua = tem_virtua_bool.astype(int)
+    work["QTDE_TV"] = (tem_tv * qtde_prod).mask(is_combinado, tem_tv).astype(int)
+    work["QTDE_VIRTUA"] = (
+        (tem_virtua * qtde_prod).mask(is_combinado, tem_virtua).astype(int)
+    )
+    work["QTDE_MESH"] = (
+        (work["QTDE_PRODUTOS"] - work["QTDE_TV"] - work["QTDE_VIRTUA"])
+        .clip(lower=0)
+        .astype(int)
+    )
+    return work
+
+
+def read_consultivo_csv(content: bytes) -> pd.DataFrame:
+    """Lê arquivos CSV de tabulação consultiva preservando zeros à esquerda e textos longos."""
+    if not content or not content.strip():
+        raise ValueError("O arquivo CSV de consultivo está vazio.")
+    last_error: Exception | None = None
+    for encoding in ("utf-8-sig", "utf-8", "cp1252", "latin-1"):
+        try:
+            text = content.decode(encoding)
+        except UnicodeDecodeError as error:
+            last_error = error
+            continue
+        first_line = text.splitlines()[0] if text else ""
+        candidates = (
+            [";", ","] if first_line.count(";") >= first_line.count(",") else [",", ";"]
+        )
+        for sep in candidates:
+            try:
+                frame = pd.read_csv(
+                    io.StringIO(text),
+                    sep=sep,
+                    dtype=str,
+                    keep_default_na=False,
+                )
+                if frame.shape[1] > 1:
+                    return frame
+            except pd.errors.ParserError as error:
+                last_error = error
+        try:
+            return pd.read_csv(
+                io.StringIO(text),
+                sep=None,
+                engine="python",
+                dtype=str,
+                keep_default_na=False,
+            )
+        except pd.errors.ParserError as error:
+            last_error = error
+    raise ValueError(f"Não foi possível ler o CSV de consultivo: {last_error}")
+
+
+def process_consultivo_dataframe(
+    frame: pd.DataFrame,
+    source_file: str,
+    default_date: date | datetime | pd.Timestamp | None = None,
+) -> tuple[list[dict], list[str]]:
+    """Normaliza um DataFrame de tabulação/consultivo para persistência no SQLite."""
+    if frame.empty:
+        return [], ["O arquivo de consultivo está vazio."]
+
+    work = frame.copy()
+    work.columns = [str(col).strip() for col in work.columns]
+
+    canonical_aliases: dict[str, set[str]] = {
+        "DATA": {"data", "datareferencia", "datacadastro", "datatabulacao"},
+        "LOGIN NETSALES": {"loginnetsales", "login", "logintecnico"},
+        "VENDEDOR": {"vendedor", "tecnico", "colaborador", "nomevendedor"},
+        "HP": {"hp", "codigohp"},
+        "CÓDIGO CONTATO": {"codigocontato", "codcontato", "idcontato"},
+        "CONTRATO": {"contrato", "numerocontrato", "codigocontrato"},
+        "TIPO DE TABULAÇÃO": {"tipodetabulacao", "tipotabulacao"},
+        "STATUS NETSALES": {"statusnetsales", "status"},
+        "PLANO TV": {"planotv"},
+        "PLANO INTERNET": {"planointernet"},
+        "OBSERVACAO": {"observacao", "obs"},
+        "TIPO SERVIÇO": {"tiposervico", "tipodeservico"},
+        "QTDE_CONSULTIVO": {"qtdeconsultivo", "qtdconsultivo", "qtdecons"},
+        "QTDE_PRODUTOS": {"qtdeprodutos", "qtdprodutos", "qtdeprod"},
+        "QTDE_MESH": {"qtdemesh", "qtdmesh", "mesh"},
+        "QTDE_TV": {"qtdetv", "qtdtv", "tvbox"},
+        "QTDE_VIRTUA": {"qtdevirtua", "qtdvirtua", "virtua"},
+    }
+    rename_map: dict[object, str] = {}
+    for target, aliases in canonical_aliases.items():
+        if target in work.columns:
+            continue
+        found_col = find_column(work, aliases)
+        if found_col is not None and found_col not in rename_map:
+            rename_map[found_col] = target
+    if rename_map:
+        work = work.rename(columns=rename_map)
+
+    if "LOGIN NETSALES" not in work.columns and "VENDEDOR" not in work.columns:
+        available = ", ".join(str(col) for col in work.columns[:12])
+        raise ValueError(
+            "Colunas de identificação (LOGIN NETSALES / VENDEDOR) não encontradas "
+            f"no arquivo {source_file}. Colunas vistas: {available or 'nenhuma'}."
+        )
+
+    if {"PLANO TV", "PLANO INTERNET"}.issubset(
+        work.columns
+    ) and "QTDE_CONSULTIVO" not in work.columns:
+        work = tratar_planos_consultivo(work)
+    elif "QTDE_CONSULTIVO" in work.columns:
+        work["QTDE_CONSULTIVO"] = (
+            pd.to_numeric(work["QTDE_CONSULTIVO"], errors="coerce")
+            .fillna(0)
+            .astype(int)
+        )
+    else:
+        work["QTDE_CONSULTIVO"] = 0
+
+    work = processar_quantidades_consultivo(work)
+
+    fallback_dt = parse_reference_date(default_date) or infer_date_from_filename(
+        source_file
+    )
+    if "DATA" in work.columns:
+        parsed_dates = pd.to_datetime(
+            work["DATA"].replace("", pd.NA), errors="coerce", dayfirst=True
+        )
+        if parsed_dates.isna().any():
+            mask_na = parsed_dates.isna()
+            re_parsed = work.loc[mask_na, "DATA"].map(parse_reference_date)
+            parsed_dates.loc[mask_na] = pd.to_datetime(re_parsed, errors="coerce")
+    else:
+        parsed_dates = pd.Series(pd.NaT, index=work.index, dtype="datetime64[ns]")
+
+    if fallback_dt is not None:
+        parsed_dates = parsed_dates.fillna(fallback_dt)
+
+    issues: list[str] = []
+    invalid_mask = parsed_dates.isna()
+    invalid_count = int(invalid_mask.sum())
+    if invalid_count:
+        issues.append(
+            f"{invalid_count} linha(s) ignorada(s) sem data válida em {source_file}."
+        )
+    valid = work.loc[~invalid_mask].copy()
+    valid_dates = parsed_dates.loc[~invalid_mask].dt.strftime("%Y-%m-%d")
+    if valid.empty:
+        return [], issues or ["Nenhuma linha válida encontrada no arquivo consultivo."]
+
+    def _col_clean(col_name: str, *, upper: bool = False) -> list[str]:
+        if col_name not in valid.columns:
+            return [""] * len(valid)
+        cleaned = _normalize_consultivo_series(valid[col_name])
+        if upper:
+            cleaned = cleaned.str.upper()
+        return [str(v) for v in cleaned.tolist()]
+
+    logins = [
+        clean_code(val).upper()
+        for val in (
+            valid["LOGIN NETSALES"].tolist()
+            if "LOGIN NETSALES" in valid.columns
+            else [""] * len(valid)
+        )
+    ]
+    sellers = [
+        clean_technician(val)
+        for val in (
+            valid["VENDEDOR"].tolist()
+            if "VENDEDOR" in valid.columns
+            else [""] * len(valid)
+        )
+    ]
+    hps = _col_clean("HP")
+    contacts = _col_clean("CÓDIGO CONTATO")
+    contracts = _col_clean("CONTRATO")
+    tab_types = _col_clean("TIPO DE TABULAÇÃO", upper=True)
+    statuses = _col_clean("STATUS NETSALES", upper=True)
+    planos_tv = _col_clean("PLANO TV")
+    planos_net = _col_clean("PLANO INTERNET")
+    tipos_serv = (
+        valid["TIPO SERVIÇO"].fillna("Sem Tipo").astype(str).tolist()
+        if "TIPO SERVIÇO" in valid.columns
+        else ["Sem Tipo"] * len(valid)
+    )
+    q_cons = valid["QTDE_CONSULTIVO"].fillna(0).astype(int).tolist()
+    q_prod = valid["QTDE_PRODUTOS"].fillna(0).astype(int).tolist()
+    q_mesh = valid["QTDE_MESH"].fillna(0).astype(int).tolist()
+    q_tv = valid["QTDE_TV"].fillna(0).astype(int).tolist()
+    q_virtua = valid["QTDE_VIRTUA"].fillna(0).astype(int).tolist()
+    ref_dates = valid_dates.tolist()
+    row_numbers = [int(idx) + 2 for idx in range(len(valid))]
+
+    records = [
+        {
+            "reference_date": ref_dates[i],
+            "login_netsales": logins[i],
+            "seller": sellers[i],
+            "hp": hps[i],
+            "contact_code": contacts[i],
+            "contract": contracts[i],
+            "tabulation_type": tab_types[i],
+            "status_netsales": statuses[i],
+            "plano_tv": planos_tv[i],
+            "plano_internet": planos_net[i],
+            "tipo_servico": tipos_serv[i] or "Sem Tipo",
+            "qtde_consultivo": int(q_cons[i]),
+            "qtde_produtos": int(q_prod[i]),
+            "qtde_mesh": int(q_mesh[i]),
+            "qtde_tv": int(q_tv[i]),
+            "qtde_virtua": int(q_virtua[i]),
+            "source_file": source_file,
+            "source_row": row_numbers[i],
+        }
+        for i in range(len(valid))
+    ]
+    return records, issues
+
+
+def process_consultivo_upload(
+    filename: str,
+    content: bytes,
+    default_date: date | datetime | pd.Timestamp | None = None,
+) -> tuple[list[dict], list[str]]:
+    """Lê um arquivo CSV ou Excel da pasta de Histórico Consultivo."""
+    suffix = Path(filename).suffix.lower()
+    if suffix == ".csv":
+        return process_consultivo_dataframe(
+            read_consultivo_csv(content), filename, default_date
+        )
+    if suffix not in {".xlsx", ".xls"}:
+        raise ValueError("Formato não suportado para Consultivo. Use CSV, XLSX ou XLS.")
+    try:
+        workbook = pd.ExcelFile(io.BytesIO(content))
+    except Exception as error:
+        raise ValueError(
+            f"Não foi possível abrir a planilha de consultivo ({filename}): {error}"
+        ) from error
+    normalized = {normalize_text(name): name for name in workbook.sheet_names}
+    sheet_name = normalized.get("consultivo") or (
+        str(workbook.sheet_names[0]) if workbook.sheet_names else None
+    )
+    if sheet_name is None:
+        return [], ["A planilha de consultivo não possui abas."]
+    frame = pd.read_excel(workbook, sheet_name=sheet_name, dtype=str)
+    return process_consultivo_dataframe(frame, filename, default_date)
+
+
 @contextmanager
 def connect() -> Generator[sqlite3.Connection, None, None]:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -1000,6 +1358,34 @@ def init_database() -> None:
                 ON technician_roster(monitor);
             CREATE INDEX IF NOT EXISTS idx_roster_base
                 ON technician_roster(base);
+            CREATE TABLE IF NOT EXISTS consultivo_records (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                reference_date TEXT NOT NULL,
+                login_netsales TEXT NOT NULL DEFAULT '',
+                seller TEXT NOT NULL DEFAULT '',
+                hp TEXT NOT NULL DEFAULT '',
+                contact_code TEXT NOT NULL DEFAULT '',
+                contract TEXT NOT NULL DEFAULT '',
+                tabulation_type TEXT NOT NULL DEFAULT '',
+                status_netsales TEXT NOT NULL DEFAULT '',
+                plano_tv TEXT NOT NULL DEFAULT '',
+                plano_internet TEXT NOT NULL DEFAULT '',
+                tipo_servico TEXT NOT NULL DEFAULT 'Sem Tipo',
+                qtde_consultivo INTEGER NOT NULL DEFAULT 0,
+                qtde_produtos INTEGER NOT NULL DEFAULT 0,
+                qtde_mesh INTEGER NOT NULL DEFAULT 0,
+                qtde_tv INTEGER NOT NULL DEFAULT 0,
+                qtde_virtua INTEGER NOT NULL DEFAULT 0,
+                source_file TEXT NOT NULL,
+                source_row INTEGER NOT NULL,
+                is_demo INTEGER NOT NULL DEFAULT 0,
+                imported_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(source_file, source_row)
+            );
+            CREATE INDEX IF NOT EXISTS idx_consultivo_date
+                ON consultivo_records(reference_date);
+            CREATE INDEX IF NOT EXISTS idx_consultivo_login
+                ON consultivo_records(login_netsales);
             """
         )
         columns = {
@@ -1492,12 +1878,460 @@ def import_batches() -> pd.DataFrame:
     return frame
 
 
+def save_consultivo_records(
+    records: Iterable[dict],
+    *,
+    is_demo: bool = False,
+) -> int:
+    """Persiste registros de histórico consultivo no SQLite."""
+    rows = list(records)
+    if not rows:
+        return 0
+    init_database()
+    sources = {str(row["source_file"]) for row in rows}
+    with connect() as connection:
+        if not is_demo:
+            connection.execute("DELETE FROM consultivo_records WHERE is_demo = 1")
+            connection.execute(
+                "INSERT INTO app_settings(key, value) VALUES ('consultivo_demo_disabled', '1') "
+                "ON CONFLICT(key) DO UPDATE SET value = '1'"
+            )
+        for source_file in sources:
+            connection.execute(
+                "DELETE FROM consultivo_records WHERE source_file = ?",
+                (source_file,),
+            )
+        connection.executemany(
+            """
+            INSERT INTO consultivo_records (
+                reference_date, login_netsales, seller, hp, contact_code,
+                contract, tabulation_type, status_netsales, plano_tv,
+                plano_internet, tipo_servico, qtde_consultivo, qtde_produtos,
+                qtde_mesh, qtde_tv, qtde_virtua, source_file, source_row, is_demo
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    str(row["reference_date"]),
+                    clean_code(row.get("login_netsales", "")).upper(),
+                    clean_technician(row.get("seller", "")),
+                    str(row.get("hp") or ""),
+                    str(row.get("contact_code") or ""),
+                    str(row.get("contract") or ""),
+                    str(row.get("tabulation_type") or ""),
+                    str(row.get("status_netsales") or ""),
+                    str(row.get("plano_tv") or ""),
+                    str(row.get("plano_internet") or ""),
+                    str(row.get("tipo_servico") or "Sem Tipo"),
+                    int(row.get("qtde_consultivo") or 0),
+                    int(row.get("qtde_produtos") or 0),
+                    int(row.get("qtde_mesh") or 0),
+                    int(row.get("qtde_tv") or 0),
+                    int(row.get("qtde_virtua") or 0),
+                    str(row["source_file"]),
+                    int(row["source_row"]),
+                    1 if is_demo else 0,
+                )
+                for row in rows
+            ],
+        )
+    return len(rows)
+
+
+def sync_consultivo_drive_records(
+    records: Iterable[dict],
+    live_file_ids: set[str],
+    refreshed_file_ids: set[str],
+    *,
+    folder_id: str | None = None,
+    file_fingerprints: Mapping[str, str] | None = None,
+) -> int:
+    """Sincroniza incrementalmente os arquivos da pasta Histórico Consultivo no SQLite."""
+    rows = list(records)
+    init_database()
+    with connect() as connection:
+        connection.execute("DELETE FROM consultivo_records WHERE is_demo = 1")
+        connection.execute(
+            "INSERT INTO app_settings(key, value) VALUES ('consultivo_demo_disabled', '1') "
+            "ON CONFLICT(key) DO UPDATE SET value = '1'"
+        )
+        source_files = connection.execute(
+            "SELECT DISTINCT source_file FROM consultivo_records"
+        ).fetchall()
+        for row in source_files:
+            source_file = row["source_file"]
+            match = re.search(r" \[([^\]]+)\]\.[^.]+$", source_file)
+            if not match:
+                continue
+            file_id = match.group(1)
+            if file_id not in live_file_ids or file_id in refreshed_file_ids:
+                connection.execute(
+                    "DELETE FROM consultivo_records WHERE source_file = ?",
+                    (source_file,),
+                )
+        if folder_id is not None:
+            known_file_ids = connection.execute(
+                "SELECT file_id FROM drive_file_metadata WHERE folder_id = ?",
+                (folder_id,),
+            ).fetchall()
+            connection.executemany(
+                "DELETE FROM drive_file_metadata WHERE folder_id = ? AND file_id = ?",
+                [
+                    (folder_id, row["file_id"])
+                    for row in known_file_ids
+                    if row["file_id"] not in live_file_ids
+                ],
+            )
+            connection.executemany(
+                "DELETE FROM drive_file_metadata WHERE folder_id = ? AND file_id = ?",
+                [
+                    (folder_id, file_id)
+                    for file_id in refreshed_file_ids
+                    if file_id not in (file_fingerprints or {})
+                ],
+            )
+            connection.executemany(
+                """
+                INSERT INTO drive_file_metadata (folder_id, file_id, fingerprint)
+                VALUES (?, ?, ?)
+                ON CONFLICT(folder_id, file_id)
+                DO UPDATE SET fingerprint = excluded.fingerprint
+                """,
+                [
+                    (folder_id, file_id, fingerprint)
+                    for file_id, fingerprint in (file_fingerprints or {}).items()
+                    if file_id in refreshed_file_ids and file_id in live_file_ids
+                ],
+            )
+        connection.executemany(
+            """
+            INSERT INTO consultivo_records (
+                reference_date, login_netsales, seller, hp, contact_code,
+                contract, tabulation_type, status_netsales, plano_tv,
+                plano_internet, tipo_servico, qtde_consultivo, qtde_produtos,
+                qtde_mesh, qtde_tv, qtde_virtua, source_file, source_row, is_demo
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+            """,
+            [
+                (
+                    str(row["reference_date"]),
+                    clean_code(row.get("login_netsales", "")).upper(),
+                    clean_technician(row.get("seller", "")),
+                    str(row.get("hp") or ""),
+                    str(row.get("contact_code") or ""),
+                    str(row.get("contract") or ""),
+                    str(row.get("tabulation_type") or ""),
+                    str(row.get("status_netsales") or ""),
+                    str(row.get("plano_tv") or ""),
+                    str(row.get("plano_internet") or ""),
+                    str(row.get("tipo_servico") or "Sem Tipo"),
+                    int(row.get("qtde_consultivo") or 0),
+                    int(row.get("qtde_produtos") or 0),
+                    int(row.get("qtde_mesh") or 0),
+                    int(row.get("qtde_tv") or 0),
+                    int(row.get("qtde_virtua") or 0),
+                    str(row["source_file"]),
+                    int(row["source_row"]),
+                )
+                for row in rows
+            ],
+        )
+    return len(rows)
+
+
+def _empty_consultivo_frame() -> pd.DataFrame:
+    return pd.DataFrame(
+        columns=[
+            "DATA",
+            "period",
+            "LOGIN NETSALES",
+            "VENDEDOR",
+            "Técnico",
+            "Monitor",
+            "U.N.",
+            "Base",
+            "Situação",
+            "Qtde. Cons.",
+            "Qtde. Prod.",
+            "Qtde. Mesh",
+            "Qtde. TV",
+            "Qtde. Virtua",
+            "QTDE_CONSULTIVO",
+            "QTDE_PRODUTOS",
+            "QTDE_MESH",
+            "QTDE_TV",
+            "QTDE_VIRTUA",
+            "CONTRATO",
+            "HP",
+            "CÓDIGO CONTATO",
+            "TIPO DE TABULAÇÃO",
+            "STATUS NETSALES",
+            "TIPO SERVIÇO",
+            "PLANO TV",
+            "PLANO INTERNET",
+            "source_file",
+            "source_row",
+            "is_demo",
+            "imported_at",
+        ]
+    )
+
+
+def enrich_consultivo_with_roster(
+    frame: pd.DataFrame,
+    roster: pd.DataFrame | None = None,
+) -> pd.DataFrame:
+    """Enriquece os registros de consultivo com ``lista_ativos``/``desligados`` por Login e Técnico."""
+    if frame.empty:
+        return _empty_consultivo_frame()
+
+    work = frame.copy()
+    # Deduplica contatos idênticos se houver sobreposição entre exportações mensais.
+    if "contact_code" in work.columns:
+        non_empty = work["contact_code"].fillna("").astype(str).str.strip().ne("")
+        if non_empty.any():
+            duplicated = work.loc[non_empty].duplicated(
+                subset=["contact_code"], keep="last"
+            )
+            drop_index = duplicated[duplicated].index
+            if len(drop_index) > 0:
+                work = work.drop(index=drop_index).reset_index(drop=True)
+
+    login_raw = (
+        work["login_netsales"].map(lambda v: clean_code(v).upper())
+        if "login_netsales" in work.columns
+        else pd.Series("", index=work.index, dtype="object")
+    )
+    seller_raw = (
+        work["seller"].map(clean_technician)
+        if "seller" in work.columns
+        else pd.Series("", index=work.index, dtype="object")
+    )
+
+    tech_matched = pd.Series("", index=work.index, dtype="object")
+    monitor_matched = pd.Series("", index=work.index, dtype="object")
+    un_matched = pd.Series("", index=work.index, dtype="object")
+    base_matched = pd.Series("", index=work.index, dtype="object")
+    status_matched = pd.Series("", index=work.index, dtype="object")
+    login_matched = login_raw.copy()
+
+    if roster is not None and not roster.empty:
+        ordered_roster = roster.copy()
+        ordered_roster["_tab_prio"] = ordered_roster["source_tab"].map(
+            lambda t: 0 if str(t) == ROSTER_ACTIVE_TAB else 1
+        )
+        ordered_roster = ordered_roster.sort_values("_tab_prio")
+        ordered_roster["_login_clean"] = ordered_roster["login"].map(
+            lambda v: clean_code(v).upper()
+        )
+        by_login = (
+            ordered_roster.loc[ordered_roster["_login_clean"].ne("")]
+            .drop_duplicates("_login_clean", keep="first")
+            .set_index("_login_clean")
+        )
+        by_name = ordered_roster.drop_duplicates(
+            "technician_key", keep="first"
+        ).set_index("technician_key")
+
+        if not by_login.empty:
+            tech_matched = login_raw.map(by_login["technician"]).fillna("")
+            monitor_matched = login_raw.map(by_login["monitor"]).fillna("")
+            un_matched = login_raw.map(by_login["un"]).fillna("")
+            base_matched = login_raw.map(by_login["base"]).fillna("")
+            status_matched = login_raw.map(by_login["status"]).fillna("")
+
+        unmatched = tech_matched.eq("") & seller_raw.ne("")
+        if unmatched.any() and not by_name.empty:
+            seller_keys = seller_raw.loc[unmatched].map(normalize_text)
+            tech_matched.loc[unmatched] = seller_keys.map(by_name["technician"]).fillna(
+                ""
+            )
+            monitor_matched.loc[unmatched] = seller_keys.map(by_name["monitor"]).fillna(
+                ""
+            )
+            un_matched.loc[unmatched] = seller_keys.map(by_name["un"]).fillna("")
+            base_matched.loc[unmatched] = seller_keys.map(by_name["base"]).fillna("")
+            status_matched.loc[unmatched] = seller_keys.map(by_name["status"]).fillna(
+                ""
+            )
+            missing_login = unmatched & login_matched.eq("")
+            if missing_login.any():
+                login_matched.loc[missing_login] = (
+                    seller_raw.loc[missing_login]
+                    .map(normalize_text)
+                    .map(by_name["_login_clean"])
+                    .fillna("")
+                )
+
+    monitor_clean = monitor_matched.replace({"Sem monitor": "", "": pd.NA}).fillna(
+        "Não Identificado"
+    )
+    un_clean = un_matched.replace({"Sem U.N.": "", "": pd.NA}).fillna(
+        "Não Identificada"
+    )
+    base_clean = base_matched.replace({"Sem base": "", "": pd.NA}).fillna(
+        "Não Identificada"
+    )
+    status_clean = status_matched.replace({"": pd.NA}).fillna("Não cadastrado")
+
+    login_final = login_matched.replace({"": pd.NA}).fillna("SEM LOGIN")
+    vendedor_final = (
+        tech_matched.replace({"": pd.NA})
+        .fillna(seller_raw.replace({"": pd.NA}))
+        .fillna(login_final.replace({"SEM LOGIN": pd.NA}))
+        .fillna("Nome Não Cadastrado")
+    )
+
+    dt_series = pd.to_datetime(work["reference_date"], errors="coerce")
+    q_cons = (
+        pd.to_numeric(work["qtde_consultivo"], errors="coerce").fillna(0).astype(int)
+    )
+    q_prod = pd.to_numeric(work["qtde_produtos"], errors="coerce").fillna(0).astype(int)
+    q_mesh = pd.to_numeric(work["qtde_mesh"], errors="coerce").fillna(0).astype(int)
+    q_tv = pd.to_numeric(work["qtde_tv"], errors="coerce").fillna(0).astype(int)
+    q_virtua = pd.to_numeric(work["qtde_virtua"], errors="coerce").fillna(0).astype(int)
+
+    return pd.DataFrame(
+        {
+            "DATA": dt_series,
+            "period": dt_series.dt.to_period("M").dt.to_timestamp(),
+            "LOGIN NETSALES": login_final.astype(str),
+            "VENDEDOR": vendedor_final.astype(str),
+            "Técnico": tech_matched.astype(str),
+            "Monitor": monitor_clean.astype(str),
+            "U.N.": un_clean.astype(str),
+            "Base": base_clean.astype(str),
+            "Situação": status_clean.astype(str),
+            "Qtde. Cons.": q_cons,
+            "Qtde. Prod.": q_prod,
+            "Qtde. Mesh": q_mesh,
+            "Qtde. TV": q_tv,
+            "Qtde. Virtua": q_virtua,
+            "QTDE_CONSULTIVO": q_cons,
+            "QTDE_PRODUTOS": q_prod,
+            "QTDE_MESH": q_mesh,
+            "QTDE_TV": q_tv,
+            "QTDE_VIRTUA": q_virtua,
+            "CONTRATO": work.get("contract", pd.Series("", index=work.index))
+            .fillna("")
+            .astype(str),
+            "HP": work.get("hp", pd.Series("", index=work.index))
+            .fillna("")
+            .astype(str),
+            "CÓDIGO CONTATO": work.get("contact_code", pd.Series("", index=work.index))
+            .fillna("")
+            .astype(str),
+            "TIPO DE TABULAÇÃO": work.get(
+                "tabulation_type", pd.Series("", index=work.index)
+            )
+            .fillna("")
+            .astype(str),
+            "STATUS NETSALES": work.get(
+                "status_netsales", pd.Series("", index=work.index)
+            )
+            .fillna("")
+            .astype(str),
+            "TIPO SERVIÇO": work.get(
+                "tipo_servico", pd.Series("Sem Tipo", index=work.index)
+            )
+            .fillna("Sem Tipo")
+            .astype(str),
+            "PLANO TV": work.get("plano_tv", pd.Series("", index=work.index))
+            .fillna("")
+            .astype(str),
+            "PLANO INTERNET": work.get(
+                "plano_internet", pd.Series("", index=work.index)
+            )
+            .fillna("")
+            .astype(str),
+            "source_file": work["source_file"].astype(str),
+            "source_row": pd.to_numeric(work["source_row"], errors="coerce")
+            .fillna(0)
+            .astype(int),
+            "is_demo": pd.to_numeric(work["is_demo"], errors="coerce")
+            .fillna(0)
+            .astype(int),
+            "imported_at": work["imported_at"].fillna("").astype(str),
+        }
+    )
+
+
+def _read_consultivo_rows(connection: sqlite3.Connection) -> pd.DataFrame:
+    return pd.read_sql_query(
+        """
+        SELECT id, reference_date, login_netsales, seller, hp, contact_code,
+               contract, tabulation_type, status_netsales, plano_tv,
+               plano_internet, tipo_servico, qtde_consultivo, qtde_produtos,
+               qtde_mesh, qtde_tv, qtde_virtua, source_file, source_row,
+               is_demo, imported_at
+        FROM consultivo_records
+        ORDER BY reference_date, id
+        """,
+        connection,
+    )
+
+
+def load_consultivo_records() -> pd.DataFrame:
+    """Carrega o histórico consultivo enriquecido com lista_ativos / desligados."""
+    init_database()
+    with connect() as connection:
+        raw = _read_consultivo_rows(connection)
+        roster = _read_roster_rows(connection)
+    return enrich_consultivo_with_roster(raw, roster)
+
+
+def load_consultivo_snapshot() -> tuple[pd.DataFrame, dict]:
+    """Carrega os registros de consultivo e suas estatísticas em uma única conexão."""
+    init_database()
+    with connect() as connection:
+        raw = _read_consultivo_rows(connection)
+        roster = _read_roster_rows(connection)
+        stats = dict(
+            connection.execute(
+                """
+                SELECT COUNT(*) AS records,
+                       COUNT(DISTINCT source_file) AS files,
+                       MIN(reference_date) AS first_date,
+                       MAX(reference_date) AS last_date,
+                       MAX(imported_at) AS last_import,
+                       COALESCE(SUM(is_demo), 0) AS demo_rows,
+                       COALESCE(SUM(qtde_consultivo), 0) AS total_consultivos,
+                       COALESCE(SUM(qtde_produtos), 0) AS total_produtos
+                FROM consultivo_records
+                """
+            ).fetchone()
+        )
+    enriched = enrich_consultivo_with_roster(raw, roster)
+    return enriched, stats
+
+
+def consultivo_import_batches() -> pd.DataFrame:
+    """Resumo por arquivo de consultivo importado."""
+    init_database()
+    with connect() as connection:
+        return pd.read_sql_query(
+            """
+            SELECT source_file,
+                   COUNT(*) AS rows_count,
+                   COALESCE(SUM(qtde_consultivo), 0) AS consultivos_count,
+                   COALESCE(SUM(qtde_produtos), 0) AS produtos_count,
+                   MAX(imported_at) AS imported_at
+            FROM consultivo_records
+            GROUP BY source_file
+            ORDER BY imported_at DESC, source_file
+            """,
+            connection,
+        )
+
+
 def clear_demonstration() -> None:
     init_database()
     with connect() as connection:
         connection.execute("DELETE FROM production_records WHERE is_demo = 1")
         connection.execute("DELETE FROM technician_roster WHERE is_demo = 1")
+        connection.execute("DELETE FROM consultivo_records WHERE is_demo = 1")
     set_setting("demo_disabled", "1")
+    set_setting("consultivo_demo_disabled", "1")
 
 
 def clear_database() -> None:
@@ -1505,16 +2339,128 @@ def clear_database() -> None:
     with connect() as connection:
         connection.execute("DELETE FROM production_records")
         connection.execute("DELETE FROM technician_roster")
+        connection.execute("DELETE FROM consultivo_records")
         connection.execute("DELETE FROM drive_file_metadata")
     set_setting("demo_disabled", "1")
+    set_setting("consultivo_demo_disabled", "1")
+
+
+def _seed_consultivo_demonstration(
+    names: list[str],
+    periods: pd.PeriodIndex,
+) -> None:
+    with connect() as connection:
+        row = connection.execute(
+            "SELECT COUNT(*) AS total FROM consultivo_records"
+        ).fetchone()
+        if row and int(row["total"]) > 0:
+            return
+    if get_setting("consultivo_demo_disabled") == "1":
+        return
+
+    consultivo_demo: list[dict] = []
+    seq = 1
+    for month_index, period in enumerate(periods):
+        source_file = f"{DEMO_SOURCE}_consultivo_{period.strftime('%Y-%m')}.csv"
+        file_row = 2
+        for tech_index, technician in enumerate(names):
+            # Mantém 2 técnicos ativos zerados na competência mais recente para exercitar
+            # "Técnicos Zerados" e "Equipes sem Consultivos" na demonstração.
+            if month_index == len(periods) - 1 and tech_index >= len(names) - 2:
+                continue
+            login = f"Z64{tech_index:04d}"
+            entries = 2 + ((tech_index + month_index) % 4)
+            for offset in range(entries):
+                day_num = min(26, 2 + offset * 6 + (tech_index % 4))
+                ref_date = (
+                    period.to_timestamp().replace(day=day_num).strftime("%Y-%m-%d")
+                )
+                kind = (tech_index + month_index + offset) % 4
+                if kind == 0:
+                    q_cons, q_prod, q_mesh, q_tv, q_vir = 1, 2, 2, 0, 0
+                    plano_tv, plano_net, tipo_serv = (
+                        "",
+                        "SERVIÇOS AVANÇADOS",
+                        "SERVIÇOS AVANÇADOS",
+                    )
+                elif kind == 1:
+                    q_cons, q_prod, q_mesh, q_tv, q_vir = 1, 1, 0, 0, 1
+                    plano_tv, plano_net, tipo_serv = (
+                        "",
+                        "1 GIGA (FIBRA)",
+                        "1 GIGA (FIBRA)",
+                    )
+                elif kind == 2:
+                    q_cons, q_prod, q_mesh, q_tv, q_vir = 1, 1, 0, 1, 0
+                    plano_tv, plano_net, tipo_serv = (
+                        "CLARO TV+ BOX",
+                        "",
+                        "CLARO TV+ BOX",
+                    )
+                else:
+                    q_cons, q_prod, q_mesh, q_tv, q_vir = 2, 3, 1, 1, 1
+                    plano_tv, plano_net, tipo_serv = (
+                        "CLARO TV+ BOX",
+                        "600 MEGA (FIBRA)",
+                        "CLARO TV+ BOX & 600 MEGA (FIBRA)",
+                    )
+                consultivo_demo.append(
+                    {
+                        "reference_date": ref_date,
+                        "login_netsales": login,
+                        "seller": technician,
+                        "hp": f"1193{seq:06d}",
+                        "contact_code": f"1127{seq:05d}",
+                        "contract": f"CT-{((tech_index + month_index * 3 + offset) % 12) + 1:03d}",
+                        "tabulation_type": "VENDA",
+                        "status_netsales": "INSTALADA",
+                        "plano_tv": plano_tv,
+                        "plano_internet": plano_net,
+                        "tipo_servico": tipo_serv,
+                        "qtde_consultivo": q_cons,
+                        "qtde_produtos": q_prod,
+                        "qtde_mesh": q_mesh,
+                        "qtde_tv": q_tv,
+                        "qtde_virtua": q_vir,
+                        "source_file": source_file,
+                        "source_row": file_row,
+                    }
+                )
+                seq += 1
+                file_row += 1
+        # Inclui histórico de colaborador hoje desligado nas competências anteriores.
+        if month_index < len(periods) - 3:
+            consultivo_demo.append(
+                {
+                    "reference_date": period.to_timestamp()
+                    .replace(day=15)
+                    .strftime("%Y-%m-%d"),
+                    "login_netsales": "Z649002",
+                    "seller": "Tiago Henrique Mendes",
+                    "hp": f"1193{seq:06d}",
+                    "contact_code": f"1127{seq:05d}",
+                    "contract": "CT-099",
+                    "tabulation_type": "VENDA",
+                    "status_netsales": "INSTALADA",
+                    "plano_tv": "",
+                    "plano_internet": "SERVIÇOS AVANÇADOS",
+                    "tipo_servico": "SERVIÇOS AVANÇADOS",
+                    "qtde_consultivo": 1,
+                    "qtde_produtos": 1,
+                    "qtde_mesh": 1,
+                    "qtde_tv": 0,
+                    "qtde_virtua": 0,
+                    "source_file": source_file,
+                    "source_row": file_row,
+                }
+            )
+            seq += 1
+    save_consultivo_records(consultivo_demo, is_demo=True)
 
 
 def create_demonstration() -> None:
     """Cria uma base identificada apenas quando o banco está vazio."""
     init_database()
-    stats = database_stats()
-    if stats["records"] or get_setting("demo_disabled") == "1":
-        return
     if os.getenv("SHOW_DEMO_DATA", "1") == "0":
         return
 
@@ -1535,6 +2481,11 @@ def create_demonstration() -> None:
     periods = pd.period_range(
         end=pd.Timestamp.today().to_period("M"), periods=12, freq="M"
     )
+    stats = database_stats()
+    if stats["records"] or get_setting("demo_disabled") == "1":
+        if stats["records"] and stats["demo_rows"] == stats["records"]:
+            _seed_consultivo_demonstration(names, periods)
+        return
     records: list[dict] = []
     for tech_index, technician in enumerate(names):
         for month_index, period in enumerate(periods):
@@ -1618,6 +2569,7 @@ def create_demonstration() -> None:
         ]
     )
     save_roster_records(demo_roster, is_demo=True)
+    _seed_consultivo_demonstration(names, periods)
 
 
 def summarize(frame: pd.DataFrame, keys: str | list[str]) -> pd.DataFrame:

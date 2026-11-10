@@ -36,6 +36,7 @@ from components.componentes import (
     render_sidebar_theme_selector,
     render_ticker,
 )
+from components.consultivo import render_consultivo
 from components.contratos import render_contratos
 from components.eficiencia import render_eficiencia
 from components.prod_os import render_prod_orders
@@ -49,26 +50,32 @@ from components.visoes_dashboards import (
 )
 from drive_import import (
     DriveImportError,
+    import_consultivo_folder_snapshot,
     import_drive_folder_snapshot,
     import_roster_spreadsheet,
 )
 import production as production_mod
 from production import (
+    DEFAULT_CONSULTIVO_FOLDER_ID,
     DEFAULT_ROSTER_SHEET_ID,
     ROSTER_STATUS_ORDER,
+    consultivo_import_batches,
     count_active_months_by_technician,
     create_demonstration,
+    extract_drive_folder_id,
     extract_spreadsheet_id,
     format_points,
     get_drive_file_fingerprints,
     get_roster_fingerprint,
     import_batches,
     init_database,
+    load_consultivo_snapshot,
     load_dashboard_snapshot,
     load_roster,
     month_label,
     save_roster_records,
     summarize,
+    sync_consultivo_drive_records,
     sync_drive_records,
 )
 
@@ -82,6 +89,11 @@ try:
 except (KeyError, StreamlitSecretNotFoundError, AttributeError):
     _roster_sheet_secret = None
 
+try:
+    _consultivo_folder_secret = st.secrets.get("consultivo_folder_id")
+except (KeyError, StreamlitSecretNotFoundError, AttributeError):
+    _consultivo_folder_secret = None
+
 DRIVE_FOLDER_ID = (
     _drive_folder_secret
     or os.getenv("DRIVE_FOLDER_ID")
@@ -92,6 +104,12 @@ ROSTER_SHEET_ID = (
         str(_roster_sheet_secret or os.getenv("ROSTER_SHEET_ID") or "")
     )
     or DEFAULT_ROSTER_SHEET_ID
+)
+CONSULTIVO_FOLDER_ID = (
+    extract_drive_folder_id(
+        str(_consultivo_folder_secret or os.getenv("CONSULTIVO_FOLDER_ID") or "")
+    )
+    or DEFAULT_CONSULTIVO_FOLDER_ID
 )
 
 COLORS = {
@@ -589,7 +607,9 @@ def apply_filters(
         roster_scoped = records
         if has_roster:
             if selected_statuses:
-                roster_status_mask = roster_scoped["roster_status"].isin(selected_statuses)
+                roster_status_mask = roster_scoped["roster_status"].isin(
+                    selected_statuses
+                )
                 roster_scoped = roster_scoped.loc[roster_status_mask].copy()
             if selected_monitors:
                 monitor_mask = roster_scoped["monitor"].isin(selected_monitors)
@@ -1146,6 +1166,13 @@ def _load_roster_cached(db_path_key: str) -> pd.DataFrame:
     return load_roster()
 
 
+@st.cache_data(show_spinner=False)
+def _load_consultivo_cached(db_path_key: str) -> tuple[pd.DataFrame, dict]:
+    """Mantém o histórico consultivo em cache até uma atualização explícita."""
+    del db_path_key
+    return load_consultivo_snapshot()
+
+
 def _trim_for_test_runtime(
     frame: pd.DataFrame, stats: dict
 ) -> tuple[pd.DataFrame, dict]:
@@ -1193,6 +1220,7 @@ def _sync_roster_sheet(*, force: bool = False) -> tuple[bool, str]:
         )
         _load_dashboard_snapshot.clear()
         _load_roster_cached.clear()
+        _load_consultivo_cached.clear()
         return (
             True,
             f"Cadastro '{roster_result.sheet_name}' atualizado ({saved} colaboradores).",
@@ -1200,8 +1228,43 @@ def _sync_roster_sheet(*, force: bool = False) -> tuple[bool, str]:
     return True, f"Cadastro '{roster_result.sheet_name}' já está atualizado."
 
 
+def _sync_consultivo_folder(*, force: bool = False) -> tuple[bool, str, list[str]]:
+    """Sincroniza a pasta Histórico Consultivo do Google Drive."""
+    drive_service_account = _drive_service_account()
+    if drive_service_account is None:
+        return (
+            False,
+            "Conta de serviço do Google Drive não configurada para Histórico Consultivo.",
+            [],
+        )
+    known_fps = {} if force else get_drive_file_fingerprints(CONSULTIVO_FOLDER_ID)
+    try:
+        cons_result = import_consultivo_folder_snapshot(
+            drive_service_account,
+            CONSULTIVO_FOLDER_ID,
+            known_file_fingerprints=known_fps,
+        )
+    except DriveImportError as error:
+        logger.warning("falha_sincronizacao_consultivo", erro=str(error))
+        return False, f"Falha ao sincronizar Histórico Consultivo: {error}", []
+
+    saved = sync_consultivo_drive_records(
+        cons_result.records,
+        cons_result.file_ids,
+        cons_result.refreshed_file_ids,
+        folder_id=CONSULTIVO_FOLDER_ID,
+        file_fingerprints=cons_result.file_fingerprints,
+    )
+    _load_consultivo_cached.clear()
+    msg = (
+        f"Consultivo sincronizado: {saved} registros atualizados "
+        f"({cons_result.successful_files}/{len(cons_result.file_ids)} arquivo(s))."
+    )
+    return True, msg, list(cons_result.issues[:10])
+
+
 def _sync_external_data(*, force: bool = False) -> dict[str, Any]:
-    """Sincroniza Drive e cadastro, retornando um status para a interface."""
+    """Sincroniza Drive (produção e consultivo) e cadastro, retornando um status para a interface."""
     drive_service_account = _drive_service_account()
     if drive_service_account is None:
         if os.getenv("ROSTER_PUBLIC_SYNC", "0") == "1":
@@ -1221,8 +1284,11 @@ def _sync_external_data(*, force: bool = False) -> dict[str, Any]:
         }
 
     roster_ok, roster_msg = _sync_roster_sheet(force=force)
+    cons_ok, cons_msg, cons_issues = _sync_consultivo_folder(force=force)
     try:
-        known_file_fingerprints = get_drive_file_fingerprints(DRIVE_FOLDER_ID)
+        known_file_fingerprints = (
+            {} if force else get_drive_file_fingerprints(DRIVE_FOLDER_ID)
+        )
         drive_result = import_drive_folder_snapshot(
             drive_service_account,
             DRIVE_FOLDER_ID,
@@ -1232,8 +1298,11 @@ def _sync_external_data(*, force: bool = False) -> dict[str, Any]:
         logger.error("falha_sincronizacao_drive", erro=str(error))
         return {
             "type": "warning",
-            "message": f"Falha ao atualizar os dados do Drive: {error} · {roster_msg}",
-            "issues": [],
+            "message": (
+                f"Falha ao atualizar os dados do Drive: {error} · "
+                f"{cons_msg} · {roster_msg}"
+            ),
+            "issues": cons_issues,
         }
 
     count = sync_drive_records(
@@ -1244,15 +1313,17 @@ def _sync_external_data(*, force: bool = False) -> dict[str, Any]:
         file_fingerprints=drive_result.file_fingerprints,
     )
     _load_dashboard_snapshot.clear()
-    all_issues = list(drive_result.issues[:10])
+    all_issues = list(drive_result.issues[:10]) + cons_issues
     if not roster_ok:
         all_issues.insert(0, roster_msg)
+    if not cons_ok:
+        all_issues.insert(0, cons_msg)
     status = {
         "type": "warning" if all_issues else "success",
         "message": (
             f"Drive sincronizado: {count} registros atualizados; "
             f"{drive_result.successful_files} arquivo(s) processado(s) "
-            f"de {len(drive_result.file_ids)}. {roster_msg}"
+            f"de {len(drive_result.file_ids)}. {cons_msg} {roster_msg}"
         ),
         "issues": all_issues,
     }
@@ -1268,6 +1339,7 @@ def _sync_external_data(*, force: bool = False) -> dict[str, Any]:
 logger.info(
     "aplicacao_iniciando",
     pasta_drive=DRIVE_FOLDER_ID,
+    pasta_consultivo=CONSULTIVO_FOLDER_ID,
     planilha_cadastro=ROSTER_SHEET_ID,
 )
 
@@ -1309,6 +1381,7 @@ with st.sidebar:
         "Quantidade de O.S.": "▤  Quantidade de O.S.",
         "Contratos": "◈  Contratos",
         "Produtividade unitária": "◫  Produtividade unitária",
+        "Consultivo": "📋  Consultivo",
         "Regularidade": "◌  Regularidade",
         "Eficiência": "▧  Eficiência por técnico",
         "Técnicos": "♙  Técnicos",
@@ -1337,6 +1410,7 @@ with st.sidebar:
             sync_status = _sync_external_data(force=True)
             _load_dashboard_snapshot.clear()
             _load_roster_cached.clear()
+            _load_consultivo_cached.clear()
             st.session_state["drive_auto_sync_status"] = sync_status
             records, stats = _load_dashboard_snapshot(_active_db_key)
             records, stats = _trim_for_test_runtime(records, stats)
@@ -1387,6 +1461,10 @@ def render_dashboard() -> None:
             "Produtividade unitária",
             "Compare pontos por O.S., pontos por contrato e o perfil volume × complexidade da equipe.",
         ),
+        "Consultivo": (
+            "Total de Consultivos",
+            "Histórico de consultivos realizados, mix de produtos (Mesh, TV Box, Virtua) e vínculo com lista_ativos.",
+        ),
         "Regularidade": (
             "Regularidade da produção",
             "Compare médias, medianas, oscilações e competências sem registros.",
@@ -1415,15 +1493,27 @@ def render_dashboard() -> None:
         updated = pd.Timestamp(current_stats["last_import"]).strftime(
             "Atualizado em %d/%m/%Y às %H:%M"
         )
-    render_hero_totale_1(
-        titulo=title,
-        subtitulo=subtitle,
-        badge="TOTALE · PRODUÇÃO",
-        icone="monitoring",
-        meta_info=updated,
+    if navigation != "Consultivo":
+        render_hero_totale_1(
+            titulo=title,
+            subtitulo=subtitle,
+            badge="TOTALE · PRODUÇÃO",
+            icone="monitoring",
+            meta_info=updated,
+        )
+
+    current_roster = _load_roster_cached(db_key)
+    current_consultivo, current_consultivo_stats = _load_consultivo_cached(db_key)
+    is_demo_consultivo = bool(
+        current_consultivo_stats.get("records")
+        and current_consultivo_stats.get("demo_rows")
+        == current_consultivo_stats.get("records")
     )
 
-    if is_demo and navigation != "Saúde dos dados":
+    if (
+        (navigation != "Consultivo" and is_demo)
+        or (navigation == "Consultivo" and is_demo_consultivo)
+    ) and navigation != "Saúde dos dados":
         st.markdown(
             """
             <div class="demo-banner">
@@ -1434,14 +1524,22 @@ def render_dashboard() -> None:
             unsafe_allow_html=True,
         )
 
-    current_roster = _load_roster_cached(db_key)
-
-    if navigation == "Saúde dos dados":
+    if navigation == "Consultivo":
+        render_consultivo(
+            current_consultivo,
+            current_roster,
+            consultivo_stats=current_consultivo_stats,
+            consultivo_folder_id=CONSULTIVO_FOLDER_ID,
+            drive_configured=_drive_service_account() is not None,
+        )
+    elif navigation == "Saúde dos dados":
         render_saude_dados(
             current_records,
             current_stats,
             import_batches(),
             st.session_state.get("drive_auto_sync_status"),
+            consultivo_stats=current_consultivo_stats,
+            lotes_consultivo=consultivo_import_batches(),
         )
     elif navigation == "Quadro de técnicos":
         if current_records.empty:

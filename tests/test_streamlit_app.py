@@ -41,7 +41,9 @@ class StreamlitAppTests(unittest.TestCase):
         self.assertIsNotNone(self.at.sidebar)
         botoes = self.at.get("button")
         self.assertTrue(
-            any(getattr(botao, "key", None) == "refresh_data_button" for botao in botoes)
+            any(
+                getattr(botao, "key", None) == "refresh_data_button" for botao in botoes
+            )
         )
 
     def test_metricas_renderizadas(self) -> None:
@@ -252,6 +254,7 @@ render_contratos(pd.DataFrame({"contract": ["Sem contrato"], "technician": ["Ana
             "Quantidade de O.S.",
             "Contratos",
             "Produtividade unitária",
+            "Consultivo",
             "Regularidade",
             "Eficiência",
             "Quadro de técnicos",
