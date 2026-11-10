@@ -8,6 +8,7 @@ from components.eficiencia import (
     _estilo_resumo_linha,
     _styled_faixa_table,
     calcular_eficiencia,
+    calcular_matriz_eficiencia_contrato,
     resumir_eficiencia_contrato,
 )
 
@@ -171,6 +172,34 @@ class EficienciaTests(unittest.TestCase):
         detalhes, resumo, faixas = resumir_eficiencia_contrato(pd.DataFrame())
         self.assertTrue(detalhes.empty and resumo.empty)
         self.assertEqual(int(faixas.sum()), 0)
+
+    def test_matriz_eficiencia_contrato_calcula_medias_empates_e_evolucao(self) -> None:
+        frame = pd.DataFrame(
+            {
+                "contract": ["C1", "C1", "C2"],
+                "period": pd.to_datetime(["2026-01-01", "2026-02-01", "2026-02-01"]),
+                "points": [250.0, 450.0, 360.0],
+            }
+        )
+        detalhes, resumo, _ = resumir_eficiencia_contrato(frame)
+        matriz, evolucao = calcular_matriz_eficiencia_contrato(detalhes)
+
+        c1 = matriz.set_index("Contrato").loc["C1"]
+        self.assertEqual(c1["Meses com registros"], 2)
+        self.assertAlmostEqual(c1["Pontos totais"], 700.0)
+        self.assertAlmostEqual(c1["Média mensal"], 350.0)
+        self.assertEqual(c1["Faixa 1"], 1)
+        self.assertEqual(c1["Faixa 5"], 1)
+        self.assertEqual(c1["Faixa mais frequente"], "Faixa 1 / Faixa 5")
+        self.assertEqual(
+            resumo.set_index("Contrato").loc["C1", "Faixa mais frequente"],
+            "Faixa 1 / Faixa 5",
+        )
+
+        self.assertEqual(len(evolucao), 2)
+        fev = evolucao.set_index("Competência").loc[pd.Timestamp("2026-02-01")]
+        self.assertEqual(fev["Faixa 3"], 1)
+        self.assertEqual(fev["Faixa 5"], 1)
 
     def test_tabela_de_faixas_nao_aplica_styler_acima_do_limite(self) -> None:
         frame = pd.DataFrame(
