@@ -718,3 +718,54 @@ class CarteiraContratosTests(unittest.TestCase):
         self.assertEqual(_registros_com_contrato(frame)[1], 1)
         self.assertTrue(resumir_carteira(frame).empty)
         self.assertEqual(contar_contratos_por_arquivo(frame).iloc[0]["Contratos"], 2)
+
+
+class DesempenhoContratosTests(unittest.TestCase):
+    def test_normalizacao_preserva_tipos_mistos_e_marcadores(self) -> None:
+        frame = pd.DataFrame(
+            {
+                "contract": pd.Series(
+                    [1, 1.0, " 001 ", "Sem informação", None, " 001 "], dtype=object
+                )
+            }
+        )
+        validos, ausentes = _registros_com_contrato(frame)
+        self.assertEqual(validos["contract"].tolist(), ["1", "1.0", "001", "001"])
+        self.assertEqual(ausentes, 2)
+
+    def test_chave_distingue_tipos_em_coluna_object(self) -> None:
+        from components.contratos import _chave_painel
+
+        primeiro = pd.DataFrame({"reference_date": pd.Series([1, "1"], dtype=object)})
+        segundo = pd.DataFrame({"reference_date": pd.Series(["1", 1], dtype=object)})
+        self.assertNotEqual(_chave_painel(primeiro), _chave_painel(segundo))
+        terceiro = pd.DataFrame({"reference_date": pd.Series([1], dtype=object)})
+        quarto = pd.DataFrame({"reference_date": pd.Series(["1"], dtype=object)})
+        self.assertNotEqual(_chave_painel(terceiro), _chave_painel(quarto))
+
+    def test_cache_reutiliza_resultado_e_invalida_alteracao_de_dados(self) -> None:
+        from components.contratos import _chave_painel, _dados_painel
+
+        _dados_painel.clear()
+        self.addCleanup(_dados_painel.clear)
+        frame = pd.DataFrame(
+            {"contract": [f"C{i}" for i in range(60000)], "points": [1.0] * 60000}
+        )
+        with mock.patch(
+            "components.contratos._registros_com_contrato",
+            wraps=_registros_com_contrato,
+        ) as validar:
+            chave = _chave_painel(frame)
+            primeiro = _dados_painel(chave, frame)
+            segundo = _dados_painel(_chave_painel(frame.copy()), frame.copy())
+            self.assertEqual(validar.call_count, 1)
+            self.assertEqual(len(primeiro["carteira"]), len(segundo["carteira"]))
+            alterado = frame.copy()
+            alterado.loc[12345, "contract"] = "contrato alterado"
+            nova_chave = _chave_painel(alterado)
+            self.assertNotEqual(chave, nova_chave)
+            atualizado = _dados_painel(nova_chave, alterado)
+            self.assertEqual(validar.call_count, 2)
+            self.assertIn(
+                "contrato alterado", atualizado["carteira"]["Contrato"].values
+            )
