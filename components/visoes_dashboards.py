@@ -991,6 +991,9 @@ def render_saude_dados(
     stats: Mapping[str, Any],
     lotes: pd.DataFrame | None,
     status_sincronizacao: Mapping[str, Any] | None,
+    *,
+    consultivo_stats: Mapping[str, Any] | None = None,
+    lotes_consultivo: pd.DataFrame | None = None,
 ) -> None:
     """Apresenta cobertura, atualizações e arquivos importados da base local."""
     resumo = resumir_saude_dados(frame)
@@ -1057,6 +1060,51 @@ def render_saude_dados(
     st.caption(
         "Cruzamento da produção com as abas lista_ativos e desligados da planilha oficial."
     )
+
+    if consultivo_stats is not None:
+        st.markdown("### Histórico Consultivo (Google Drive)")
+        cons_cards = st.columns(4)
+        cons_cards[0].metric(
+            "Registros de tabulação",
+            f"{int(consultivo_stats.get('records') or 0):,}".replace(",", "."),
+        )
+        cons_cards[1].metric(
+            "Total Consultivos",
+            f"{int(consultivo_stats.get('total_consultivos') or 0):,}".replace(
+                ",", "."
+            ),
+        )
+        cons_cards[2].metric(
+            "Total Produtos",
+            f"{int(consultivo_stats.get('total_produtos') or 0):,}".replace(",", "."),
+        )
+        cons_cards[3].metric(
+            "Arquivos Consultivo",
+            f"{int(consultivo_stats.get('files') or 0):,}".replace(",", "."),
+        )
+        cons_ini = _formatar_data_referencia(consultivo_stats.get("first_date"))
+        cons_fim = _formatar_data_referencia(consultivo_stats.get("last_date"))
+        st.caption(
+            f"Cobertura do Histórico Consultivo: {cons_ini} a {cons_fim}, interligado a lista_ativos por Login Netsales e Técnico."
+        )
+        if lotes_consultivo is not None and not lotes_consultivo.empty:
+            with st.expander(
+                f"Ver arquivos importados de Histórico Consultivo ({len(lotes_consultivo)})"
+            ):
+                tab_cons = lotes_consultivo.copy()
+                tab_cons["imported_at"] = tab_cons["imported_at"].map(
+                    _formatar_data_importacao
+                )
+                tab_cons = tab_cons.rename(
+                    columns={
+                        "source_file": "Arquivo",
+                        "rows_count": "Linhas",
+                        "consultivos_count": "Total Consultivos",
+                        "produtos_count": "Total Produtos",
+                        "imported_at": "Importado em",
+                    }
+                )
+                st.dataframe(tab_cons, width="stretch", hide_index=True)
 
     st.markdown("### Sincronização com Google Drive")
     if status_sincronizacao:

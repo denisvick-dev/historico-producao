@@ -22,7 +22,9 @@ from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponen
 
 from production import (
     PROD,
+    extract_drive_folder_id,
     extract_spreadsheet_id,
+    process_consultivo_upload,
     process_roster_workbook,
     process_upload,
 )
@@ -35,6 +37,7 @@ SUPPORTED_SUFFIXES = {".csv", ".xls", ".xlsx"}
 MAX_PARALLEL_DOWNLOADS = 8
 IMPORT_PARSER_VERSION = "contracts-v2"
 ROSTER_PARSER_VERSION = "roster-v1"
+CONSULTIVO_PARSER_VERSION = "consultivo-v1"
 
 logger = structlog.get_logger(__name__)
 
@@ -565,4 +568,170 @@ def import_roster_spreadsheet(
         unchanged=False,
         fingerprint=fingerprint,
         sheet_name="lista_ativos",
+    )
+
+
+def _consultivo_file_fingerprint(drive_file: dict[str, str]) -> str | None:
+    modified_time = drive_file.get("modifiedTime", "")
+    checksum = drive_file.get("md5Checksum", "")
+    size = drive_file.get("size", "")
+    if not (modified_time or checksum or size):
+        return None
+    return "|".join(
+        (
+            drive_file.get("name", ""),
+            drive_file.get("mimeType", ""),
+            modified_time,
+            checksum,
+            size,
+            CONSULTIVO_PARSER_VERSION,
+        )
+    )
+
+
+def _import_consultivo_drive_file(
+    get_session: Callable[[], Any],
+    drive_file: dict[str, str],
+) -> tuple[list[dict], list[str], bool]:
+    drive_name = drive_file.get("name", "Arquivo sem nome")
+    if _source_filename(drive_file) is None:
+        return (
+            [],
+            [
+                f"{drive_name} · formato não suportado; use XLSX, XLS, CSV ou Planilhas Google."
+            ],
+            False,
+        )
+
+    try:
+        downloaded = download_file(get_session(), drive_file)
+    except DriveImportError as error:
+        return [], [f"{drive_name} · {error}"], False
+    if downloaded is None:
+        return (
+            [],
+            [
+                f"{drive_name} · formato não suportado; use XLSX, XLS, CSV ou Planilhas Google."
+            ],
+            False,
+        )
+
+    filename, content = downloaded
+    try:
+        file_records, file_issues = process_consultivo_upload(filename, content)
+    except ValueError as error:
+        return [], [f"{drive_name} · {error}"], False
+
+    refreshed = True
+    issues = [f"{drive_name} · {issue}" for issue in file_issues[:20]]
+    return file_records, issues, refreshed
+
+
+def import_consultivo_folder_snapshot(
+    service_account_info: Mapping[str, Any],
+    folder_id: str,
+    *,
+    known_file_fingerprints: Mapping[str, str] | None = None,
+) -> DriveFolderImport:
+    """Sincroniza os arquivos CSV/XLSX da pasta Histórico Consultivo no Google Drive."""
+    clean_folder_id = extract_drive_folder_id(folder_id)
+    if not clean_folder_id:
+        raise DriveImportError(
+            "O identificador da pasta Histórico Consultivo é inválido."
+        )
+
+    started = perf_counter()
+    logger.info("iniciando_sincronizacao_consultivo", pasta_id=clean_folder_id)
+    session = create_drive_session(service_account_info)
+    try:
+        files = list_folder_files(session, clean_folder_id)
+        credentials = getattr(session, "credentials", None)
+    finally:
+        if callable(getattr(session, "close", None)):
+            session.close()
+    listing_seconds = perf_counter() - started
+
+    records: list[dict] = []
+    issues: list[str] = []
+    successful_files = 0
+    file_ids = {
+        file_id for drive_file in files if (file_id := drive_file.get("id", "").strip())
+    }
+    refreshed_file_ids: set[str] = set()
+    file_fingerprints: dict[str, str] = {}
+    known_file_fingerprints = known_file_fingerprints or {}
+    changed_files: list[dict[str, str]] = []
+    for drive_file in files:
+        fingerprint = _consultivo_file_fingerprint(drive_file)
+        file_id = drive_file.get("id", "")
+        if fingerprint is None or fingerprint != known_file_fingerprints.get(file_id):
+            changed_files.append(drive_file)
+
+    if changed_files:
+        thread_state = local()
+        sessions: list[Any] = []
+        sessions_lock = Lock()
+
+        def get_worker_session() -> Any:
+            worker_session = getattr(thread_state, "session", None)
+            if worker_session is None:
+                worker_session = (
+                    AuthorizedSession(copy(credentials))
+                    if credentials is not None
+                    else create_drive_session(service_account_info)
+                )
+                thread_state.session = worker_session
+                with sessions_lock:
+                    sessions.append(worker_session)
+            return worker_session
+
+        try:
+            with ThreadPoolExecutor(
+                max_workers=min(MAX_PARALLEL_DOWNLOADS, len(changed_files))
+            ) as executor:
+                results = executor.map(
+                    lambda drive_file: _import_consultivo_drive_file(
+                        get_worker_session, drive_file
+                    ),
+                    changed_files,
+                )
+                for drive_file, (file_records, file_issues, refreshed) in zip(
+                    changed_files, results
+                ):
+                    if refreshed:
+                        file_id = drive_file.get("id", "").strip()
+                        if file_id:
+                            refreshed_file_ids.add(file_id)
+                            fingerprint = _consultivo_file_fingerprint(drive_file)
+                            if fingerprint is not None:
+                                file_fingerprints[file_id] = fingerprint
+                    if file_records:
+                        records.extend(file_records)
+                        successful_files += 1
+                    issues.extend(file_issues)
+        finally:
+            for worker_session in sessions:
+                if callable(getattr(worker_session, "close", None)):
+                    worker_session.close()
+
+    if not files:
+        issues.append("A pasta de Histórico Consultivo não contém arquivos.")
+    logger.info(
+        "sincronizacao_consultivo_concluida",
+        pasta_id=clean_folder_id,
+        total_arquivos=len(files),
+        arquivos_alterados=len(changed_files),
+        arquivos_com_registros=successful_files,
+        registros_importados=len(records),
+        avisos=len(issues),
+        listagem_segundos=round(listing_seconds, 3),
+        duracao_segundos=round(perf_counter() - started, 3),
+    )
+    return DriveFolderImport(
+        records=records,
+        issues=issues,
+        successful_files=successful_files,
+        file_ids=file_ids,
+        refreshed_file_ids=refreshed_file_ids,
+        file_fingerprints=file_fingerprints,
     )

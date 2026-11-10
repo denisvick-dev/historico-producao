@@ -18,6 +18,7 @@ Painel em Streamlit para acompanhar a produção dos técnicos ao longo do tempo
 - Página **Quantidade de O.S.** com evolução por competência e ranking dos 15 técnicos com mais ordens (cada linha válida da aba `Prod` conta como uma O.S.).
 - Página **Contratos** com duas sub-abas: **Quantidade de contratos** (indicadores, evolução mensal, ranking e matriz por técnico com meses com produção, média mensal e exportação CSV) e **Eficiência de contratos** (classificação mensal dos contratos nas Faixas 1 a 5 de pontuação, filtros por técnico e faixa predominante, distribuição e evolução mensal das faixas, matriz de frequência por contrato e detalhamento mensal exportáveis em CSV). A contagem de quantidade considera contratos distintos por técnico e competência em todas as origens filtradas; a média mensal divide o total pelos meses com ao menos um contrato válido (e, na linha Total geral, usa os meses com contratos de qualquer técnico).
 - Página **Produtividade unitária** cruzando volume e complexidade: indicadores de **Pontos por O.S. (`Prod`)** e **Pontos por Contrato**, evolução mensal do ticket médio de pontos, gráfico de dispersão em 4 quadrantes (*Volume × Pontos unitários*), rankings Top 15 e tabela consolidada com exportação CSV.
+- Página **Consultivo** sincronizada com a pasta [`Histórico Consultivo`](https://drive.google.com/drive/folders/1xMwEgPm9udFoGobv9cCUoMmuoxuFiPB2) no Google Drive e interligada a `lista_ativos` por `LOGIN NETSALES` e `VENDEDOR`, com KPIs executivos, mix **Mesh / TV Box / Virtua**, projeção fim do mês (Seg–Sáb), evolução histórica mensal por competência, ranking consolidado por **Monitor** ou **Técnico**, matriz de eficiência, **Equipes sem Consultivos**, meta diária por Monitor e exportação CSV protegida.
 - Página **Quadro de técnicos** interligada à planilha oficial [`lista_ativos`](https://docs.google.com/spreadsheets/d/1LQKDcLshC6XSXLBVWaEYSpxrro6uydyU9pwDLc38pEg) (abas `lista_ativos` e `desligados`), conciliando **RE**, **Login**, **Situação**, **Monitor**, **U.N.** e **Base** com os pontos (`Prod + Gpon`), O.S. e contratos no período.
 - **Saúde dos dados** com cobertura de projetos, dados de demonstração, status de sincronização, histórico de arquivos importados com o contador de contratos distintos de cada arquivo e detalhamento dos registros com a coluna **Qtde_Contrato**, exportável em CSV.
 - Filtros compartilhados por **Situação cadastral** (padrão restrito a `ATIVO`), **Monitor**, **Base**, período, projeto e técnico; a página de técnicos exibe matrícula/RE, login, monitor e base no perfil individual.
@@ -95,7 +96,8 @@ O painel estará disponível em `http://localhost:8501`.
 | Variável | Obrigatória | Padrão | Descrição |
 | --- | --- | --- | --- |
 | `PRODUCAO_DB_PATH` | Não | `data/producao.db` | Caminho do banco SQLite |
-| `DRIVE_FOLDER_ID` | Não | `1P0ComfPrfZiq-bHfOi8fWJeAE4GAEkBq` | ID da pasta no Google Drive |
+| `DRIVE_FOLDER_ID` | Não | `1P0ComfPrfZiq-bHfOi8fWJeAE4GAEkBq` | ID da pasta de produção no Google Drive |
+| `CONSULTIVO_FOLDER_ID` | Não | `1xMwEgPm9udFoGobv9cCUoMmuoxuFiPB2` | ID ou URL da pasta de Histórico Consultivo no Google Drive |
 | `ROSTER_SHEET_ID` | Não | `1LQKDcLshC6XSXLBVWaEYSpxrro6uydyU9pwDLc38pEg` | ID ou URL da planilha cadastral (`lista_ativos`) |
 | `ROSTER_PUBLIC_SYNC` | Não | `0` | Define como `1` para sincronizar `lista_ativos` via link público mesmo sem conta de serviço |
 | `SHOW_DEMO_DATA` | Não | `1` | Define como `0` para desativar dados de demonstração |
@@ -105,8 +107,9 @@ O painel estará disponível em `http://localhost:8501`.
 Habilite a Google Drive API, compartilhe a pasta de produção e a planilha cadastral `lista_ativos` com a conta de serviço e configure suas credenciais em `.streamlit/secrets.toml` (não versione esse arquivo). O app sincroniza automaticamente uma vez ao abrir uma sessão; para buscar novamente durante o uso, clique em **Atualizar dados** na barra lateral:
 
 ```toml
-# Opcional: sobrescreve os IDs padrão da pasta e da planilha cadastral
+# Opcional: sobrescreve os IDs padrão das pastas e da planilha cadastral
 drive_folder_id = "id_da_pasta"
+consultivo_folder_id = "1xMwEgPm9udFoGobv9cCUoMmuoxuFiPB2"
 roster_sheet_id = "1LQKDcLshC6XSXLBVWaEYSpxrro6uydyU9pwDLc38pEg"
 
 [gcp_service_account]
