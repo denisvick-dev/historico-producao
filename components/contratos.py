@@ -14,16 +14,16 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from components.componentes import formatar_numero_br, render_ticker
-from components.prod_os import (
+from components.painel_quantidades import (
     AZUL_TOTALE,
     CHART_CONFIG,
     LARANJA_TOTALE,
-    _best_month_style,
-    _chart_layout,
-    _csv_download,
-    _metric_card,
-    _section_heading,
-    _total_column_style,
+    best_month_style as _best_month_style,
+    chart_layout as _chart_layout,
+    csv_download as _csv_download,
+    metric_card as _metric_card,
+    section_heading as _section_heading,
+    total_column_style as _total_column_style,
 )
 from production import clean_contract, is_valid_contract, month_label
 
@@ -48,7 +48,9 @@ def resumir_contratos(
     """
     mensal_vazio = pd.DataFrame(columns=["period", "contratos"])
     ranking_vazio = pd.DataFrame(columns=["technician", "contratos"])
-    matriz_vazia = pd.DataFrame(columns=["Técnico", "Total"])
+    matriz_vazia = pd.DataFrame(
+        columns=["Técnico", "Total", "Meses com produção", "Média mensal"]
+    )
     if frame.empty:
         return mensal_vazio, ranking_vazio, matriz_vazia, 0, 0
     if "contract" not in frame:
@@ -127,6 +129,7 @@ def resumir_contratos(
         .astype(int)
     )
     matriz.columns = [month_label(mes) for mes in matriz.columns]
+    colunas_meses = list(matriz.columns)
     matriz["Total"] = matriz.sum(axis=1)
     matriz.index.name = "Técnico"
     matriz = (
@@ -143,6 +146,13 @@ def resumir_contratos(
         },
     }
     matriz = pd.concat([matriz, pd.DataFrame([total])], ignore_index=True)
+    matriz["Meses com produção"] = matriz[colunas_meses].gt(0).sum(axis=1).astype(int)
+    # No total geral, o denominador são meses em que a equipe teve contratos,
+    # não a soma dos meses individuais dos técnicos.
+    meses_ativos = matriz["Meses com produção"].where(
+        matriz["Meses com produção"].gt(0)
+    )
+    matriz["Média mensal"] = matriz["Total"].div(meses_ativos).fillna(0.0)
     return mensal, ranking, matriz, sem_contrato, sem_tecnico_ou_data
 
 
@@ -261,13 +271,24 @@ def render_contratos(filtered: pd.DataFrame) -> None:
     count_columns = {
         coluna: st.column_config.NumberColumn(format="%d")
         for coluna in matriz.columns
-        if coluna != "Técnico"
+        if coluna not in {"Técnico", "Média mensal"}
     }
+    count_columns["Média mensal"] = st.column_config.NumberColumn(
+        "Média mensal",
+        format="%.2f",
+        help="Total de contratos dividido pelos meses com contratos no recorte.",
+    )
+    st.caption(
+        "Média mensal = total de contratos ÷ meses com produção (meses com pelo menos um contrato válido). "
+        "Na linha Total geral, a média usa os meses com contratos de qualquer técnico."
+    )
     # Evita o custo e o limite de células do Styler em matrizes muito grandes.
     if matriz.size <= 10_000:
-        visualizacao = matriz.style.apply(_best_month_style, axis=1).map(
-            _total_column_style, subset=["Total"]
-        )
+        visualizacao = matriz.style.apply(
+            _best_month_style,
+            axis=1,
+            exclude_columns=("Meses com produção", "Média mensal"),
+        ).map(_total_column_style, subset=["Total"])
     else:
         visualizacao = matriz
         st.caption("Destaque de cores desativado para matrizes grandes.")

@@ -12,7 +12,7 @@ Painel em Streamlit para acompanhar a produção dos técnicos ao longo do tempo
 - **Regularidade da produção** com média e mediana mensal, coeficiente de variação, destaques de oscilação e competências sem registros por técnico.
 - **Sazonalidade** com mapa de calor de Pontos Totais por competência e técnico ou projeto, além de tabela exportável em CSV.
 - Página **Quantidade de O.S.** com evolução por competência e ranking dos 15 técnicos com mais ordens (cada linha válida da aba `Prod` conta como uma O.S.).
-- Página **Contratos** no mesmo formato: indicadores, evolução mensal, ranking e matriz por técnico com exportação CSV. Conta contratos distintos por técnico e competência, em todas as origens filtradas; contratos repetidos em outro mês ou técnico voltam a contar e o total soma essas contagens, não contratos únicos no período nem a Qtde_Contrato do arquivo inteiro.
+- Página **Contratos** no mesmo formato: indicadores, evolução mensal, ranking e matriz por técnico com meses com produção, média mensal e exportação CSV. A média mensal divide o total pelos meses em que o técnico teve ao menos um contrato válido; na linha Total geral usa os meses com contratos de qualquer técnico. Conta contratos distintos por técnico e competência, em todas as origens filtradas; contratos repetidos em outro mês ou técnico voltam a contar e o total soma essas contagens, não contratos únicos no período nem a Qtde_Contrato do arquivo inteiro.
 - **Saúde dos dados** com cobertura de projetos, dados de demonstração, status de sincronização, histórico de arquivos importados com o contador de contratos distintos de cada arquivo e detalhamento dos registros com a coluna **Qtde_Contrato**, exportável em CSV.
 - Filtros compartilhados por período, projeto e técnico; a página de técnicos permite escolher o projeto e o perfil individual.
 - Evolução mensal e ranking da equipe.
@@ -97,6 +97,9 @@ O painel estará disponível em `http://localhost:8501`.
 Habilite a Google Drive API, compartilhe a pasta de produção com a conta de serviço e configure suas credenciais em `.streamlit/secrets.toml` (não versione esse arquivo):
 
 ```toml
+# Opcional: sobrescreve o ID padrão da pasta
+drive_folder_id = "id_da_pasta"
+
 [gcp_service_account]
 type = "service_account"
 project_id = "seu-projeto"
@@ -106,8 +109,6 @@ client_email = "conta-de-servico@seu-projeto.iam.gserviceaccount.com"
 client_id = "..."
 token_uri = "https://oauth2.googleapis.com/token"
 
-[drive_folder_id]
-# Opcional: sobrescreve o ID padrão da pasta
 ```
 
 Os arquivos Excel devem conter as abas `Prod` e/ou `Gpon`; arquivos CSV são lidos como `Prod` por padrão.
@@ -129,11 +130,26 @@ Para usar outro local de banco:
 PRODUCAO_DB_PATH=/caminho/producao.db streamlit run streamlit_app.py
 ```
 
-## Testes
+## Desenvolvimento e verificações
+
+Após instalar `requirements.txt` no ambiente virtual, instale as ferramentas de desenvolvimento:
 
 ```bash
-python -m unittest discover -s tests -v
+python -m pip install ruff mypy
+python scripts/check.py              # lint, tipos, testes e compilação
+python scripts/check.py lint         # ou: types, tests, compile
 ```
+
+O script usa o mesmo interpretador Python e os mesmos comandos do CI. Os testes
+podem ser executados diretamente com `python -m unittest discover -s tests -v`.
+Para medir as operações de dados com uma amostra sintética, sem acessar o banco:
+
+```bash
+python scripts/benchmark_data.py --rows 200000
+```
+
+Os tempos dependem do ambiente e da distribuição dos dados; compare execuções
+na mesma máquina e não use o resultado como limite de aprovação do CI.
 
 Os testes cobrem:
 - Fórmula de consolidação (Prod + Gpon)
@@ -153,11 +169,28 @@ O repositório usa GitHub Actions (`.github/workflows/ci.yml`) para executar em 
 3. **Testes** com `unittest`
 4. **Compilação** com `py_compile`
 
+## Organização e fluxo de dados
+
+- `drive_import.py` lista e processa arquivos do Drive; `production.py` concentra
+  importação, normalização, persistência SQLite e agregações independentes da UI.
+- `streamlit_app.py` monta a navegação e os filtros compartilhados. Os módulos de
+  `components/` renderizam os painéis e consomem os dados filtrados. Os painéis
+  de contratos e O.S. compartilham elementos visuais em `painel_quantidades.py`,
+  sem depender um do outro.
+- A consulta do dashboard usa cache de 60 segundos; os carregamentos de registros
+  e do dashboard compartilham a mesma consulta e preparação dos dados. A contagem
+  por arquivo usa os flags `Qtde_Contrato` quando presentes e contratos distintos
+  como fallback. Não confundir com os totais por técnico e mês da aba Contratos.
+- O Docker usa `.dockerignore` para não incluir banco local, credenciais ou
+  dependências de desenvolvimento no contexto da imagem. Monte o banco em volume
+  e forneça os segredos pelo mecanismo da plataforma, fora do repositório.
+
 ## Estrutura do projeto
 
 ```
 historico-producao/
 ├── .github/workflows/ci.yml      # Pipeline de CI/CD
+├── .dockerignore                 # Exclusões do contexto Docker
 ├── Dockerfile                    # Imagem para deploy em contêiner
 ├── mypy.ini                      # Configuração de type checking
 ├── requirements.txt              # Dependências Python
@@ -165,6 +198,7 @@ historico-producao/
 ├── streamlit_app.py              # Ponto de entrada da aplicação
 ├── production.py                 # Regras de negócio e persistência (SQLite)
 ├── drive_import.py               # Sincronização com Google Drive
+├── scripts/                      # Verificações locais/CI e benchmark sintético
 ├── config/                       # Configurações do portal (versão e ambiente)
 │   ├── __init__.py
 │   └── settings.py
@@ -177,6 +211,7 @@ historico-producao/
 │   ├── graficos.py               # Tokens de identidade visual (cores TOTALE)
 │   ├── kpi_cards.py              # Cartões de KPI avançados
 │   ├── layout_pagina.py          # Hierarquia de leitura das páginas
+│   ├── painel_quantidades.py     # Componentes compartilhados dos painéis O.S. e contratos
 │   ├── prod_os.py                # Página de quantidade de O.S.
 │   ├── sidebar.py                # Sidebar corporativa e temas
 │   └── visoes_dashboards.py      # Projetos, resumo executivo e saúde da base
@@ -184,6 +219,7 @@ historico-producao/
     ├── test_config_settings.py   # Configuração do portal (versão/ambiente)
     ├── test_contratos.py         # Importação e persistência de contratos
     ├── test_css_global.py        # Testes de fonte em dataframes
+    ├── test_data_optimization.py # Normalização e carregamento compartilhado
     ├── test_drive_import.py      # Testes de importação do Drive
     ├── test_eficiencia.py        # Eficiência por técnico e por contrato
     ├── test_prod_os.py           # Testes da página de O.S.

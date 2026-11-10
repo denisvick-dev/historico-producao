@@ -1,0 +1,24 @@
+# Exclui dados, segredos comuns e artefatos locais do contexto da imagem.
+.git
+.github
+.venv
+venv
+__pycache__
+*.py[cod]
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.env
+.env.*
+.streamlit/secrets.toml
+data
+*.db
+*.db-shm
+*.db-wal
+out.txt
+
+# Arquivos de desenvolvimento não são necessários em execução.
+.devcontainer
+.vscode
+tests
+scripts

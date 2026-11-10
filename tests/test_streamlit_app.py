@@ -92,6 +92,13 @@ class StreamlitAppTests(unittest.TestCase):
         )
         self.assertEqual(matriz.iloc[-1]["Técnico"], "Total geral")
         self.assertEqual(matriz.iloc[-1]["Total"], matriz.iloc[:-1]["Total"].sum())
+        self.assertIn("Meses com produção", matriz.columns)
+        self.assertIn("Média mensal", matriz.columns)
+        for _, row in matriz.iterrows():
+            self.assertGreater(row["Meses com produção"], 0)
+            self.assertAlmostEqual(
+                row["Média mensal"], row["Total"] / row["Meses com produção"]
+            )
         self.assertTrue(
             any(
                 "Baixar quantidade de contratos" in str(cast("Any", item).label)
@@ -163,6 +170,7 @@ render_contratos(pd.DataFrame({"contract": ["Sem contrato"], "technician": ["Ana
         app = AppTest.from_file(_APP_PATH).run(timeout=30)
         for pagina in (
             "Projetos",
+            "Quantidade de O.S.",
             "Contratos",
             "Regularidade",
             "Eficiência",
