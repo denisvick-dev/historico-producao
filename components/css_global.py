@@ -27,8 +27,7 @@ gravado uma vez por sessão (idempotente por versão), com:
   dataframes, chat e tooltips.
 • ``css_acessibilidade``: foco visível, seleção de texto, barras de rolagem,
   impressão e respeito a ``prefers-reduced-motion``.
-• ``injetar_css_global``: agregador idempotente (também inclui o CSS dos
-  cartões de KPI avançados e das primitivas de layout de página).
+• ``injetar_css_global``: agregador idempotente injetado uma vez por sessão.
 
 Regra de escopo: tudo que é corpo de página fica sob ``[data-testid="stMain"]``.
 A sidebar continua exclusiva de ``components.sidebar`` — nada aqui a toca.
@@ -42,15 +41,6 @@ import logging
 import streamlit as st
 
 from components.componentes import Cores, _injetar_js, _safe_render_html
-from components.graficos import (
-    AZUL_CLARO,
-    AZUL_ESCURO,
-    AZUL_TOTALE,
-    LARANJA_CLARO,
-    LARANJA_ESCURO,
-    LARANJA_TOTALE,
-)
-from components.kpi_cards import css_kpi_avancado
 
 logger = logging.getLogger(__name__)
 
@@ -69,12 +59,12 @@ def css_variaveis_marca() -> str:
     """Tokens da marca disponíveis como ``var(--totale-*)`` em qualquer página."""
     return f"""
     :root {{
-        --totale-azul: {AZUL_TOTALE};
-        --totale-azul-claro: {AZUL_CLARO};
-        --totale-azul-escuro: {AZUL_ESCURO};
-        --totale-laranja: {LARANJA_TOTALE};
-        --totale-laranja-claro: {LARANJA_CLARO};
-        --totale-laranja-escuro: {LARANJA_ESCURO};
+        --totale-azul: {Cores.PRIMARIA};
+        --totale-azul-claro: {Cores.PRIMARIA_LIGHT};
+        --totale-azul-escuro: {Cores.PRIMARIA_DARK};
+        --totale-laranja: {Cores.SECUNDARIA};
+        --totale-laranja-claro: #FF9D45;
+        --totale-laranja-escuro: {Cores.SECUNDARIA_DARK};
         --totale-azul-suave: #E8EEF8;
         --totale-laranja-suave: #FFF3E6;
         --totale-texto: {Cores.TEXTO};
@@ -730,19 +720,9 @@ def css_componentes_nativos() -> str:
     )
 
 
-def css_global_completo(*, incluir_kpi: bool = True) -> str:
-    """Todo o CSS global do portal em um único texto (nativos + KPIs + layout)."""
-    blocos = [css_componentes_nativos()]
-    if incluir_kpi:
-        blocos.append(css_kpi_avancado())
-    try:
-        # Import tardio: layout_pagina agrega o próprio CSS ao global.
-        from components.layout_pagina import css_layout_pagina
-
-        blocos.append(css_layout_pagina())
-    except ImportError:  # pragma: no cover - módulo opcional
-        logger.debug("css_layout_pagina indisponível; seguindo sem ele.", exc_info=True)
-    return "\n".join(blocos)
+def css_global_completo() -> str:
+    """Todo o CSS global dos componentes nativos do portal em um único texto."""
+    return css_componentes_nativos()
 
 
 # ====================================================
@@ -777,7 +757,7 @@ def _injetar_no_head(css: str, *, id_no: str = ID_NO_HEAD) -> None:
     )
 
 
-def injetar_css_global(*, forcar: bool = False, incluir_kpi: bool = True) -> str | None:
+def injetar_css_global(*, forcar: bool = False) -> str | None:
     """Injeta o CSS global uma única vez por sessão (idempotente por versão).
 
     Retorna o CSS injetado na primeira chamada e ``None`` nas seguintes — útil
@@ -785,11 +765,10 @@ def injetar_css_global(*, forcar: bool = False, incluir_kpi: bool = True) -> str
 
     Args:
         forcar: reinjeta mesmo que a versão já esteja aplicada na sessão.
-        incluir_kpi: inclui os estilos dos cartões de KPI avançados.
     """
     if st.session_state.get(_CHAVE_SESSAO) == VERSAO_CSS_GLOBAL and not forcar:
         return None
-    css = css_global_completo(incluir_kpi=incluir_kpi)
+    css = css_global_completo()
     # 1) nó persistente no head (sobrevive aos reruns);
     _injetar_no_head(css)
     # 2) fallback em fluxo: garante o estilo mesmo se o JS não executar.

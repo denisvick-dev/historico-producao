@@ -41,7 +41,7 @@ def compile_sources() -> None:
     files = [
         ROOT / name for name in ("streamlit_app.py", "production.py", "drive_import.py")
     ]
-    for folder in ("components", "config", "scripts", "tests"):
+    for folder in ("components", "scripts", "tests"):
         files.extend(sorted((ROOT / folder).rglob("*.py")))
     for path in files:
         py_compile.compile(str(path), doraise=True)
