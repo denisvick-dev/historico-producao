@@ -14,6 +14,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from components.componentes import formatar_numero_br, render_ticker
+from components.eficiencia import render_eficiencia_contrato
 from components.painel_quantidades import (
     AZUL_TOTALE,
     CHART_CONFIG,
@@ -169,7 +170,7 @@ def resumir_contratos(
 
 
 def render_contratos(filtered: pd.DataFrame) -> None:
-    """Exibe indicadores e matriz no mesmo formato da página de O.S."""
+    """Exibe quantidade de contratos e eficiência por contrato em sub-abas."""
     mensal, ranking, matriz, sem_contrato, incompletos = resumir_contratos(filtered)
     if mensal.empty:
         render_ticker(
@@ -210,112 +211,121 @@ def render_contratos(filtered: pd.DataFrame) -> None:
         ],
         label="Indicadores de contratos",
     )
-    cards = st.columns(3)
-    with cards[0]:
-        _metric_card(
-            "TOTAL DE CONTRATOS",
-            formatar_numero_br(total),
-            "Soma por técnico e competência",
-            "CT",
-        )
-    with cards[1]:
-        _metric_card(
-            "TÉCNICOS COM CONTRATOS",
-            formatar_numero_br(ativos),
-            "Técnicos com contratos no recorte",
-            "T",
-        )
-    with cards[2]:
-        _metric_card(
-            "MÉDIA POR TÉCNICO",
-            formatar_numero_br(total / ativos, 1),
-            "Total por técnico no recorte",
-            "Ø",
-        )
 
-    _section_heading("Quantidade de contratos", REGRA_CONTAGEM)
-    if sem_contrato or incompletos:
+    aba_quantidade, aba_eficiencia = st.tabs(
+        ["Quantidade de contratos", "Eficiência de contratos"]
+    )
+
+    with aba_quantidade:
+        cards = st.columns(3)
+        with cards[0]:
+            _metric_card(
+                "TOTAL DE CONTRATOS",
+                formatar_numero_br(total),
+                "Soma por técnico e competência",
+                "CT",
+            )
+        with cards[1]:
+            _metric_card(
+                "TÉCNICOS COM CONTRATOS",
+                formatar_numero_br(ativos),
+                "Técnicos com contratos no recorte",
+                "T",
+            )
+        with cards[2]:
+            _metric_card(
+                "MÉDIA POR TÉCNICO",
+                formatar_numero_br(total / ativos, 1),
+                "Total por técnico no recorte",
+                "Ø",
+            )
+
+        _section_heading("Quantidade de contratos", REGRA_CONTAGEM)
+        if sem_contrato or incompletos:
+            st.caption(
+                f"Registros excluídos: {formatar_numero_br(sem_contrato)} sem contrato válido e {formatar_numero_br(incompletos)} sem técnico ou data válida."
+            )
+
+        grafico_mensal = go.Figure()
+        grafico_mensal.add_bar(
+            x=mensal["period"].map(month_label),
+            y=mensal["contratos"],
+            marker_color=AZUL_TOTALE,
+            text=mensal["contratos"],
+            textposition="outside",
+            cliponaxis=False,
+            hovertemplate="<b>%{x}</b><br>%{y:,.0f} contratos<extra></extra>",
+        )
+        maximo = int(mensal["contratos"].max())
+        grafico_mensal.update_yaxes(
+            range=[0, maximo * 1.2 if maximo else 1], title="Contratos"
+        )
+        _chart_layout(grafico_mensal)
+        top = ranking.head(15).iloc[::-1]
+        grafico_ranking = go.Figure()
+        grafico_ranking.add_bar(
+            x=top["contratos"],
+            y=top["technician"],
+            orientation="h",
+            marker_color=LARANJA_TOTALE,
+            text=top["contratos"],
+            textposition="outside",
+            cliponaxis=False,
+            hovertemplate="%{y}<br>%{x:,.0f} contratos<extra></extra>",
+        )
+        _chart_layout(grafico_ranking, height=max(320, len(top) * 28 + 70))
+        grafico_ranking.update_layout(margin=dict(l=8, r=45, t=15, b=8))
+        grafico_ranking.update_xaxes(showgrid=False, showticklabels=False)
+        mensal_col, ranking_col = st.columns([1, 1.1])
+        with mensal_col, st.container(border=True):
+            st.markdown("**Evolução mensal de contratos**")
+            st.plotly_chart(grafico_mensal, width="stretch", config=CHART_CONFIG)
+        with ranking_col, st.container(border=True):
+            st.markdown("**Contratos por técnico · Top 15**")
+            st.plotly_chart(grafico_ranking, width="stretch", config=CHART_CONFIG)
+
+        _section_heading(
+            "Contratos por técnico",
+            "Maior quantidade mensal em verde; empates podem destacar mais de uma competência. O total soma os meses.",
+        )
+        count_columns = {
+            coluna: st.column_config.NumberColumn(format="%d")
+            for coluna in matriz.columns
+            if coluna not in {"Técnico", "Média mensal"}
+        }
+        count_columns["Média mensal"] = st.column_config.NumberColumn(
+            "Média mensal",
+            format="%.0f",
+            help="Total de contratos dividido pelos meses com contratos no recorte.",
+        )
         st.caption(
-            f"Registros excluídos: {formatar_numero_br(sem_contrato)} sem contrato válido e {formatar_numero_br(incompletos)} sem técnico ou data válida."
+            "Média mensal = total de contratos ÷ meses com produção (meses com pelo menos um contrato válido). "
+            "Na linha Total geral, a média usa os meses com contratos de qualquer técnico."
+        )
+        # Evita o custo e o limite de células do Styler em matrizes muito grandes.
+        if matriz.size <= 10_000:
+            visualizacao = matriz.style.apply(
+                _best_month_style,
+                axis=1,
+                exclude_columns=("Meses com produção", "Média mensal"),
+            ).map(_total_column_style, subset=["Total"])
+        else:
+            visualizacao = matriz
+            st.caption("Destaque de cores desativado para matrizes grandes.")
+        st.dataframe(
+            visualizacao,
+            width="stretch",
+            hide_index=True,
+            column_config=count_columns,
+            alt="Contratos por técnico, competência e total",
+        )
+        st.download_button(
+            "Baixar quantidade de contratos em CSV",
+            data=_csv_download(matriz),
+            file_name="quantidade_contratos.csv",
+            mime="text/csv",
+            key="download_quantidade_contratos",
         )
 
-    grafico_mensal = go.Figure()
-    grafico_mensal.add_bar(
-        x=mensal["period"].map(month_label),
-        y=mensal["contratos"],
-        marker_color=AZUL_TOTALE,
-        text=mensal["contratos"],
-        textposition="outside",
-        cliponaxis=False,
-        hovertemplate="<b>%{x}</b><br>%{y:,.0f} contratos<extra></extra>",
-    )
-    maximo = int(mensal["contratos"].max())
-    grafico_mensal.update_yaxes(
-        range=[0, maximo * 1.2 if maximo else 1], title="Contratos"
-    )
-    _chart_layout(grafico_mensal)
-    top = ranking.head(15).iloc[::-1]
-    grafico_ranking = go.Figure()
-    grafico_ranking.add_bar(
-        x=top["contratos"],
-        y=top["technician"],
-        orientation="h",
-        marker_color=LARANJA_TOTALE,
-        text=top["contratos"],
-        textposition="outside",
-        cliponaxis=False,
-        hovertemplate="%{y}<br>%{x:,.0f} contratos<extra></extra>",
-    )
-    _chart_layout(grafico_ranking, height=max(320, len(top) * 28 + 70))
-    grafico_ranking.update_layout(margin=dict(l=8, r=45, t=15, b=8))
-    grafico_ranking.update_xaxes(showgrid=False, showticklabels=False)
-    mensal_col, ranking_col = st.columns([1, 1.1])
-    with mensal_col, st.container(border=True):
-        st.markdown("**Evolução mensal de contratos**")
-        st.plotly_chart(grafico_mensal, width="stretch", config=CHART_CONFIG)
-    with ranking_col, st.container(border=True):
-        st.markdown("**Contratos por técnico · Top 15**")
-        st.plotly_chart(grafico_ranking, width="stretch", config=CHART_CONFIG)
-
-    _section_heading(
-        "Contratos por técnico",
-        "Maior quantidade mensal em verde; empates podem destacar mais de uma competência. O total soma os meses.",
-    )
-    count_columns = {
-        coluna: st.column_config.NumberColumn(format="%d")
-        for coluna in matriz.columns
-        if coluna not in {"Técnico", "Média mensal"}
-    }
-    count_columns["Média mensal"] = st.column_config.NumberColumn(
-        "Média mensal",
-        format="%.0f",
-        help="Total de contratos dividido pelos meses com contratos no recorte.",
-    )
-    st.caption(
-        "Média mensal = total de contratos ÷ meses com produção (meses com pelo menos um contrato válido). "
-        "Na linha Total geral, a média usa os meses com contratos de qualquer técnico."
-    )
-    # Evita o custo e o limite de células do Styler em matrizes muito grandes.
-    if matriz.size <= 10_000:
-        visualizacao = matriz.style.apply(
-            _best_month_style,
-            axis=1,
-            exclude_columns=("Meses com produção", "Média mensal"),
-        ).map(_total_column_style, subset=["Total"])
-    else:
-        visualizacao = matriz
-        st.caption("Destaque de cores desativado para matrizes grandes.")
-    st.dataframe(
-        visualizacao,
-        width="stretch",
-        hide_index=True,
-        column_config=count_columns,
-        alt="Contratos por técnico, competência e total",
-    )
-    st.download_button(
-        "Baixar quantidade de contratos em CSV",
-        data=_csv_download(matriz),
-        file_name="quantidade_contratos.csv",
-        mime="text/csv",
-        key="download_quantidade_contratos",
-    )
+    with aba_eficiencia:
+        render_eficiencia_contrato(filtered)

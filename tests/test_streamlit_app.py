@@ -105,6 +105,45 @@ class StreamlitAppTests(unittest.TestCase):
                 for item in app.get("download_button")
             )
         )
+        # Verifica também a sub-aba de Eficiência de contratos dentro da aba Contratos
+        self.assertIn("Eficiência de contratos", markdown)
+        self.assertIn("CONTRATOS AVALIADOS", markdown)
+        self.assertIn("Evolução mensal das faixas de contratos", markdown)
+        matriz_eficiencia = next(
+            t
+            for t in tabelas
+            if "Contrato" in t.columns and "Faixa mais frequente" in t.columns
+        )
+        self.assertIn("Média mensal", matriz_eficiencia.columns)
+        self.assertIn("Faixa 5", matriz_eficiencia.columns)
+        self.assertTrue(
+            any(
+                "Baixar eficiência de contratos em CSV" in str(cast("Any", item).label)
+                for item in app.get("download_button")
+            )
+        )
+        self.assertTrue(
+            any(
+                "Baixar eficiência mensal de contratos em CSV"
+                in str(cast("Any", item).label)
+                for item in app.get("download_button")
+            )
+        )
+
+    def test_eficiencia_de_contratos_filtra_por_tecnico_e_faixa(self) -> None:
+        app = AppTest.from_file(_APP_PATH).run(timeout=30)
+        app.radio(key="navigation").set_value("Contratos").run(timeout=30)
+        opcoes_tec = app.selectbox(key="eficiencia_contrato_tecnico_filter").options
+        self.assertGreater(len(opcoes_tec), 1)
+        app.selectbox(key="eficiencia_contrato_tecnico_filter").set_value(
+            opcoes_tec[1]
+        ).run(timeout=30)
+        self.assertFalse(app.exception)
+
+        app.selectbox(key="eficiencia_contrato_faixa_filter").set_value("Faixa 1").run(
+            timeout=30
+        )
+        self.assertFalse(app.exception)
 
     def test_contratos_respeita_filtro_global_de_tecnico(self) -> None:
         app = AppTest.from_file(_APP_PATH).run(timeout=30)
@@ -165,6 +204,42 @@ render_contratos(pd.DataFrame({"contract": ["Sem contrato"], "technician": ["Ana
         self.assertIn("Contrato", detalhes[0].columns)
         self.assertTrue(detalhes[0]["Qtde_Contrato"].gt(0).all())
 
+    def test_aba_produtividade_unitaria_exibe_graficos_quadrantes_e_download(
+        self,
+    ) -> None:
+        """A aba própria de produtividade unitária renderiza KPIs, quadrantes, tabela e CSV."""
+        app = AppTest.from_file(_APP_PATH).run(timeout=30)
+        app.radio(key="navigation").set_value("Produtividade unitária").run(timeout=30)
+        self.assertFalse(app.exception)
+        markdown = " ".join(str(item.value) for item in app.markdown)
+        self.assertIn("PONTOS POR O.S. (PROD)", markdown)
+        self.assertIn("PONTOS POR CONTRATO", markdown)
+        self.assertIn("Evolução mensal do ticket médio de pontos", markdown)
+        self.assertIn("Quadrantes por O.S. (Prod)", markdown)
+        self.assertGreaterEqual(len(app.get("plotly_chart")), 4)
+
+        # Alterna os quadrantes para Contratos
+        app.radio(key="unit_productivity_quadrant_mode").set_value("Por Contrato").run(
+            timeout=30
+        )
+        self.assertFalse(app.exception)
+        markdown_ct = " ".join(str(item.value) for item in app.markdown)
+        self.assertIn("Quadrantes por Contrato", markdown_ct)
+
+        tabelas = [
+            cast("pd.DataFrame", cast("Any", item).value)
+            for item in app.get("dataframe")
+        ]
+        resumo_tbl = next(t for t in tabelas if "Pontos / O.S." in t.columns)
+        self.assertEqual(resumo_tbl.iloc[-1]["Técnico"], "Total geral")
+        self.assertIn("Pontos / Contrato", resumo_tbl.columns)
+        self.assertTrue(
+            any(
+                "Baixar produtividade unitária" in str(cast("Any", item).label)
+                for item in app.get("download_button")
+            )
+        )
+
     def test_novas_visoes_carregam_sem_erro(self) -> None:
         """As páginas complementares devem abrir sem exceções."""
         app = AppTest.from_file(_APP_PATH).run(timeout=30)
@@ -172,6 +247,7 @@ render_contratos(pd.DataFrame({"contract": ["Sem contrato"], "technician": ["Ana
             "Projetos",
             "Quantidade de O.S.",
             "Contratos",
+            "Produtividade unitária",
             "Regularidade",
             "Eficiência",
             "Saúde dos dados",

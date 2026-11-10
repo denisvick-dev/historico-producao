@@ -38,6 +38,7 @@ from components.componentes import (
 from components.contratos import render_contratos
 from components.eficiencia import render_eficiencia
 from components.prod_os import render_prod_orders
+from components.produtividade_unitaria import render_produtividade_unitaria
 from components.visoes_dashboards import (
     render_projetos,
     render_regularidade_producao,
@@ -1120,6 +1121,7 @@ with st.sidebar:
         "Projetos": "◈  Projetos",
         "Quantidade de O.S.": "▤  Quantidade de O.S.",
         "Contratos": "◈  Contratos",
+        "Produtividade unitária": "◫  Produtividade unitária",
         "Regularidade": "◌  Regularidade",
         "Eficiência": "▧  Eficiência por técnico",
         "Técnicos": "♙  Técnicos",
@@ -1169,8 +1171,12 @@ def render_dashboard() -> None:
             "Ordens de serviço registradas na aba Prod, por competência e técnico.",
         ),
         "Contratos": (
-            "Quantidade de contratos",
-            "Acompanhe os contratos atendidos por competência e técnico.",
+            "Contratos e eficiência",
+            "Acompanhe os contratos atendidos por competência, técnico e faixa de eficiência.",
+        ),
+        "Produtividade unitária": (
+            "Produtividade unitária",
+            "Compare pontos por O.S., pontos por contrato e o perfil volume × complexidade da equipe.",
         ),
         "Regularidade": (
             "Regularidade da produção",
@@ -1266,6 +1272,8 @@ def render_dashboard() -> None:
             render_prod_orders(filtered)
         elif navigation == "Contratos":
             render_contratos(filtered)
+        elif navigation == "Produtividade unitária":
+            render_produtividade_unitaria(filtered)
         elif navigation == "Regularidade":
             render_regularidade_producao(filtered, period_start, period_end)
         elif navigation == "Eficiência":

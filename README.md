@@ -12,7 +12,8 @@ Painel em Streamlit para acompanhar a produção dos técnicos ao longo do tempo
 - **Regularidade da produção** com média e mediana mensal, coeficiente de variação, destaques de oscilação e competências sem registros por técnico.
 - **Sazonalidade** com mapa de calor de Pontos Totais por competência e técnico ou projeto, além de tabela exportável em CSV.
 - Página **Quantidade de O.S.** com evolução por competência e ranking dos 15 técnicos com mais ordens (cada linha válida da aba `Prod` conta como uma O.S.).
-- Página **Contratos** no mesmo formato: indicadores, evolução mensal, ranking e matriz por técnico com meses com produção, média mensal e exportação CSV. A média mensal divide o total pelos meses em que o técnico teve ao menos um contrato válido; na linha Total geral usa os meses com contratos de qualquer técnico. Conta contratos distintos por técnico e competência, em todas as origens filtradas; contratos repetidos em outro mês ou técnico voltam a contar e o total soma essas contagens, não contratos únicos no período nem a Qtde_Contrato do arquivo inteiro.
+- Página **Contratos** com duas sub-abas: **Quantidade de contratos** (indicadores, evolução mensal, ranking e matriz por técnico com meses com produção, média mensal e exportação CSV) e **Eficiência de contratos** (classificação mensal dos contratos nas Faixas 1 a 5 de pontuação, filtros por técnico e faixa predominante, distribuição e evolução mensal das faixas, matriz de frequência por contrato e detalhamento mensal exportáveis em CSV). A contagem de quantidade considera contratos distintos por técnico e competência em todas as origens filtradas; a média mensal divide o total pelos meses com ao menos um contrato válido (e, na linha Total geral, usa os meses com contratos de qualquer técnico).
+- Página **Produtividade unitária** cruzando volume e complexidade: indicadores de **Pontos por O.S. (`Prod`)** e **Pontos por Contrato**, evolução mensal do ticket médio de pontos, gráfico de dispersão em 4 quadrantes (*Volume × Pontos unitários*), rankings Top 15 e tabela consolidada com exportação CSV.
 - **Saúde dos dados** com cobertura de projetos, dados de demonstração, status de sincronização, histórico de arquivos importados com o contador de contratos distintos de cada arquivo e detalhamento dos registros com a coluna **Qtde_Contrato**, exportável em CSV.
 - Filtros compartilhados por período, projeto e técnico; a página de técnicos permite escolher o projeto e o perfil individual.
 - Evolução mensal e ranking da equipe.
@@ -207,6 +208,7 @@ historico-producao/
 │   ├── eficiencia.py             # Eficiência por técnico e por contrato
 │   ├── painel_quantidades.py     # Componentes compartilhados dos painéis O.S. e contratos
 │   ├── prod_os.py                # Página de quantidade de O.S.
+│   ├── produtividade_unitaria.py # Página de produtividade unitária (pontos por O.S. e contrato)
 │   ├── sidebar.py                # Sidebar corporativa e temas
 │   └── visoes_dashboards.py      # Projetos, resumo executivo e saúde da base
 └── tests/
@@ -217,6 +219,7 @@ historico-producao/
     ├── test_eficiencia.py        # Eficiência por técnico e por contrato
     ├── test_prod_os.py           # Testes da página de O.S.
     ├── test_production.py        # Testes de regras de negócio
+    ├── test_produtividade_unitaria.py # Testes da página de produtividade unitária
     ├── test_streamlit_app.py     # Testes de integração da UI
     └── test_visoes_dashboards.py # Testes das visões e saúde da base
 ```
