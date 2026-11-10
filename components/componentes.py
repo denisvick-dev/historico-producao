@@ -36,6 +36,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 from components.sidebar import (
+    LOGO_PADRAO_TOTALE,
     TemaSidebarType,
     _css_tema,
     _obter_tema_sidebar,
@@ -2149,6 +2150,7 @@ __all__ = [
     "FontInjector",
     "Fontes",
     "Formatadores",
+    "LOGO_PADRAO_TOTALE",
     "PlotlyConfig",
     "TemaKPI",
     "TemaKPIType",

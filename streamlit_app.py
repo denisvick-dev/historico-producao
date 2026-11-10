@@ -24,6 +24,7 @@ structlog.configure(
 logger = structlog.get_logger(__name__)
 
 from components.componentes import (
+    LOGO_PADRAO_TOTALE,
     Cores,
     Fontes,
     aplicar_estilo_corp,
@@ -39,22 +40,34 @@ from components.contratos import render_contratos
 from components.eficiencia import render_eficiencia
 from components.prod_os import render_prod_orders
 from components.produtividade_unitaria import render_produtividade_unitaria
+from components.quadro_tecnicos import render_quadro_tecnicos
 from components.visoes_dashboards import (
     render_projetos,
     render_regularidade_producao,
     render_saude_dados,
     selecionar_periodo_anterior,
 )
-from drive_import import DriveImportError, import_drive_folder_snapshot
+from drive_import import (
+    DriveImportError,
+    import_drive_folder_snapshot,
+    import_roster_spreadsheet,
+)
+import production as production_mod
 from production import (
+    DEFAULT_ROSTER_SHEET_ID,
+    ROSTER_STATUS_ORDER,
     count_active_months_by_technician,
     create_demonstration,
+    extract_spreadsheet_id,
     format_points,
     get_drive_file_fingerprints,
+    get_roster_fingerprint,
     import_batches,
     init_database,
     load_dashboard_snapshot,
+    load_roster,
     month_label,
+    save_roster_records,
     summarize,
     sync_drive_records,
 )
@@ -64,10 +77,21 @@ try:
 except (KeyError, StreamlitSecretNotFoundError, AttributeError):
     _drive_folder_secret = None
 
+try:
+    _roster_sheet_secret = st.secrets.get("roster_sheet_id")
+except (KeyError, StreamlitSecretNotFoundError, AttributeError):
+    _roster_sheet_secret = None
+
 DRIVE_FOLDER_ID = (
     _drive_folder_secret
     or os.getenv("DRIVE_FOLDER_ID")
     or "1P0ComfPrfZiq-bHfOi8fWJeAE4GAEkBq"
+)
+ROSTER_SHEET_ID = (
+    extract_spreadsheet_id(
+        str(_roster_sheet_secret or os.getenv("ROSTER_SHEET_ID") or "")
+    )
+    or DEFAULT_ROSTER_SHEET_ID
 )
 
 COLORS = {
@@ -83,7 +107,7 @@ COLORS = {
 
 st.set_page_config(
     page_title="Histórico de produção | Totale",
-    page_icon="📈",
+    page_icon=str(LOGO_PADRAO_TOTALE) if LOGO_PADRAO_TOTALE.is_file() else "📈",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -489,6 +513,8 @@ def apply_filters(
     records: pd.DataFrame,
     *,
     show_technicians: bool = True,
+    apply_roster_filters: bool = True,
+    roster: pd.DataFrame | None = None,
 ) -> tuple[
     pd.DataFrame,
     list[str],
@@ -498,9 +524,76 @@ def apply_filters(
     pd.Timestamp,
 ]:
     """Renderiza filtros e devolve o recorte, dimensões e limites temporais."""
-    all_technicians = sorted(records["technician"].unique())
+    has_roster = bool(
+        apply_roster_filters
+        and "roster_status" in records.columns
+        and records["roster_status"].ne("Sem cadastro").any()
+    )
     all_projects = sorted(records["project"].dropna().unique())
+
+    selected_statuses: list[str] = []
+    selected_monitors: list[str] = []
+    selected_bases: list[str] = []
+
     with st.container(border=True):
+        if has_roster:
+            present_statuses = set(records["roster_status"].dropna().unique())
+            if roster is not None and not roster.empty and "status" in roster.columns:
+                present_statuses.update(roster["status"].dropna().unique())
+            status_options = [s for s in ROSTER_STATUS_ORDER if s in present_statuses]
+            for extra in sorted(present_statuses):
+                if extra not in status_options:
+                    status_options.append(extra)
+            default_status = ["ATIVO"] if "ATIVO" in status_options else []
+
+            roster_cols = st.columns([1.35, 1.45, 1.3])
+            with roster_cols[0]:
+                selected_statuses = st.multiselect(
+                    "Situação cadastral (lista_ativos)",
+                    status_options,
+                    default=default_status,
+                    placeholder="Todas as situações",
+                    key="roster_status_filter",
+                )
+            with roster_cols[1]:
+                monitor_options = sorted(
+                    m for m in records["monitor"].dropna().unique() if str(m).strip()
+                )
+                selected_monitors = st.multiselect(
+                    "Monitor",
+                    monitor_options,
+                    default=[],
+                    placeholder="Todos os monitores",
+                    key="monitor_filter",
+                )
+            with roster_cols[2]:
+                base_options = sorted(
+                    b for b in records["base"].dropna().unique() if str(b).strip()
+                )
+                selected_bases = st.multiselect(
+                    "Base",
+                    base_options,
+                    default=[],
+                    placeholder="Todas as bases",
+                    key="base_filter",
+                )
+
+        roster_scoped = records
+        if has_roster:
+            if selected_statuses:
+                roster_scoped = roster_scoped[
+                    roster_scoped["roster_status"].isin(selected_statuses)
+                ]
+            if selected_monitors:
+                roster_scoped = roster_scoped[
+                    roster_scoped["monitor"].isin(selected_monitors)
+                ]
+            if selected_bases:
+                roster_scoped = roster_scoped[
+                    roster_scoped["base"].isin(selected_bases)
+                ]
+
+        all_technicians = sorted(roster_scoped["technician"].unique())
         filter_columns = st.columns(
             [1.15, 1.55, 1.7] if show_technicians else [1.15, 1.55]
         )
@@ -528,6 +621,11 @@ def apply_filters(
             )
         selected_technicians = []
         if show_technicians:
+            prior_tech = st.session_state.get("technician_filter")
+            if isinstance(prior_tech, list):
+                valid_prior = [t for t in prior_tech if t in all_technicians]
+                if valid_prior != prior_tech:
+                    st.session_state["technician_filter"] = valid_prior
             with filter_columns[2]:
                 selected_technicians = st.multiselect(
                     "Técnicos",
@@ -537,7 +635,7 @@ def apply_filters(
                     key="technician_filter",
                 )
 
-    filtered = records.copy()
+    filtered = roster_scoped.copy()
     months: int | None = None
     last_date = records["reference_date"].max()
     first_date = records["reference_date"].min()
@@ -904,11 +1002,33 @@ def render_technicians(filtered: pd.DataFrame) -> None:
     technician_data = filtered[filtered["technician"].eq(selected)]
     totals = ranking[ranking["technician"].eq(selected)].iloc[0]
 
+    meta_parts: list[str] = []
+    first_row = technician_data.iloc[0]
+    if str(first_row.get("re_code", "")).strip():
+        meta_parts.append(f"RE {first_row['re_code']}")
+    if str(first_row.get("login", "")).strip():
+        meta_parts.append(f"Login {first_row['login']}")
+    status_val = str(first_row.get("roster_status", "")).strip()
+    if status_val and status_val != "Sem cadastro":
+        meta_parts.append(status_val)
+    monitor_val = str(first_row.get("monitor", "")).strip()
+    if monitor_val and monitor_val != "Sem monitor":
+        meta_parts.append(f"Monitor: {monitor_val}")
+    base_val = str(first_row.get("base", "")).strip()
+    if base_val and base_val != "Sem base":
+        meta_parts.append(f"Base: {base_val}")
+    meta_html = (
+        f'<div style="color:#64748B;font-size:12px;margin-top:4px;">'
+        f"{' &nbsp;·&nbsp; '.join(meta_parts)}</div>"
+        if meta_parts
+        else ""
+    )
+
     st.markdown(
         f"""
         <div class="technician-hero">
             <div class="avatar">{initials(selected)}</div>
-            <div><div class="tech-name">{selected}</div><div class="rank-pill">{position}º lugar no ranking do período</div></div>
+            <div><div class="tech-name">{selected}</div><div class="rank-pill">{position}º lugar no ranking do período</div>{meta_html}</div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -1001,15 +1121,24 @@ def render_technicians(filtered: pd.DataFrame) -> None:
 
 
 @st.cache_resource(show_spinner=False)
-def _initialize_demo_once() -> None:
-    """Cria a base de demonstração uma vez por processo do app."""
+def _initialize_demo_once(db_path_key: str) -> None:
+    """Cria a base de demonstração uma vez por banco configurado."""
+    del db_path_key
     create_demonstration()
 
 
 @st.cache_data(ttl=60, show_spinner=False)
-def _load_dashboard_snapshot() -> tuple[pd.DataFrame, dict]:
+def _load_dashboard_snapshot(db_path_key: str) -> tuple[pd.DataFrame, dict]:
     """Mantém a consulta da base em cache curto para navegação mais fluida."""
+    del db_path_key
     return load_dashboard_snapshot()
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def _load_roster_cached(db_path_key: str) -> pd.DataFrame:
+    """Mantém o quadro cadastral (lista_ativos / desligados) em cache curto."""
+    del db_path_key
+    return load_roster()
 
 
 def _trim_for_test_runtime(
@@ -1036,16 +1165,51 @@ def _drive_service_account() -> Mapping[str, Any] | None:
         return None
 
 
-logger.info("aplicacao_iniciando", pasta_drive=DRIVE_FOLDER_ID)
+def _sync_roster_sheet(*, force: bool = False) -> tuple[bool, str]:
+    """Sincroniza a planilha lista_ativos sob demanda ou na abertura da sessão."""
+    known_fp = None if force else get_roster_fingerprint(ROSTER_SHEET_ID)
+    try:
+        roster_result = import_roster_spreadsheet(
+            _drive_service_account(),
+            ROSTER_SHEET_ID,
+            known_fingerprint=known_fp,
+            allow_public_fallback=True,
+        )
+    except DriveImportError as error:
+        logger.warning("falha_sincronizacao_cadastro", erro=str(error))
+        return False, f"Falha ao sincronizar lista_ativos: {error}"
 
-# Preserva a sincronização automática da pasta do Drive: ela ocorre ao abrir uma
-# nova sessão, antes da leitura/cache do painel. A UI não expõe importação manual.
+    if roster_result.refreshed:
+        saved = save_roster_records(
+            roster_result.records,
+            is_demo=False,
+            sheet_id=ROSTER_SHEET_ID,
+            fingerprint=roster_result.fingerprint,
+        )
+        _load_dashboard_snapshot.clear()
+        _load_roster_cached.clear()
+        return (
+            True,
+            f"Cadastro '{roster_result.sheet_name}' atualizado ({saved} colaboradores).",
+        )
+    return True, f"Cadastro '{roster_result.sheet_name}' já está atualizado."
+
+
+logger.info(
+    "aplicacao_iniciando",
+    pasta_drive=DRIVE_FOLDER_ID,
+    planilha_cadastro=ROSTER_SHEET_ID,
+)
+
+# Preserva a sincronização automática da pasta do Drive e da planilha lista_ativos:
+# ela ocorre ao abrir uma nova sessão, antes da leitura/cache do painel.
 init_database()
 logger.info("banco_dados_inicializado")
 if "drive_auto_sync_attempted" not in st.session_state:
     st.session_state["drive_auto_sync_attempted"] = True
     drive_service_account = _drive_service_account()
     if drive_service_account is not None:
+        roster_ok, roster_msg = _sync_roster_sheet(force=False)
         try:
             known_file_fingerprints = get_drive_file_fingerprints(DRIVE_FOLDER_ID)
             drive_result = import_drive_folder_snapshot(
@@ -1057,7 +1221,9 @@ if "drive_auto_sync_attempted" not in st.session_state:
             logger.error("falha_sincronizacao_drive", erro=str(error))
             st.session_state["drive_auto_sync_status"] = {
                 "type": "warning",
-                "message": f"Falha ao atualizar os dados do Drive: {error}",
+                "message": (
+                    f"Falha ao atualizar os dados do Drive: {error} · {roster_msg}"
+                ),
                 "issues": [],
             }
         else:
@@ -1069,21 +1235,31 @@ if "drive_auto_sync_attempted" not in st.session_state:
                 file_fingerprints=drive_result.file_fingerprints,
             )
             _load_dashboard_snapshot.clear()
+            all_issues = list(drive_result.issues[:10])
+            if not roster_ok:
+                all_issues.insert(0, roster_msg)
             st.session_state["drive_auto_sync_status"] = {
-                "type": "warning" if drive_result.issues else "success",
+                "type": "warning" if all_issues else "success",
                 "message": (
                     f"Drive sincronizado: {count} registros atualizados; "
                     f"{drive_result.successful_files} arquivo(s) processado(s) "
-                    f"de {len(drive_result.file_ids)}."
+                    f"de {len(drive_result.file_ids)}. {roster_msg}"
                 ),
-                "issues": drive_result.issues[:10],
+                "issues": all_issues,
             }
             logger.info(
                 "sincronizacao_drive_sucesso",
                 registros_sincronizados=count,
                 arquivos_processados=drive_result.successful_files,
-                total_issues=len(drive_result.issues),
+                total_issues=len(all_issues),
             )
+    elif os.getenv("ROSTER_PUBLIC_SYNC", "0") == "1":
+        roster_ok, roster_msg = _sync_roster_sheet(force=False)
+        st.session_state["drive_auto_sync_status"] = {
+            "type": "success" if roster_ok else "warning",
+            "message": roster_msg,
+            "issues": [],
+        }
     else:
         st.session_state["drive_auto_sync_status"] = {
             "type": "info",
@@ -1094,8 +1270,9 @@ if "drive_auto_sync_attempted" not in st.session_state:
             "issues": [],
         }
 
-_initialize_demo_once()
-records, stats = _load_dashboard_snapshot()
+_active_db_key = str(production_mod.DB_PATH)
+_initialize_demo_once(_active_db_key)
+records, stats = _load_dashboard_snapshot(_active_db_key)
 records, stats = _trim_for_test_runtime(records, stats)
 logger.info(
     "dashboard_carregado",
@@ -1108,7 +1285,8 @@ with st.sidebar:
     render_sidebar_brand(
         nome="TOTALE",
         subtitulo="Gestão de produção",
-        icone="T",
+        logo=LOGO_PADRAO_TOTALE,
+        logo_banner=True,
     )
     render_sidebar_theme_selector(
         label="Tema da barra lateral",
@@ -1125,6 +1303,7 @@ with st.sidebar:
         "Regularidade": "◌  Regularidade",
         "Eficiência": "▧  Eficiência por técnico",
         "Técnicos": "♙  Técnicos",
+        "Quadro de técnicos": "⊞  Quadro de técnicos",
         "Saúde dos dados": "◉  Saúde dos dados",
     }
     # Evita seleções de navegação que não existam mais.
@@ -1149,7 +1328,8 @@ with st.sidebar:
 @st.fragment(run_every="120s")
 def render_dashboard() -> None:
     """Painel principal, atualizado em segundo plano sem recarregar a página toda."""
-    current_records, current_stats = _load_dashboard_snapshot()
+    db_key = str(production_mod.DB_PATH)
+    current_records, current_stats = _load_dashboard_snapshot(db_key)
     current_records, current_stats = _trim_for_test_runtime(
         current_records, current_stats
     )
@@ -1190,6 +1370,10 @@ def render_dashboard() -> None:
             "Produção por técnico",
             "Analise a evolução individual e compare com a equipe.",
         ),
+        "Quadro de técnicos": (
+            "Quadro de técnicos · lista_ativos",
+            "Conciliação entre o cadastro oficial (lista_ativos / desligados) e a produção por Monitor, U.N. e Base.",
+        ),
         "Saúde dos dados": (
             "Saúde dos dados e importações",
             "Confira a cobertura, a sincronização e o contador de contratos de "
@@ -1221,6 +1405,8 @@ def render_dashboard() -> None:
             unsafe_allow_html=True,
         )
 
+    current_roster = _load_roster_cached(db_key)
+
     if navigation == "Saúde dos dados":
         render_saude_dados(
             current_records,
@@ -1228,6 +1414,26 @@ def render_dashboard() -> None:
             import_batches(),
             st.session_state.get("drive_auto_sync_status"),
         )
+    elif navigation == "Quadro de técnicos":
+        if current_records.empty:
+            render_quadro_tecnicos(
+                current_records,
+                current_roster,
+                sheet_id=ROSTER_SHEET_ID,
+                on_sync_callback=lambda: _sync_roster_sheet(force=True),
+            )
+        else:
+            filtered_quadro, *_ = apply_filters(
+                current_records,
+                show_technicians=False,
+                apply_roster_filters=False,
+            )
+            render_quadro_tecnicos(
+                filtered_quadro,
+                current_roster,
+                sheet_id=ROSTER_SHEET_ID,
+                on_sync_callback=lambda: _sync_roster_sheet(force=True),
+            )
     elif current_records.empty:
         st.markdown(
             """
@@ -1250,6 +1456,7 @@ def render_dashboard() -> None:
         ) = apply_filters(
             current_records,
             show_technicians=navigation != "Técnicos",
+            roster=current_roster,
         )
         if filtered.empty:
             st.info(

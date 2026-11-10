@@ -22,10 +22,13 @@ Dependência: streamlit.
 
 from __future__ import annotations
 
+import base64
 import html as html_lib
 import logging
 import re
 from datetime import datetime
+from functools import lru_cache
+from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
@@ -37,6 +40,20 @@ logger = logging.getLogger(__name__)
 TemaSidebarType = Literal["claro", "azul", "laranja", "padrao"]
 _FUSO_BR = ZoneInfo("America/Sao_Paulo")
 _TEMAS_VALIDOS: tuple[str, ...] = ("claro", "azul", "laranja")
+LOGO_PADRAO_TOTALE: Path = (
+    Path(__file__).resolve().parent.parent / "assets" / "novo-logo-totale.png"
+)
+_MIMES_IMAGEM: dict[str, str] = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".webp": "image/webp",
+    ".gif": "image/gif",
+    ".svg": "image/svg+xml",
+}
+_REGEX_DATA_URI_IMAGEM = re.compile(
+    r"^data:image/(?:png|jpeg|jpg|webp|gif|svg\+xml);base64,[A-Za-z0-9+/=\s]+$"
+)
 
 # Tokens centralizados do sidebar. Os valores são deliberadamente opacos onde
 # possível, para manter previsível a leitura dos controles e do menu.
@@ -499,6 +516,37 @@ _CSS_SIDEBAR = r"""
     color: var(--totale-sb-secondary); font-size: 10.5px;
     line-height: 1.4; margin-top: 4px;
 }
+.sidebar-brand-banner {
+    display: flex; align-items: center; justify-content: center;
+    width: 100%; border-radius: 11px; padding: 8px 12px;
+    box-sizing: border-box;
+}
+.sidebar-brand-banner--plate {
+    background: linear-gradient(180deg, #FFFFFF 0%, #F4F7FC 100%);
+    border: 1px solid rgba(255, 255, 255, .65);
+    box-shadow: 0 4px 14px rgba(2, 12, 27, .22);
+}
+.sidebar-brand-banner--clean {
+    background: #FFFFFF;
+    border: 1px solid #E6EDF5;
+    padding: 7px 10px;
+}
+.sidebar-brand-wordmark {
+    display: block; width: 100%; max-width: 172px;
+    height: auto; max-height: 52px; object-fit: contain;
+}
+.sidebar-brand-banner-meta {
+    display: flex; align-items: center; justify-content: center;
+    gap: 6px; margin-top: 9px; text-align: center;
+}
+.sidebar-brand-banner-meta .sidebar-brand-sub {
+    margin-top: 0;
+}
+.sidebar-brand-banner-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--totale-sb-nav-active-accent);
+    flex: 0 0 6px;
+}
 .sidebar-section-header {
     margin: 19px 0 7px; padding: 3px 0 7px 12px; position: relative;
 }
@@ -725,7 +773,14 @@ def carregar_layout_corporativo(
     tema_ativo = _obter_tema_sidebar(tema_sidebar)
     aplicar_estilo(tema_sidebar=tema_ativo)
     if renderizar_sidebar:
-        render_sidebar_brand(nome=nome, subtitulo=subtitulo, versao=versao)
+        logo_padrao = LOGO_PADRAO_TOTALE if LOGO_PADRAO_TOTALE.is_file() else None
+        render_sidebar_brand(
+            nome=nome,
+            subtitulo=subtitulo,
+            versao=versao,
+            logo=logo_padrao,
+            logo_banner=logo_padrao is not None,
+        )
         render_sidebar_theme_selector()
 
 
@@ -739,14 +794,54 @@ def _url_valida(url: str | None) -> bool:
         return False
 
 
+@lru_cache(maxsize=16)
+def _carregar_data_uri_arquivo(caminho_str: str, mtime_ns: int) -> str | None:
+    del mtime_ns
+    caminho = Path(caminho_str)
+    mime = _MIMES_IMAGEM.get(caminho.suffix.lower())
+    if not mime:
+        return None
+    try:
+        conteudo = caminho.read_bytes()
+    except OSError:
+        logger.warning("Não foi possível ler o logotipo em %s.", caminho_str)
+        return None
+    codificado = base64.b64encode(conteudo).decode("ascii")
+    return f"data:{mime};base64,{codificado}"
+
+
+def _resolver_src_imagem(origem: str | Path | None) -> str | None:
+    """Resolve URL HTTP(S), data URI segura ou arquivo de imagem local."""
+    if origem is None:
+        return None
+    texto = str(origem).strip()
+    if not texto:
+        return None
+    if _url_valida(texto):
+        return texto
+    if texto.startswith("data:image/") and _REGEX_DATA_URI_IMAGEM.fullmatch(texto):
+        return texto
+    try:
+        caminho = Path(origem)
+        if caminho.is_file() and caminho.suffix.lower() in _MIMES_IMAGEM:
+            resolvido = caminho.resolve()
+            return _carregar_data_uri_arquivo(
+                str(resolvido), resolvido.stat().st_mtime_ns
+            )
+    except OSError:
+        return None
+    return None
+
+
 def render_sidebar_brand(
     nome: str = "TOTALE",
     subtitulo: str = "Analytics & Intelligence",
     versao: str = "",
-    logo_url: str | None = None,
+    logo_url: str | Path | None = None,
     icone: str = "⚡",
     titulo: str = "",
-    logo: str | None = None,
+    logo: str | Path | None = None,
+    logo_banner: bool = False,
     tema: TemaSidebarType | str | None = None,
     **kwargs: Any,
 ) -> None:
@@ -754,12 +849,12 @@ def render_sidebar_brand(
     nome_final = str(titulo or nome or "").strip()
     subtitulo_final = str(kwargs.get("segmento", subtitulo) or "").strip()
     versao_final = str(versao or "").strip()
-    logo_final = logo or logo_url
+    logo_final = logo if logo is not None else logo_url
     tema_ativo = _obter_tema_sidebar(tema)
     if not nome_final and not subtitulo_final and not logo_final:
         return
 
-    logo_valida = _url_valida(str(logo_final)) if logo_final else False
+    logo_src = _resolver_src_imagem(logo_final)
 
     if tema_ativo == "azul":
         cor_nome, fundo_badge, cor_badge, borda_badge = (
@@ -797,9 +892,33 @@ def render_sidebar_brand(
             f'font-size:10px;font-weight:750;letter-spacing:.04em;">{_escapar(badge_txt)}</span>'
         )
 
-    if logo_valida:
+    if logo_src and logo_banner:
+        classe_banner = (
+            "sidebar-brand-banner--clean"
+            if tema_ativo == "claro"
+            else "sidebar-brand-banner--plate"
+        )
+        subtitulo_banner = (
+            '<div class="sidebar-brand-banner-meta">'
+            '<span class="sidebar-brand-banner-dot" aria-hidden="true"></span>'
+            f'<span class="sidebar-brand-sub">{_escapar(subtitulo_final)}</span>'
+            "</div>"
+            if subtitulo_final
+            else ""
+        )
+        badge_wrap = f'<div style="text-align:center;">{badge}</div>' if badge else ""
+        markup = (
+            f'<div class="sidebar-brand"><div class="sidebar-brand-banner {classe_banner}">'
+            f'<img class="sidebar-brand-wordmark" src="{_escapar(logo_src)}" '
+            f'alt="{_escapar(nome_final or "Logotipo")}" loading="eager">'
+            f"</div>{subtitulo_banner}{badge_wrap}</div>"
+        )
+        _render_html(markup, st.sidebar)
+        return
+
+    if logo_src:
         marca_visual = (
-            f'<img class="sidebar-brand-logo" src="{_escapar(logo_final)}" '
+            f'<img class="sidebar-brand-logo" src="{_escapar(logo_src)}" '
             f'alt="{_escapar(nome_final or "Logotipo")}" loading="lazy">'
         )
     else:
@@ -1227,6 +1346,7 @@ def render_sidebar_spacer(
 
 
 __all__ = [
+    "LOGO_PADRAO_TOTALE",
     "TemaSidebarType",
     "aplicar_estilo",
     "aplicar_estilo_corp",
