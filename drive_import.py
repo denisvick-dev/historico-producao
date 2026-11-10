@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping
 from concurrent.futures import ThreadPoolExecutor
 from copy import copy
 from dataclasses import dataclass
@@ -7,7 +8,7 @@ from datetime import date, datetime
 from pathlib import Path
 from threading import Lock, local
 from time import perf_counter
-from typing import Any, Callable, Mapping
+from typing import Any
 from urllib.parse import quote
 
 import pandas as pd

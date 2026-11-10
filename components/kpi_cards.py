@@ -218,7 +218,7 @@ def resumo_de_serie(
         "sparkline": [float(v) for v in numerica.tail(30)],
         "anterior": anterior,
         "atual": atual,
-        "pontos": int(len(numerica)),
+        "pontos": len(numerica),
     }
 
 
@@ -511,7 +511,7 @@ def render_metric(
     value: Any = "",
     delta: Any = None,
     delta_color: TipoDeltaColorType = "normal",
-    help: str | None = None,  # noqa: A002 - paridade com st.metric
+    help: str | None = None,
     *,
     container: Any = None,
     tema: TemaKPIType = "azul",
@@ -804,10 +804,10 @@ def css_kpi_avancado() -> str:
 
 
 __all__ = [
+    "VERSAO_KPI",
     "SpecKPIAvancado",
     "TamanhoKPIType",
     "TipoDeltaColorType",
-    "VERSAO_KPI",
     "calcular_variacao_pct",
     "css_kpi_avancado",
     "direcao_delta",

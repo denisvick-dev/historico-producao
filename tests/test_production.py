@@ -285,7 +285,7 @@ class PersistenceTests(unittest.TestCase):
 
     @staticmethod
     def record(
-        points: float | int = 100,
+        points: float = 100,
         technician: str = "André Santos",
         origin: str = "Prod",
         row: int = 2,

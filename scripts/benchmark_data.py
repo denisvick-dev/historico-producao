@@ -10,7 +10,7 @@ from time import perf_counter
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-import production  # noqa: E402
+import production
 
 
 def main() -> None:

@@ -12,10 +12,10 @@ import os
 import re
 import sqlite3
 import unicodedata
+from collections.abc import Callable, Generator, Iterable, Mapping
 from contextlib import contextmanager
 from datetime import date, datetime
 from pathlib import Path
-from typing import Callable, Generator, Iterable, Mapping
 
 import pandas as pd
 
@@ -1226,7 +1226,7 @@ def summarize_os(frame: pd.DataFrame, keys: str | list[str]) -> pd.DataFrame:
     if prod.empty:
         return pd.DataFrame(columns=columns)
     if not keys:
-        return pd.DataFrame([{"os_count": int(len(prod))}])
+        return pd.DataFrame([{"os_count": len(prod)}])
     return (
         prod.groupby(keys, as_index=False, dropna=False)
         .size()
@@ -1234,9 +1234,7 @@ def summarize_os(frame: pd.DataFrame, keys: str | list[str]) -> pd.DataFrame:
     )
 
 
-def month_label(
-    value: int | float | str | date | datetime, include_year: bool = True
-) -> str:
+def month_label(value: float | str | date | datetime, include_year: bool = True) -> str:
     timestamp = pd.Timestamp(value)
     label = MONTHS_SHORT[timestamp.month - 1]
     return f"{label}/{str(timestamp.year)[2:]}" if include_year else label.capitalize()

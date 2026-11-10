@@ -382,8 +382,8 @@ class PainelContratosTests(unittest.TestCase):
         self.assertEqual(filtrada.iloc[0]["Média mensal"], 1.5)
 
     def test_destaque_e_csv_nao_confundem_resumos_com_competencias(self) -> None:
-        from components.painel_quantidades import best_month_style, csv_download
         from components.contratos import resumir_contratos
+        from components.painel_quantidades import best_month_style, csv_download
 
         frame = pd.DataFrame(
             {

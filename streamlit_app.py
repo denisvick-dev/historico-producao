@@ -32,8 +32,8 @@ from components.componentes import (
     render_sidebar_divider,
     render_sidebar_footer_info,
     render_sidebar_section,
-    render_ticker,
     render_sidebar_theme_selector,
+    render_ticker,
 )
 from components.contratos import render_contratos
 from components.eficiencia import render_eficiencia
@@ -724,18 +724,12 @@ def render_overview(
     ranking = summarize(filtered, "technician").sort_values(
         "points_total", ascending=False
     )
-    with chart_col:
-        with st.container(border=True):
-            st.markdown("**Evolução mensal**")
-            st.plotly_chart(
-                production_chart(monthly), width="stretch", config=CHART_CONFIG
-            )
-    with ranking_col:
-        with st.container(border=True):
-            st.markdown("**Ranking de técnicos**")
-            st.plotly_chart(
-                ranking_chart(ranking), width="stretch", config=CHART_CONFIG
-            )
+    with chart_col, st.container(border=True):
+        st.markdown("**Evolução mensal**")
+        st.plotly_chart(production_chart(monthly), width="stretch", config=CHART_CONFIG)
+    with ranking_col, st.container(border=True):
+        st.markdown("**Ranking de técnicos**")
+        st.plotly_chart(ranking_chart(ranking), width="stretch", config=CHART_CONFIG)
 
     section_heading(
         "Desempenho por técnico", "O total é sempre a soma dos pontos de Prod e Gpon"
@@ -803,7 +797,7 @@ def render_overview(
             "Pontos Totais": st.column_config.NumberColumn(format="%.2f"),
             "Meses com produção": st.column_config.NumberColumn(format="%d"),
             "Melhor mês": st.column_config.TextColumn(width="small"),
-            "Média mensal": st.column_config.NumberColumn(format="%.2f"),
+            "Média mensal": st.column_config.NumberColumn(format="%.0f"),
             "Variação no último mês": st.column_config.TextColumn(width="small"),
         },
     )
@@ -1029,7 +1023,7 @@ def _trim_for_test_runtime(
     recent["reference_date"] = pd.to_datetime(recent["reference_date"])
     recent["period"] = recent["reference_date"].dt.to_period("M").dt.to_timestamp()
     trimmed_stats = dict(stats)
-    trimmed_stats["records"] = int(len(recent))
+    trimmed_stats["records"] = len(recent)
     trimmed_stats["technicians"] = int(recent["technician"].nunique())
     return recent, trimmed_stats
 

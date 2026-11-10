@@ -18,15 +18,26 @@ from components.painel_quantidades import (
     AZUL_TOTALE,
     CHART_CONFIG,
     LARANJA_TOTALE,
+)
+from components.painel_quantidades import (
     best_month_style as _best_month_style,
+)
+from components.painel_quantidades import (
     chart_layout as _chart_layout,
+)
+from components.painel_quantidades import (
     csv_download as _csv_download,
+)
+from components.painel_quantidades import (
     metric_card as _metric_card,
+)
+from components.painel_quantidades import (
     section_heading as _section_heading,
+)
+from components.painel_quantidades import (
     total_column_style as _total_column_style,
 )
 from production import clean_contract, is_valid_contract, month_label
-
 
 REGRA_CONTAGEM = (
     "Contratos distintos por técnico e competência, considerando todas as origens. "
@@ -112,14 +123,15 @@ def resumir_contratos(
         .rename(columns={"size": "contratos"})
     )
     mensal = (
-        detalhe.groupby("period", as_index=False)["contratos"]
-        .sum()
-        .sort_values("period")
+        detalhe.groupby("period", as_index=False)
+        .agg(contratos=("contratos", "sum"))
+        .sort_values(by=["period"], ascending=[True])
+        .reset_index(drop=True)
     )
     ranking = (
-        detalhe.groupby("technician", as_index=False)["contratos"]
-        .sum()
-        .sort_values(["contratos", "technician"], ascending=[False, True])
+        detalhe.groupby("technician", as_index=False)
+        .agg(contratos=("contratos", "sum"))
+        .sort_values(by=["contratos", "technician"], ascending=[False, True])
         .reset_index(drop=True)
     )
     matriz = (
@@ -176,7 +188,8 @@ def render_contratos(filtered: pd.DataFrame) -> None:
     total = int(mensal["contratos"].sum())
     ativos = len(ranking)
     ultimo = mensal.iloc[-1]
-    pico = mensal.loc[mensal["contratos"].idxmax()]
+    pico_idx = int(mensal["contratos"].argmax())
+    pico = mensal.iloc[pico_idx]
     destaque = ranking.iloc[0]
     render_ticker(
         [
@@ -275,7 +288,7 @@ def render_contratos(filtered: pd.DataFrame) -> None:
     }
     count_columns["Média mensal"] = st.column_config.NumberColumn(
         "Média mensal",
-        format="%.2f",
+        format="%.0f",
         help="Total de contratos dividido pelos meses com contratos no recorte.",
     )
     st.caption(

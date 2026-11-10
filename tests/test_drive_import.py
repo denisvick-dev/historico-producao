@@ -1,11 +1,10 @@
 import unittest
 from datetime import date
-
-import requests
 from threading import Barrier
 from unittest.mock import patch
 
 import pandas as pd
+import requests
 
 import drive_import
 import production

@@ -11,11 +11,23 @@ from components.painel_quantidades import (
     AZUL_TOTALE,
     CHART_CONFIG,
     LARANJA_TOTALE,
+)
+from components.painel_quantidades import (
     best_month_style as _best_month_style,
+)
+from components.painel_quantidades import (
     chart_layout as _chart_layout,
+)
+from components.painel_quantidades import (
     csv_download as _csv_download,
+)
+from components.painel_quantidades import (
     metric_card as _metric_card,
+)
+from components.painel_quantidades import (
     section_heading as _section_heading,
+)
+from components.painel_quantidades import (
     total_column_style as _total_column_style,
 )
 from production import PROD, month_label, summarize_os
@@ -155,14 +167,12 @@ def render_prod_orders(filtered: pd.DataFrame) -> None:
     ranking_fig.update_xaxes(showgrid=False, showticklabels=False)
 
     monthly_col, ranking_col = st.columns([1, 1.1])
-    with monthly_col:
-        with st.container(border=True):
-            st.markdown("**Evolução mensal de O.S.**")
-            st.plotly_chart(monthly_fig, width="stretch", config=CHART_CONFIG)
-    with ranking_col:
-        with st.container(border=True):
-            st.markdown("**O.S. por técnico · Top 15**")
-            st.plotly_chart(ranking_fig, width="stretch", config=CHART_CONFIG)
+    with monthly_col, st.container(border=True):
+        st.markdown("**Evolução mensal de O.S.**")
+        st.plotly_chart(monthly_fig, width="stretch", config=CHART_CONFIG)
+    with ranking_col, st.container(border=True):
+        st.markdown("**O.S. por técnico · Top 15**")
+        st.plotly_chart(ranking_fig, width="stretch", config=CHART_CONFIG)
 
     _section_heading(
         "O.S. por técnico",
