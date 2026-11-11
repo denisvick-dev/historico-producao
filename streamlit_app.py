@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import os
+import time
 from collections.abc import Mapping
 from typing import Any
 
@@ -53,6 +55,9 @@ from components.visoes_dashboards import (
     selecionar_periodo_anterior,
 )
 from drive_import import (
+    CONSULTIVO_PARSER_VERSION,
+    IMPORT_PARSER_VERSION,
+    ROSTER_PARSER_VERSION,
     DriveImportError,
     import_consultivo_folder_snapshot,
     import_drive_folder_snapshot,
@@ -69,6 +74,7 @@ from production import (
     extract_drive_folder_id,
     extract_spreadsheet_id,
     format_points,
+    get_consultivo_file_fingerprints,
     get_drive_file_fingerprints,
     get_roster_fingerprint,
     import_batches,
@@ -1174,6 +1180,14 @@ def _drive_service_account() -> Mapping[str, Any] | None:
     try:
         return st.secrets["gcp_service_account"]
     except (KeyError, StreamlitSecretNotFoundError):
+        raw_env = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "").strip()
+        if raw_env:
+            try:
+                parsed = json.loads(raw_env)
+                if isinstance(parsed, Mapping):
+                    return parsed
+            except ValueError:
+                return None
         return None
 
 
@@ -1217,7 +1231,7 @@ def _sync_consultivo_folder(*, force: bool = False) -> tuple[bool, str, list[str
             "Conta de serviço do Google Drive não configurada para Histórico Consultivo.",
             [],
         )
-    known_fps = {} if force else get_drive_file_fingerprints(CONSULTIVO_FOLDER_ID)
+    known_fps = {} if force else get_consultivo_file_fingerprints(CONSULTIVO_FOLDER_ID)
     try:
         cons_result = import_consultivo_folder_snapshot(
             drive_service_account,
@@ -1226,7 +1240,10 @@ def _sync_consultivo_folder(*, force: bool = False) -> tuple[bool, str, list[str
         )
     except DriveImportError as error:
         logger.warning("falha_sincronizacao_consultivo", erro=str(error))
-        return False, f"Falha ao sincronizar Histórico Consultivo: {error}", []
+        err_msg = f"Falha ao sincronizar Histórico Consultivo: {error}"
+        st.session_state["consultivo_sync_issues"] = [err_msg]
+        st.session_state["_last_consultivo_sync_ts"] = time.time()
+        return False, err_msg, [err_msg]
 
     saved = sync_consultivo_drive_records(
         cons_result.records,
@@ -1236,6 +1253,9 @@ def _sync_consultivo_folder(*, force: bool = False) -> tuple[bool, str, list[str
         file_fingerprints=cons_result.file_fingerprints,
     )
     _load_consultivo_cached.clear()
+    issues_top = list(cons_result.issues[:20])
+    st.session_state["consultivo_sync_issues"] = issues_top
+    st.session_state["_last_consultivo_sync_ts"] = time.time()
     msg = (
         f"Consultivo sincronizado: {saved} registros atualizados "
         f"({cons_result.successful_files}/{len(cons_result.file_ids)} arquivo(s))."
@@ -1327,8 +1347,15 @@ logger.info(
 # ela ocorre ao abrir uma nova sessão, antes da leitura/cache do painel.
 init_database()
 logger.info("banco_dados_inicializado")
-if "drive_auto_sync_attempted" not in st.session_state:
+_AUTO_SYNC_VERSION_TAG = (
+    f"{IMPORT_PARSER_VERSION}|{ROSTER_PARSER_VERSION}|{CONSULTIVO_PARSER_VERSION}"
+)
+if (
+    "drive_auto_sync_attempted" not in st.session_state
+    or st.session_state.get("drive_auto_sync_version") != _AUTO_SYNC_VERSION_TAG
+):
     st.session_state["drive_auto_sync_attempted"] = True
+    st.session_state["drive_auto_sync_version"] = _AUTO_SYNC_VERSION_TAG
     st.session_state["drive_auto_sync_status"] = _sync_external_data(force=False)
 
 _active_db_key = str(production_mod.DB_PATH)
@@ -1549,13 +1576,38 @@ def render_dashboard() -> None:
 
     current_roster = _load_roster_cached(db_key)
     current_consultivo, current_consultivo_stats = _load_consultivo_cached(db_key)
+    _paginas_consultivo = ("Consultivo", "Consultivo 2025 x 2026")
+    _drive_consultivo_disponivel = _drive_service_account() is not None
+
+    if navigation in _paginas_consultivo and _drive_consultivo_disponivel:
+        _first_cons_dt = str(current_consultivo_stats.get("first_date") or "")
+        _sem_base_2025 = not _first_cons_dt or _first_cons_dt > "2025-12-31"
+        _decorrido_cons = time.time() - float(
+            st.session_state.get("_last_consultivo_sync_ts", 0.0)
+        )
+        _cooldown_cons = 15.0 if _sem_base_2025 else 90.0
+        if _decorrido_cons >= _cooldown_cons:
+            _ok_auto_cons, _, _ = _sync_consultivo_folder(force=False)
+            if _ok_auto_cons:
+                current_consultivo, current_consultivo_stats = _load_consultivo_cached(
+                    db_key
+                )
+
+    def _acao_sincronizar_consultivo_manual() -> None:
+        with st.spinner("Sincronizando pasta Histórico Consultivo no Google Drive..."):
+            ok_sync, msg_sync, issues_sync = _sync_consultivo_folder(force=True)
+        st.session_state["consultivo_manual_sync_feedback"] = (
+            "warning" if (not ok_sync or issues_sync) else "success",
+            msg_sync,
+        )
+        st.rerun()
+
     is_demo_consultivo = bool(
         current_consultivo_stats.get("records")
         and current_consultivo_stats.get("demo_rows")
         == current_consultivo_stats.get("records")
     )
 
-    _paginas_consultivo = ("Consultivo", "Consultivo 2025 x 2026")
     if (
         (navigation not in _paginas_consultivo and is_demo)
         or (navigation in _paginas_consultivo and is_demo_consultivo)
@@ -1570,6 +1622,15 @@ def render_dashboard() -> None:
             unsafe_allow_html=True,
         )
 
+    if navigation in _paginas_consultivo:
+        _feedback_cons = st.session_state.pop("consultivo_manual_sync_feedback", None)
+        if isinstance(_feedback_cons, tuple) and len(_feedback_cons) == 2:
+            _tipo_fb, _msg_fb = _feedback_cons
+            if _tipo_fb == "success":
+                st.success(_msg_fb)
+            else:
+                st.warning(_msg_fb)
+
     if navigation == "Consultivo":
         st.button(
             "Abrir Comparativo 2025 x 2026 de Consultivos",
@@ -1582,13 +1643,18 @@ def render_dashboard() -> None:
             current_roster,
             consultivo_stats=current_consultivo_stats,
             consultivo_folder_id=CONSULTIVO_FOLDER_ID,
-            drive_configured=_drive_service_account() is not None,
+            drive_configured=_drive_consultivo_disponivel,
+            on_sync_consultivo=_acao_sincronizar_consultivo_manual,
+            sync_issues=st.session_state.get("consultivo_sync_issues"),
         )
     elif navigation == "Consultivo 2025 x 2026":
         render_comparativo_consultivo(
             current_consultivo,
             roster=current_roster,
             consultivo_folder_id=CONSULTIVO_FOLDER_ID,
+            drive_configured=_drive_consultivo_disponivel,
+            on_sync_consultivo=_acao_sincronizar_consultivo_manual,
+            sync_issues=st.session_state.get("consultivo_sync_issues"),
             on_abrir_painel_consultivo=_abrir_painel_consultivo,
             on_abrir_comparativo_contratos=_abrir_comparativo_anos,
             on_dados_importados=_load_consultivo_cached.clear,

@@ -750,6 +750,15 @@ def _resolver_janela_datas(
     elif periodo_predefinido == "Últimos 15 dias":
         default_ini = max(data_min, data_referencia - timedelta(days=14))
         default_fim = data_referencia
+    elif periodo_predefinido in ("Ano 2025", "Ano 2026"):
+        ano_alvo = 2025 if periodo_predefinido == "Ano 2025" else 2026
+        datas_ano = datas_validas[datas_validas.dt.year == ano_alvo]
+        if not datas_ano.empty:
+            default_ini = datas_ano.min().date()
+            default_fim = datas_ano.max().date()
+        else:
+            default_ini = max(data_min, min(data_max, date(ano_alvo, 1, 1)))
+            default_fim = max(default_ini, min(data_max, date(ano_alvo, 12, 31)))
     else:  # "Todo período" ou "Personalizado"
         default_ini = data_min
         default_fim = max_dados
@@ -799,6 +808,7 @@ def render_consultivo(
     consultivo_folder_id: str = DEFAULT_CONSULTIVO_FOLDER_ID,
     drive_configured: bool = False,
     on_sync_consultivo: Callable[[], None] | None = None,
+    sync_issues: list[str] | None = None,
 ) -> None:
     """Renderiza a visão executiva e histórica de Consultivos interligada a lista_ativos."""
     dark_mode = st.session_state.get("theme_mode", "light") == "dark"
@@ -830,7 +840,22 @@ def render_consultivo(
                 "🔄 Sincronizar Histórico Consultivo agora", key="btn_sync_cons_empty"
             ):
                 on_sync_consultivo()
+        if sync_issues:
+            with st.expander(
+                f"Avisos da última sincronização do Consultivo ({len(sync_issues)})",
+                expanded=True,
+            ):
+                for item in sync_issues[:20]:
+                    st.caption(f"• {item}")
         return
+
+    if sync_issues:
+        with st.expander(
+            f"Avisos da última sincronização do Consultivo ({len(sync_issues)})",
+            expanded=False,
+        ):
+            for item in sync_issues[:20]:
+                st.caption(f"• {item}")
 
     consultivo_work = normalizar_coluna_data_consultivo(consultivo_frame)
     datas_validas = (
@@ -852,6 +877,8 @@ def render_consultivo(
                 "Mês atual",
                 "Última semana",
                 "Últimos 15 dias",
+                "Ano 2026",
+                "Ano 2025",
                 "Todo período",
                 "Personalizado",
             ]
@@ -926,6 +953,17 @@ def render_consultivo(
         with top_cols[3]:
             if "cons_date_range" not in st.session_state:
                 st.session_state["cons_date_range"] = (default_ini, default_fim)
+            elif (
+                periodo_predefinido != "Personalizado"
+                and competencia_sel == "Automático (Atalho)"
+            ):
+                cur_preset_val = st.session_state["cons_date_range"]
+                if not (
+                    isinstance(cur_preset_val, (tuple, list))
+                    and len(cur_preset_val) == 2
+                    and tuple(cur_preset_val) == (default_ini, default_fim)
+                ):
+                    st.session_state["cons_date_range"] = (default_ini, default_fim)
             else:
                 cur_val = st.session_state["cons_date_range"]
                 if isinstance(cur_val, (tuple, list)) and len(cur_val) == 2:

@@ -313,13 +313,40 @@ def _preparar_base_consultivo_comparativa(
         login_clean.where(login_clean.ne(""), "Não Identificado"),
     )
     name_norm = seller_final.map(normalize_text)
-    seller_key = login_clean.where(login_clean.ne(""), name_norm)
+    full_name_mask = (
+        login_clean.ne("")
+        & name_norm.ne("")
+        & seller_final.str.strip().str.contains(" ", regex=False)
+    )
+    login_alias: dict[str, str] = {}
+    if full_name_mask.any():
+        canonical_login_by_name = (
+            pd.DataFrame(
+                {
+                    "_dt": work.loc[full_name_mask, "_dt"],
+                    "_nm": name_norm.loc[full_name_mask],
+                    "_lg": login_clean.loc[full_name_mask],
+                }
+            )
+            .sort_values("_dt")
+            .groupby("_nm")["_lg"]
+            .last()
+            .to_dict()
+        )
+        for nm_val, lg_val in zip(
+            name_norm.loc[full_name_mask], login_clean.loc[full_name_mask]
+        ):
+            canon_lg = canonical_login_by_name.get(nm_val, lg_val)
+            if canon_lg != lg_val:
+                login_alias[lg_val] = canon_lg
+    effective_login = login_clean.replace(login_alias) if login_alias else login_clean
+    seller_key = effective_login.where(effective_login.ne(""), name_norm)
     work = work[seller_key.ne("")].copy()
     if work.empty:
         return pd.DataFrame(columns=colunas_saida)
 
     work["_seller_key"] = seller_key.loc[work.index]
-    work["login"] = login_clean.loc[work.index].replace({"": "SEM LOGIN"})
+    work["login"] = effective_login.loc[work.index].replace({"": "SEM LOGIN"})
     work["seller"] = seller_final.loc[work.index]
 
     def _pick_dim(candidates: tuple[str, ...], default: str) -> pd.Series:
@@ -1558,6 +1585,9 @@ def render_comparativo_consultivo(
     roster: pd.DataFrame | None = None,
     *,
     consultivo_folder_id: str = DEFAULT_CONSULTIVO_FOLDER_ID,
+    drive_configured: bool = False,
+    on_sync_consultivo: Callable[[], None] | None = None,
+    sync_issues: list[str] | None = None,
     on_abrir_painel_consultivo: Callable[[], None] | None = None,
     on_abrir_comparativo_contratos: Callable[[], None] | None = None,
     on_dados_importados: Callable[[], None] | None = None,
@@ -1565,12 +1595,14 @@ def render_comparativo_consultivo(
     """Renderiza o painel executivo 2025 x 2026 de Consultivos e Mix de Produtos."""
     _injetar_css_comparativo_consultivo()
 
+    mostrar_sync_drive = bool(on_sync_consultivo is not None and drive_configured)
     # Barra superior de atalhos cruzados sem mutar chaves após instanciação.
     if (
         on_abrir_painel_consultivo is not None
         or on_abrir_comparativo_contratos is not None
+        or mostrar_sync_drive
     ):
-        nav_cols = st.columns([1.2, 1.4, 2.4])
+        nav_cols = st.columns([1.25, 1.4, 1.35, 1.0])
         with nav_cols[0]:
             if on_abrir_painel_consultivo is not None:
                 st.button(
@@ -1587,6 +1619,22 @@ def render_comparativo_consultivo(
                     icon=":material/compare_arrows:",
                     on_click=on_abrir_comparativo_contratos,
                 )
+        with nav_cols[2]:
+            if mostrar_sync_drive and on_sync_consultivo is not None:
+                if st.button(
+                    "🔄 Sincronizar Drive (Consultivo)",
+                    key="comp_cons_btn_sync_drive",
+                    help=f"Sincroniza a pasta {consultivo_folder_id} do Google Drive.",
+                ):
+                    on_sync_consultivo()
+
+    if sync_issues:
+        with st.expander(
+            f"Avisos da última sincronização do Consultivo ({len(sync_issues)})",
+            expanded=False,
+        ):
+            for item in sync_issues[:20]:
+                st.caption(f"• {item}")
 
     prep = _preparar_base_consultivo_comparativa(consultivo_frame, roster=roster)
     anos_presentes = sorted(prep["year"].unique().tolist()) if not prep.empty else []

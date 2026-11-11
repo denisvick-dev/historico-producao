@@ -38,7 +38,7 @@ SUPPORTED_SUFFIXES = {".csv", ".xls", ".xlsx"}
 MAX_PARALLEL_DOWNLOADS = 8
 IMPORT_PARSER_VERSION = "contracts-v2"
 ROSTER_PARSER_VERSION = "roster-v2"
-CONSULTIVO_PARSER_VERSION = "consultivo-v2"
+CONSULTIVO_PARSER_VERSION = "consultivo-v3"
 
 logger = structlog.get_logger(__name__)
 
@@ -643,7 +643,7 @@ def _import_consultivo_drive_file(
     except ValueError as error:
         return [], [f"{drive_name} · {error}"], False
 
-    refreshed = True
+    refreshed = bool(file_records)
     issues = [f"{drive_name} · {issue}" for issue in file_issues[:20]]
     return file_records, issues, refreshed
 
