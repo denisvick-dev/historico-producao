@@ -5,7 +5,7 @@ from __future__ import annotations
 import calendar
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
 
 import numpy as np
@@ -19,6 +19,7 @@ from components.componentes import (
     Fontes,
     TipoTrendType,
     Validadores,
+    converter_data_br,
     injetar_css,
     render_hero_totale_2,
     render_insight,
@@ -30,9 +31,48 @@ from production import (
     DEFAULT_CONSULTIVO_FOLDER_ID,
     ROSTER_ACTIVE_TAB,
     clean_code,
+    converter_data_consultivo_br,
     month_label,
     normalize_text,
 )
+
+
+def normalizar_coluna_data_consultivo(df: pd.DataFrame) -> pd.DataFrame:
+    """Normaliza a coluna ``DATA`` (e ``period``) garantindo leitura DIA/MÊS/ANO (DD/MM/YYYY)."""
+    if df.empty:
+        return df.copy()
+    work = df.copy()
+    if "DATA" in work.columns:
+        datas_dt = converter_data_consultivo_br(work["DATA"])
+        if datas_dt.isna().any():
+            mask_na = datas_dt.isna()
+            datas_dt.loc[mask_na] = converter_data_br(work.loc[mask_na, "DATA"])
+        work["DATA"] = datas_dt
+        if "period" in work.columns:
+            work["period"] = datas_dt.dt.to_period("M").dt.to_timestamp()
+    return work
+
+
+def formatar_data_br_consultivo(valor: object, *, incluir_hora: bool = False) -> str:
+    """Formata datas e timestamps sempre no padrão brasileiro ``DD/MM/YYYY``."""
+    if valor is None or valor is pd.NA or valor is pd.NaT:
+        return ""
+    if isinstance(valor, float) and pd.isna(valor):
+        return ""
+    if isinstance(valor, (pd.Timestamp, datetime)):
+        if pd.isna(valor):
+            return ""
+        return valor.strftime("%d/%m/%Y %H:%M:%S" if incluir_hora else "%d/%m/%Y")
+    if isinstance(valor, date):
+        return valor.strftime("%d/%m/%Y")
+    texto = str(valor).strip()
+    if not texto or texto.lower() in {"nan", "nat", "none", "null", "-"}:
+        return ""
+    serie_conv = converter_data_consultivo_br(pd.Series([texto]))
+    if serie_conv.notna().iloc[0]:
+        ts = pd.Timestamp(serie_conv.iloc[0])
+        return ts.strftime("%d/%m/%Y %H:%M:%S" if incluir_hora else "%d/%m/%Y")
+    return texto
 
 
 @dataclass(frozen=True)
@@ -66,11 +106,12 @@ class CalculosConsultivo:
         hoje: date | None = None,
     ) -> tuple[float, int, int]:
         """Calcula o fator de projeção considerando dias úteis de Seg a Sáb."""
-        if datas_validas.empty:
+        datas_dt = converter_data_consultivo_br(datas_validas).dropna()
+        if datas_dt.empty:
             return 1.0, 0, 0
 
         ref_hoje = hoje or date.today()
-        max_dt = datas_validas.max()
+        max_dt = datas_dt.max()
         if max_dt.month != ref_hoje.month or max_dt.year != ref_hoje.year:
             return 1.0, 0, 0
 
@@ -346,7 +387,8 @@ def preparar_resumo_diario_monitor(
     if df.empty or "DATA" not in df.columns or "Monitor" not in df.columns:
         return pd.DataFrame()
 
-    df_validos = df.dropna(subset=["DATA"]).copy()
+    df_norm = normalizar_coluna_data_consultivo(df)
+    df_validos = df_norm.dropna(subset=["DATA"]).copy()
     if df_validos.empty:
         return pd.DataFrame()
 
@@ -372,7 +414,7 @@ def preparar_resumo_diario_monitor(
         "Meta atingida",
         "Abaixo da meta",
     )
-    resumo["Data"] = pd.to_datetime(resumo["Data_Ref"]).dt.strftime("%d/%m/%Y")
+    resumo["Data"] = resumo["Data_Ref"].map(formatar_data_br_consultivo)
     return resumo[
         [
             "Data",
@@ -438,7 +480,8 @@ def preparar_evolucao_mensal_consultivo(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty or "DATA" not in df.columns:
         return pd.DataFrame(columns=colunas)
 
-    validos = df.dropna(subset=["DATA"]).copy()
+    df_norm = normalizar_coluna_data_consultivo(df)
+    validos = df_norm.dropna(subset=["DATA"]).copy()
     if validos.empty:
         return pd.DataFrame(columns=colunas)
 
@@ -561,7 +604,12 @@ def gerar_html_tabela_cons(df: pd.DataFrame, usar_vendedor: bool = False) -> str
                 else:
                     val_str = str(val)
             else:
-                val_str = "—" if pd.isna(val) else Validadores.html_escape(str(val))
+                if pd.isna(val):
+                    val_str = "—"
+                elif isinstance(val, (pd.Timestamp, datetime, date)):
+                    val_str = Validadores.html_escape(formatar_data_br_consultivo(val))
+                else:
+                    val_str = Validadores.html_escape(str(val))
 
             cls_attr = f' class="{" ".join(classes)}"' if classes else ""
             html.append(f"<td{cls_attr}{style}>{val_str}</td>")
@@ -586,8 +634,20 @@ def render_tabela_cons(df: pd.DataFrame, usar_vendedor: bool = False) -> None:
 
 
 def sanitizar_csv_exportacao(df: pd.DataFrame) -> bytes:
-    """Gera CSV separado por ponto e vírgula protegido contra CSV Injection."""
-    df_safe = df.copy()
+    """Gera CSV separado por ponto e vírgula protegido contra CSV Injection e com datas DD/MM/YYYY."""
+    df_safe = normalizar_coluna_data_consultivo(df)
+    for col in df_safe.columns:
+        if pd.api.types.is_datetime64_any_dtype(df_safe[col]):
+            df_safe[col] = (
+                df_safe[col]
+                .dt.strftime("%d/%m/%Y")
+                .where(df_safe[col].notna(), "")
+                .astype(str)
+            )
+        elif col == "imported_at":
+            df_safe[col] = df_safe[col].map(
+                lambda v: formatar_data_br_consultivo(v, incluir_hora=True)
+            )
     obj_cols = df_safe.select_dtypes(include=["object", "string"]).columns
     for col in obj_cols:
         s = df_safe[col].astype(str)
@@ -725,9 +785,10 @@ def render_consultivo(
                 on_sync_consultivo()
         return
 
+    consultivo_work = normalizar_coluna_data_consultivo(consultivo_frame)
     datas_validas = (
-        pd.to_datetime(consultivo_frame["DATA"], errors="coerce").dropna()
-        if "DATA" in consultivo_frame.columns
+        consultivo_work["DATA"].dropna()
+        if "DATA" in consultivo_work.columns
         else pd.Series(dtype="datetime64[ns]")
     )
 
@@ -861,13 +922,13 @@ def render_consultivo(
             data_ini, data_fim = data_fim, data_ini
 
         # Filtra o histórico pelo intervalo selecionado e injeta os ATIVOS zerados dessa janela
-        if not consultivo_frame.empty and "DATA" in consultivo_frame.columns:
-            mask_periodo = consultivo_frame["DATA"].notna() & (
-                consultivo_frame["DATA"].dt.date.between(data_ini, data_fim)
+        if not consultivo_work.empty and "DATA" in consultivo_work.columns:
+            mask_periodo = consultivo_work["DATA"].notna() & (
+                consultivo_work["DATA"].dt.date.between(data_ini, data_fim)
             )
-            df_janela = consultivo_frame.loc[mask_periodo].copy()
+            df_janela = consultivo_work.loc[mask_periodo].copy()
         else:
-            df_janela = consultivo_frame.copy()
+            df_janela = consultivo_work.copy()
 
         if manter_sem_movimentacao:
             df_janela = injetar_ativos_sem_movimentacao(df_janela, roster_frame)
@@ -880,9 +941,9 @@ def render_consultivo(
                 if "Base" in df_janela.columns
                 else []
             )
-            if not consultivo_frame.empty and "Base" in consultivo_frame.columns:
+            if not consultivo_work.empty and "Base" in consultivo_work.columns:
                 bases_universo.update(
-                    consultivo_frame["Base"].dropna().astype(str).unique()
+                    consultivo_work["Base"].dropna().astype(str).unique()
                 )
             bases_disp = sorted(b for b in bases_universo if b.strip())
             sel_bases = st.multiselect(
@@ -897,9 +958,9 @@ def render_consultivo(
             df_janela[df_janela["Base"].isin(sel_bases)] if sel_bases else df_janela
         )
         hist_temp = (
-            consultivo_frame[consultivo_frame["Base"].isin(sel_bases)]
-            if sel_bases and not consultivo_frame.empty
-            else consultivo_frame
+            consultivo_work[consultivo_work["Base"].isin(sel_bases)]
+            if sel_bases and not consultivo_work.empty
+            else consultivo_work
         )
 
         with bot_cols[1]:

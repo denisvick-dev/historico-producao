@@ -679,6 +679,7 @@ def apply_filters(
                 value=first_date.date(),
                 min_value=first_date.date(),
                 max_value=last_date.date(),
+                format="DD/MM/YYYY",
                 key="custom_start",
             )
         with end_col:
@@ -687,6 +688,7 @@ def apply_filters(
                 value=last_date.date(),
                 min_value=first_date.date(),
                 max_value=last_date.date(),
+                format="DD/MM/YYYY",
                 key="custom_end",
             )
         if start > end:

@@ -449,9 +449,14 @@ _FORMATOS_DATA_BR: tuple[str, ...] = (
     "%d/%m/%Y %H:%M:%S",
     "%d/%m/%Y %H:%M",
     "%d/%m/%Y",
+    "%d/%m/%y %H:%M:%S",
+    "%d/%m/%y %H:%M",
+    "%d/%m/%y",
     "%d-%m-%Y %H:%M:%S",
     "%d-%m-%Y",
+    "%d-%m-%y",
     "%d.%m.%Y",
+    "%d.%m.%y",
     "%Y-%m-%d %H:%M:%S",
     "%Y-%m-%d %H:%M",
     "%Y-%m-%d",
@@ -546,11 +551,17 @@ def converter_data_br(serie: pd.Series) -> pd.Series:
         kwargs: dict[str, Any] = {"dayfirst": True, "errors": "coerce"}
         if _PANDAS_SUPORTA_MIXED:
             kwargs["format"] = "mixed"
-        parsed = pd.to_datetime(textos[pendentes], **kwargs)
+        try:
+            parsed = pd.to_datetime(textos[pendentes], **kwargs)
+        except ValueError:
+            parsed = pd.to_datetime(textos[pendentes], utc=True, **kwargs)
+            parsed = parsed.dt.tz_localize(None)
+        if getattr(parsed.dtype, "tz", None) is not None:
+            parsed = parsed.dt.tz_localize(None)
         ok = parsed.notna()
         if ok.any():
             idx = parsed.index[ok]
-            resultado.loc[idx] = parsed.loc[idx]
+            resultado.loc[idx] = parsed.loc[idx].astype("datetime64[ns]")
 
     return resultado
 

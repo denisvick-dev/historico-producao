@@ -522,11 +522,29 @@ def parse_reference_date(value: object) -> pd.Timestamp | None:
     if not text:
         return None
 
-    match = re.fullmatch(r"(20\d{2})[-/.](\d{1,2})(?:[-/.](\d{1,2}))?", text)
+    match = re.fullmatch(
+        r"(20\d{2})[-/.](\d{1,2})(?:[-/.](\d{1,2}))?"
+        r"(?:[T\s]+\d{1,2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?",
+        text,
+    )
     if match:
         year, month, day = match.groups()
         try:
             return pd.Timestamp(int(year), int(month), int(day or 1))
+        except ValueError:
+            return None
+
+    br_match = re.fullmatch(
+        r"(\d{1,2})[-/.](\d{1,2})[-/.](20\d{2}|\d{2})"
+        r"(?:[T\s]+\d{1,2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?",
+        text,
+    )
+    if br_match:
+        day_s, month_s, year_s = br_match.groups()
+        yr = int(year_s)
+        yr = yr + 2000 if yr < 100 else yr
+        try:
+            return pd.Timestamp(yr, int(month_s), int(day_s))
         except ValueError:
             return None
 
@@ -551,7 +569,7 @@ def parse_reference_date(value: object) -> pd.Timestamp | None:
         year = year + 2000 if year < 100 else year
         return pd.Timestamp(year, month, 1)
 
-    timestamp = pd.to_datetime(text, dayfirst=True, errors="coerce")
+    timestamp = pd.to_datetime(text, dayfirst=True, format="mixed", errors="coerce")
     return timestamp.normalize() if isinstance(timestamp, pd.Timestamp) else None
 
 
@@ -955,6 +973,71 @@ def _normalize_consultivo_series(serie: pd.Series) -> pd.Series:
     return texto.where(~texto.str.match(_CONSULTIVO_EMPTY_RE), "")
 
 
+_CONSULTIVO_DATE_FORMATS_BR: tuple[str, ...] = (
+    "%d/%m/%Y %H:%M:%S",
+    "%d/%m/%Y %H:%M",
+    "%d/%m/%Y",
+    "%d/%m/%y %H:%M:%S",
+    "%d/%m/%y %H:%M",
+    "%d/%m/%y",
+    "%d-%m-%Y %H:%M:%S",
+    "%d-%m-%Y %H:%M",
+    "%d-%m-%Y",
+    "%d-%m-%y",
+    "%d.%m.%Y",
+    "%d.%m.%y",
+    "%Y-%m-%d %H:%M:%S",
+    "%Y-%m-%d %H:%M",
+    "%Y-%m-%d",
+    "%Y/%m/%d",
+)
+
+
+def converter_data_consultivo_br(serie: pd.Series) -> pd.Series:
+    """Converte série de datas priorizando sempre DIA/MÊS/ANO sem inverter ISO YYYY-MM-DD."""
+    if serie is None or len(serie) == 0:
+        return pd.Series(dtype="datetime64[ns]")
+
+    if pd.api.types.is_datetime64_any_dtype(serie):
+        return pd.to_datetime(serie, errors="coerce").astype("datetime64[ns]")
+
+    resultado = pd.Series(pd.NaT, index=serie.index, dtype="datetime64[ns]")
+
+    try:
+        numericos = pd.to_numeric(serie, errors="coerce")
+    except (TypeError, ValueError):
+        numericos = pd.Series(float("nan"), index=serie.index)
+    mask_serial = numericos.between(20_000, 80_000)
+    if mask_serial.any():
+        resultado.loc[mask_serial] = pd.to_datetime(
+            numericos[mask_serial], unit="D", origin="1899-12-30", errors="coerce"
+        ).astype("datetime64[ns]")
+
+    textos = serie.astype(str).str.strip()
+    textos = textos.mask(textos.isin(["", "nan", "None", "NaT", "NaN", "-", "NULL"]))
+    pendentes = resultado.isna() & textos.notna()
+
+    for fmt in _CONSULTIVO_DATE_FORMATS_BR:
+        if not pendentes.any():
+            break
+        parsed = pd.to_datetime(textos[pendentes], format=fmt, errors="coerce")
+        ok = parsed.notna()
+        if ok.any():
+            idx = parsed.index[ok]
+            resultado.loc[idx] = parsed.loc[idx].astype("datetime64[ns]")
+            pendentes.loc[idx] = False
+
+    if pendentes.any():
+        re_parsed = textos[pendentes].map(parse_reference_date)
+        parsed_fb = pd.to_datetime(re_parsed, errors="coerce")
+        ok_fb = parsed_fb.notna()
+        if ok_fb.any():
+            idx_fb = parsed_fb.index[ok_fb]
+            resultado.loc[idx_fb] = parsed_fb.loc[idx_fb].astype("datetime64[ns]")
+
+    return resultado
+
+
 def _separar_internet_tv(internet_bruta: pd.Series) -> tuple[pd.Series, pd.Series]:
     """Separa TV embutida depois do ponto em PLANO INTERNET."""
     bruto = _normalize_consultivo_series(internet_bruta)
@@ -1166,13 +1249,7 @@ def process_consultivo_dataframe(
         source_file
     )
     if "DATA" in work.columns:
-        parsed_dates = pd.to_datetime(
-            work["DATA"].replace("", pd.NA), errors="coerce", dayfirst=True
-        )
-        if parsed_dates.isna().any():
-            mask_na = parsed_dates.isna()
-            re_parsed = work.loc[mask_na, "DATA"].map(parse_reference_date)
-            parsed_dates.loc[mask_na] = pd.to_datetime(re_parsed, errors="coerce")
+        parsed_dates = converter_data_consultivo_br(work["DATA"])
     else:
         parsed_dates = pd.Series(pd.NaT, index=work.index, dtype="datetime64[ns]")
 
@@ -2182,7 +2259,7 @@ def enrich_consultivo_with_roster(
         .fillna("Nome Não Cadastrado")
     )
 
-    dt_series = pd.to_datetime(work["reference_date"], errors="coerce")
+    dt_series = converter_data_consultivo_br(work["reference_date"])
     q_cons = (
         pd.to_numeric(work["qtde_consultivo"], errors="coerce").fillna(0).astype(int)
     )
