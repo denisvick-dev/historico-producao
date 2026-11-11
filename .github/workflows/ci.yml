@@ -27,12 +27,12 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
-          python -m pip install ruff mypy
+          python -m pip install ruff mypy pyright pandas-stubs types-openpyxl
 
       - name: Lint (ruff)
         run: python scripts/check.py lint
 
-      - name: Type checking (mypy)
+      - name: Type checking (mypy + pyright/Pylance)
         run: python scripts/check.py types
 
       - name: Run unit tests

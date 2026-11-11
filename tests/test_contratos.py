@@ -2,6 +2,7 @@ import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Any, cast
 from unittest import mock
 
 import pandas as pd
@@ -372,11 +373,13 @@ class PainelContratosTests(unittest.TestCase):
         linhas = matriz.set_index("Técnico")
         self.assertEqual(linhas.loc["Ana", "fev/26"], 0)
         self.assertEqual(linhas.loc["Ana", "Meses com produção"], 2)
-        self.assertAlmostEqual(linhas.loc["Ana", "Média mensal"], 1.5)
+        self.assertAlmostEqual(float(cast(Any, linhas.loc["Ana", "Média mensal"])), 1.5)
         self.assertEqual(linhas.loc["Bia", "Meses com produção"], 1)
         self.assertEqual(linhas.loc["Bia", "Média mensal"], 2.0)
         self.assertEqual(linhas.loc["Total geral", "Meses com produção"], 3)
-        self.assertAlmostEqual(linhas.loc["Total geral", "Média mensal"], 5 / 3)
+        self.assertAlmostEqual(
+            float(cast(Any, linhas.loc["Total geral", "Média mensal"])), 5 / 3
+        )
         _, _, filtrada, _, _ = resumir_contratos(frame[frame["technician"] == "Ana"])
         self.assertEqual(filtrada.iloc[0]["Meses com produção"], 2)
         self.assertEqual(filtrada.iloc[0]["Média mensal"], 1.5)
@@ -414,10 +417,12 @@ class PainelContratosTests(unittest.TestCase):
                 "contract": ["001", "002", "003", "004", None],
                 "technician": ["Ana", "Bia", None, "Ana", "Ana"],
                 "period": pd.to_datetime(
-                    ["2026-01-01", None, "2026-01-01", None, "2026-01-01"]
+                    pd.Series(["2026-01-01", None, "2026-01-01", None, "2026-01-01"])
                 ),
                 "reference_date": pd.to_datetime(
-                    ["2026-01-05", "2026-02-05", "2026-01-01", None, "2026-01-01"]
+                    pd.Series(
+                        ["2026-01-05", "2026-02-05", "2026-01-01", None, "2026-01-01"]
+                    )
                 ),
             }
         )

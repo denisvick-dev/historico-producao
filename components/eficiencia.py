@@ -132,7 +132,7 @@ def render_eficiencia(frame: pd.DataFrame) -> None:
         key="eficiencia_tecnico_filter",
     )
 
-    if tecnico_selecionado != "Todos":
+    if tecnico_selecionado and tecnico_selecionado != "Todos":
         detalhes = detalhes[detalhes["Técnico"].eq(tecnico_selecionado)]
         resumo = resumo[resumo["Técnico"].eq(tecnico_selecionado)]
 

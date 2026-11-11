@@ -5,6 +5,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Any, cast
 from unittest import mock
 
 import pandas as pd
@@ -111,8 +112,8 @@ class LeituraCompartilhadaTests(unittest.TestCase):
             self.assertEqual(stats["records"], 3)
             self.assertEqual(snapshot["contracts_qty"].tolist(), [1, 1, 0])
             lotes = production.import_batches().set_index("source_file")
-            self.assertEqual(int(lotes.loc["a.csv", "contracts_count"]), 1)
-            self.assertEqual(int(lotes.loc["b.csv", "contracts_count"]), 0)
+            self.assertEqual(int(cast(Any, lotes.loc["a.csv", "contracts_count"])), 1)
+            self.assertEqual(int(cast(Any, lotes.loc["b.csv", "contracts_count"])), 0)
 
     def test_banco_vazio_mantem_formato_das_duas_leituras(self) -> None:
         with (

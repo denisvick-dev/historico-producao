@@ -16,7 +16,7 @@ from __future__ import annotations
 import html
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal, cast
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -431,9 +431,12 @@ def _preparar_base_limpa(
         if nome not in recorte.columns:
             return pd.Series(padrao, index=recorte.index, dtype="object")
         limpa = recorte[nome].fillna("").astype(str).str.strip()
-        return limpa.mask(
-            limpa.eq("") | limpa.str.casefold().isin(["nan", "none", "null"]),
-            padrao,
+        return cast(
+            pd.Series,
+            limpa.mask(
+                limpa.eq("") | limpa.str.casefold().isin(["nan", "none", "null"]),
+                padrao,
+            ),
         )
 
     preparado = pd.DataFrame(
@@ -501,28 +504,17 @@ def _montar_resumo_dimensao(
     if not chaves:
         return pd.DataFrame(columns=colunas)
 
+    def _celula_int(df_grp: pd.DataFrame, idx: Any, col: int) -> int:
+        if idx in df_grp.index and col in df_grp.columns:
+            return int(cast(Any, df_grp.loc[idx, col]))
+        return 0
+
     linhas: list[dict[str, object]] = []
     for chave in chaves:
-        c_b = (
-            int(ct_grp.loc[chave, ano_base])
-            if (chave in ct_grp.index and ano_base in ct_grp.columns)
-            else 0
-        )
-        c_c = (
-            int(ct_grp.loc[chave, ano_comp])
-            if (chave in ct_grp.index and ano_comp in ct_grp.columns)
-            else 0
-        )
-        o_b = (
-            int(os_grp.loc[chave, ano_base])
-            if (chave in os_grp.index and ano_base in os_grp.columns)
-            else 0
-        )
-        o_c = (
-            int(os_grp.loc[chave, ano_comp])
-            if (chave in os_grp.index and ano_comp in os_grp.columns)
-            else 0
-        )
+        c_b = _celula_int(ct_grp, chave, ano_base)
+        c_c = _celula_int(ct_grp, chave, ano_comp)
+        o_b = _celula_int(os_grp, chave, ano_base)
+        o_c = _celula_int(os_grp, chave, ano_comp)
         if c_b == 0 and c_c == 0 and o_b == 0 and o_c == 0:
             continue
         linhas.append(
@@ -665,16 +657,18 @@ def calcular_comparativo_anos(
             ["year", "month", "technician", "period", "contract_clean"]
         )
         ct_por_ano_mes = {
-            (int(k[0]), int(k[1])): int(v)
+            (int(cast(tuple[Any, Any], k)[0]), int(cast(tuple[Any, Any], k)[1])): int(v)
             for k, v in ct_dedup_all.groupby(["year", "month"]).size().items()
         }
         os_prod_all = preparado[preparado["source_sheet"].eq(PROD)]
         os_por_ano_mes = {
-            (int(k[0]), int(k[1])): int(v)
+            (int(cast(tuple[Any, Any], k)[0]), int(cast(tuple[Any, Any], k)[1])): int(v)
             for k, v in os_prod_all.groupby(["year", "month"]).size().items()
         }
         pts_por_ano_mes = {
-            (int(k[0]), int(k[1])): float(v)
+            (int(cast(tuple[Any, Any], k)[0]), int(cast(tuple[Any, Any], k)[1])): float(
+                v
+            )
             for k, v in preparado.groupby(["year", "month"])["points"].sum().items()
         }
 
@@ -934,41 +928,22 @@ def calcular_comparativo_anos(
             .unstack(fill_value=0)
         )
 
+        def _tec_int(df_t: pd.DataFrame, idx: Any, col: int) -> int:
+            if idx in df_t.index and col in df_t.columns:
+                return int(cast(Any, df_t.loc[idx, col]))
+            return 0
+
         todos_tecs = sorted(set(ct_tec.index).union(set(os_tec.index)))
         linhas_tec: list[dict[str, object]] = []
         for tec in todos_tecs:
-            cb = (
-                int(ct_tec.loc[tec, ano_base])
-                if (tec in ct_tec.index and ano_base in ct_tec.columns)
-                else 0
-            )
-            cc = (
-                int(ct_tec.loc[tec, ano_comp])
-                if (tec in ct_tec.index and ano_comp in ct_tec.columns)
-                else 0
-            )
-            ob = (
-                int(os_tec.loc[tec, ano_base])
-                if (tec in os_tec.index and ano_base in os_tec.columns)
-                else 0
-            )
-            oc = (
-                int(os_tec.loc[tec, ano_comp])
-                if (tec in os_tec.index and ano_comp in os_tec.columns)
-                else 0
-            )
+            cb = _tec_int(ct_tec, tec, ano_base)
+            cc = _tec_int(ct_tec, tec, ano_comp)
+            ob = _tec_int(os_tec, tec, ano_base)
+            oc = _tec_int(os_tec, tec, ano_comp)
             if cb == 0 and cc == 0 and ob == 0 and oc == 0:
                 continue
-            mb = (
-                int(meses_tec.loc[tec, ano_base])
-                if (tec in meses_tec.index and ano_base in meses_tec.columns)
-                else 0
-            )
-            mc = (
-                int(meses_tec.loc[tec, ano_comp])
-                if (tec in meses_tec.index and ano_comp in meses_tec.columns)
-                else 0
-            )
+            mb = _tec_int(meses_tec, tec, ano_base)
+            mc = _tec_int(meses_tec, tec, ano_comp)
             info = meta_tec.loc[tec] if tec in meta_tec.index else None
             linhas_tec.append(
                 {
@@ -1449,10 +1424,10 @@ def _formatar_styler_comparativo(
         if c in tabela.columns
     ]
     if cols_delta:
-        styler = styler.map(_estilizar_delta, subset=cols_delta)
+        styler = styler.map(_estilizar_delta, subset=pd.Index(cols_delta))
     if "Status Comparativo" in tabela.columns:
         styler = styler.map(
-            _estilizar_status_comparativo, subset=["Status Comparativo"]
+            _estilizar_status_comparativo, subset=pd.Index(["Status Comparativo"])
         )
     return styler
 

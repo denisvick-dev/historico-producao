@@ -1016,9 +1016,9 @@ def _formatar_data_importacao(valor: Any) -> str:
     if valor is None or pd.isna(valor) or not str(valor).strip():
         return "—"
     data = pd.to_datetime(valor, errors="coerce", utc=True)
-    if pd.isna(data):
+    if not isinstance(data, pd.Timestamp) or pd.isna(data):
         return str(valor)
-    return data.tz_convert("America/Sao_Paulo").strftime("%d/%m/%Y %H:%M BRT")
+    return str(data.tz_convert("America/Sao_Paulo").strftime("%d/%m/%Y %H:%M BRT"))
 
 
 def _formatar_data_referencia(valor: Any) -> str:

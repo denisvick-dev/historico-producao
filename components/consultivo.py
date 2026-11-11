@@ -616,7 +616,8 @@ def gerar_html_tabela_cons(df: pd.DataFrame, usar_vendedor: bool = False) -> str
     records = df.to_dict("records")
     for row in records:
         html.append("<tr>")
-        for col, val in row.items():
+        for col_raw, val in row.items():
+            col = str(col_raw)
             classes: list[str] = []
             style = ""
 
@@ -1000,12 +1001,14 @@ def render_consultivo(
                 help="Inclui técnicos com Situação = ATIVO em lista_ativos que não registraram consultivos no intervalo selecionado.",
             )
 
-        if isinstance(datas_sel, (tuple, list)) and len(datas_sel) == 2:
+        data_ini: date
+        data_fim: date
+        if isinstance(datas_sel, date):
+            data_ini = data_fim = datas_sel
+        elif isinstance(datas_sel, (tuple, list)) and len(datas_sel) == 2:
             data_ini, data_fim = datas_sel[0], datas_sel[1]
         elif isinstance(datas_sel, (tuple, list)) and len(datas_sel) == 1:
             data_ini = data_fim = datas_sel[0]
-        elif isinstance(datas_sel, date):
-            data_ini = data_fim = datas_sel
         else:
             data_ini, data_fim = default_ini, default_fim
 

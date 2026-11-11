@@ -17,6 +17,7 @@ from collections.abc import Callable, Generator, Iterable, Mapping
 from contextlib import contextmanager
 from datetime import date, datetime
 from pathlib import Path
+from typing import Any, Literal
 
 import pandas as pd
 
@@ -398,7 +399,10 @@ def parse_contract_flag(value: object) -> int | None:
 
 
 def _map_repeated_text(
-    values: pd.Series, transform: Callable[[object], object], *, null_value: object
+    values: pd.Series,
+    transform: Callable[[Any], Any],
+    *,
+    null_value: str | int | float | bool | None,
 ) -> pd.Series:
     """Aplica transformações textuais uma vez por valor distinto.
 
@@ -518,12 +522,10 @@ def parse_reference_date(value: object) -> pd.Timestamp | None:
         return timestamp.normalize() if pd.notna(timestamp) else None
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         if 1 <= float(value) <= 100000:
-            timestamp = pd.to_datetime(
+            ts_excel = pd.to_datetime(
                 float(value), unit="D", origin="1899-12-30", errors="coerce"
             )
-            return (
-                timestamp.normalize() if isinstance(timestamp, pd.Timestamp) else None
-            )
+            return ts_excel.normalize() if isinstance(ts_excel, pd.Timestamp) else None
         return None
 
     text = str(value).strip()
@@ -577,8 +579,8 @@ def parse_reference_date(value: object) -> pd.Timestamp | None:
         year = year + 2000 if year < 100 else year
         return pd.Timestamp(year, month, 1)
 
-    timestamp = pd.to_datetime(text, dayfirst=True, format="mixed", errors="coerce")
-    return timestamp.normalize() if isinstance(timestamp, pd.Timestamp) else None
+    ts_parsed = pd.to_datetime(text, dayfirst=True, format="mixed", errors="coerce")
+    return ts_parsed.normalize() if isinstance(ts_parsed, pd.Timestamp) else None
 
 
 def infer_date_from_filename(filename: str) -> pd.Timestamp | None:
@@ -643,7 +645,7 @@ def process_dataframe(
     origin: str,
     source_file: str,
     default_date: date | datetime | pd.Timestamp | None = None,
-) -> tuple[list[dict], list[str]]:
+) -> tuple[list[dict[str, Any]], list[str]]:
     """Valida e converte uma aba em registros normalizados.
 
     Linhas sem técnico são ignoradas (comuns em totais ao fim da planilha).
@@ -684,7 +686,7 @@ def process_dataframe(
             "ou use o ano e mês no nome do arquivo (ex.: 2026-10.xlsx)."
         )
 
-    records: list[dict] = []
+    records: list[dict[str, Any]] = []
     issues: list[str] = []
     selected_columns = [technician_col, points_col]
     date_position = None
@@ -795,10 +797,10 @@ def process_upload(
     content: bytes,
     csv_origin: str = PROD,
     default_date: date | datetime | pd.Timestamp | None = None,
-) -> tuple[list[dict], list[str]]:
+) -> tuple[list[dict[str, Any]], list[str]]:
     """Lê um arquivo enviado e processa as abas Prod e Gpon encontradas."""
     suffix = Path(filename).suffix.lower()
-    records: list[dict] = []
+    records: list[dict[str, Any]] = []
     issues: list[str] = []
 
     if suffix == ".csv":
@@ -859,7 +861,7 @@ def process_roster_dataframe(
     frame: pd.DataFrame,
     *,
     source_tab: str = ROSTER_ACTIVE_TAB,
-) -> tuple[list[dict], list[str]]:
+) -> tuple[list[dict[str, Any]], list[str]]:
     """Converte uma aba da planilha cadastral (lista_ativos ou desligados) em registros."""
     if frame.empty:
         return [], [f"A aba {source_tab} está vazia."]
@@ -887,7 +889,7 @@ def process_roster_dataframe(
         if normalize_text(source_tab) == normalize_text(ROSTER_TERMINATED_TAB)
         else "ATIVO"
     )
-    rows: list[dict] = []
+    rows: list[dict[str, Any]] = []
     issues: list[str] = []
     for _, series in frame.iterrows():
         technician = clean_technician(series.get(tech_col))
@@ -948,7 +950,7 @@ def process_roster_workbook(
     content: bytes,
     *,
     filename: str = "lista_ativos.xlsx",
-) -> tuple[list[dict], list[str]]:
+) -> tuple[list[dict[str, Any]], list[str]]:
     """Lê a planilha cadastral (XLSX com lista_ativos/desligados ou CSV)."""
     suffix = Path(filename).suffix.lower()
     if suffix == ".csv":
@@ -961,7 +963,9 @@ def process_roster_workbook(
             f"Não foi possível abrir a planilha cadastral ({filename}): {error}"
         ) from error
 
-    normalized_sheets = {normalize_text(sheet): sheet for sheet in workbook.sheet_names}
+    normalized_sheets = {
+        normalize_text(str(sheet)): str(sheet) for sheet in workbook.sheet_names
+    }
     target_tabs: list[tuple[str, str]] = []
     for canonical in (ROSTER_ACTIVE_TAB, ROSTER_TERMINATED_TAB):
         key = normalize_text(canonical)
@@ -971,7 +975,7 @@ def process_roster_workbook(
     if not target_tabs and workbook.sheet_names:
         target_tabs.append((ROSTER_ACTIVE_TAB, str(workbook.sheet_names[0])))
 
-    by_key: dict[str, dict] = {}
+    by_key: dict[str, dict[str, Any]] = {}
     issues: list[str] = []
     for canonical, actual_sheet in target_tabs:
         frame = pd.read_excel(workbook, sheet_name=actual_sheet)
@@ -1361,7 +1365,7 @@ def read_consultivo_csv(content: bytes) -> pd.DataFrame:
                 ln.count(sep) == header_sep_count for ln in non_empty_lines[1:]
             )
             if rfc_quoted or uniform_unquoted:
-                quoting_mode = csv.QUOTE_MINIMAL if rfc_quoted else csv.QUOTE_NONE
+                quoting_mode: Literal[0, 3] = 0 if rfc_quoted else 3
                 try:
                     frame = pd.read_csv(
                         io.StringIO(body_text),
@@ -1384,13 +1388,14 @@ def read_consultivo_csv(content: bytes) -> pd.DataFrame:
                 return tolerant
 
         try:
-            return pd.read_csv(
+            fallback_df: pd.DataFrame = pd.read_csv(
                 io.StringIO(body_text),
                 sep=None,
                 engine="python",
                 dtype=str,
                 keep_default_na=False,
             )
+            return fallback_df
         except (pd.errors.ParserError, csv.Error) as error:
             last_error = error
     raise ValueError(f"Não foi possível ler o CSV de consultivo: {last_error}")
@@ -1400,7 +1405,7 @@ def process_consultivo_dataframe(
     frame: pd.DataFrame,
     source_file: str,
     default_date: date | datetime | pd.Timestamp | None = None,
-) -> tuple[list[dict], list[str]]:
+) -> tuple[list[dict[str, Any]], list[str]]:
     """Normaliza um DataFrame de tabulação/consultivo para persistência no SQLite."""
     if frame.empty:
         return [], ["O arquivo de consultivo está vazio."]
@@ -1558,7 +1563,7 @@ def process_consultivo_upload(
     filename: str,
     content: bytes,
     default_date: date | datetime | pd.Timestamp | None = None,
-) -> tuple[list[dict], list[str]]:
+) -> tuple[list[dict[str, Any]], list[str]]:
     """Lê um arquivo CSV ou Excel da pasta de Histórico Consultivo."""
     suffix = Path(filename).suffix.lower()
     if suffix == ".csv":
@@ -1775,7 +1780,7 @@ def get_roster_fingerprint(sheet_id: str) -> str | None:
 
 
 def save_roster_records(
-    records: Iterable[dict],
+    records: Iterable[dict[str, Any]],
     *,
     is_demo: bool = False,
     sheet_id: str | None = None,
@@ -1905,7 +1910,7 @@ def enrich_records_with_roster(
     return work
 
 
-def save_records(records: Iterable[dict], is_demo: bool = False) -> int:
+def save_records(records: Iterable[dict[str, Any]], is_demo: bool = False) -> int:
     rows = list(records)
     if not rows:
         return 0
@@ -1952,7 +1957,7 @@ def save_records(records: Iterable[dict], is_demo: bool = False) -> int:
 
 
 def sync_drive_records(
-    records: Iterable[dict],
+    records: Iterable[dict[str, Any]],
     live_file_ids: set[str],
     refreshed_file_ids: set[str],
     *,
@@ -2114,7 +2119,7 @@ def load_records() -> pd.DataFrame:
     return _prepare_loaded_records(frame, roster)
 
 
-def database_stats() -> dict:
+def database_stats() -> dict[str, Any]:
     init_database()
     with connect() as connection:
         row = connection.execute(
@@ -2128,7 +2133,7 @@ def database_stats() -> dict:
     return dict(row)
 
 
-def load_dashboard_snapshot() -> tuple[pd.DataFrame, dict]:
+def load_dashboard_snapshot() -> tuple[pd.DataFrame, dict[str, Any]]:
     """Carrega os registros e seus metadados numa única conexão SQLite."""
     init_database()
     with connect() as connection:
@@ -2198,7 +2203,7 @@ def import_batches() -> pd.DataFrame:
 
 
 def save_consultivo_records(
-    records: Iterable[dict],
+    records: Iterable[dict[str, Any]],
     *,
     is_demo: bool = False,
 ) -> int:
@@ -2258,7 +2263,7 @@ def save_consultivo_records(
 
 
 def sync_consultivo_drive_records(
-    records: Iterable[dict],
+    records: Iterable[dict[str, Any]],
     live_file_ids: set[str],
     refreshed_file_ids: set[str],
     *,
@@ -2482,22 +2487,24 @@ def enrich_consultivo_with_roster(
                     .fillna("")
                 )
 
-    monitor_clean = monitor_matched.replace({"Sem monitor": "", "": pd.NA}).fillna(
-        "Não Identificado"
+    monitor_clean = monitor_matched.replace(
+        {"Sem monitor": "Não Identificado", "": "Não Identificado"}
+    ).fillna("Não Identificado")
+    un_clean = un_matched.replace(
+        {"Sem U.N.": "Não Identificada", "": "Não Identificada"}
+    ).fillna("Não Identificada")
+    base_clean = base_matched.replace(
+        {"Sem base": "Não Identificada", "": "Não Identificada"}
+    ).fillna("Não Identificada")
+    status_clean = status_matched.mask(status_matched.eq(""), pd.NA).fillna(
+        "Não cadastrado"
     )
-    un_clean = un_matched.replace({"Sem U.N.": "", "": pd.NA}).fillna(
-        "Não Identificada"
-    )
-    base_clean = base_matched.replace({"Sem base": "", "": pd.NA}).fillna(
-        "Não Identificada"
-    )
-    status_clean = status_matched.replace({"": pd.NA}).fillna("Não cadastrado")
 
-    login_final = login_matched.replace({"": pd.NA}).fillna("SEM LOGIN")
+    login_final = login_matched.mask(login_matched.eq(""), pd.NA).fillna("SEM LOGIN")
     vendedor_final = (
-        tech_matched.replace({"": pd.NA})
-        .fillna(seller_raw.replace({"": pd.NA}))
-        .fillna(login_final.replace({"SEM LOGIN": pd.NA}))
+        tech_matched.mask(tech_matched.eq(""), pd.NA)
+        .fillna(seller_raw.mask(seller_raw.eq(""), pd.NA))
+        .fillna(login_final.mask(login_final.eq("SEM LOGIN"), pd.NA))
         .fillna("Nome Não Cadastrado")
     )
 
@@ -2599,7 +2606,7 @@ def load_consultivo_records() -> pd.DataFrame:
     return enrich_consultivo_with_roster(raw, roster)
 
 
-def load_consultivo_snapshot() -> tuple[pd.DataFrame, dict]:
+def load_consultivo_snapshot() -> tuple[pd.DataFrame, dict[str, Any]]:
     """Carrega os registros de consultivo e suas estatísticas em uma única conexão."""
     init_database()
     with connect() as connection:
@@ -2686,7 +2693,7 @@ def _seed_consultivo_demonstration(
                 return
             connection.execute("DELETE FROM consultivo_records WHERE is_demo = 1")
 
-    consultivo_demo: list[dict] = []
+    consultivo_demo: list[dict[str, Any]] = []
     seq = 1
     for month_index, period in enumerate(periods):
         source_file = f"{DEMO_SOURCE}_consultivo_{period.strftime('%Y-%m')}.csv"
@@ -2841,7 +2848,7 @@ def create_demonstration() -> None:
         else:
             return
 
-    records: list[dict] = []
+    records: list[dict[str, Any]] = []
     source_row = 2
     for tech_index, technician in enumerate(names):
         project_name = demo_monitors[tech_index % len(demo_monitors)][2]

@@ -4,7 +4,7 @@ import json
 import os
 import time
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, cast
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -389,7 +389,7 @@ def best_month_by_technician(records: pd.DataFrame) -> dict[str, str]:
     best = monthly.sort_values(["points_total", "period"]).drop_duplicates(
         "technician", keep="last"
     )
-    return dict(zip(best["technician"], best["period"].map(month_label)))
+    return dict(zip(best["technician"], best["period"].map(month_label), strict=False))
 
 
 def chart_layout(fig: go.Figure, height: int = 340) -> go.Figure:
@@ -1242,7 +1242,7 @@ def _initialize_demo_once(db_path_key: str) -> None:
 
 
 @st.cache_data(show_spinner=False)
-def _load_dashboard_snapshot(db_path_key: str) -> tuple[pd.DataFrame, dict]:
+def _load_dashboard_snapshot(db_path_key: str) -> tuple[pd.DataFrame, dict[str, Any]]:
     """Mantém a leitura da base em cache até uma atualização explícita."""
     del db_path_key
     return load_dashboard_snapshot()
@@ -1256,15 +1256,15 @@ def _load_roster_cached(db_path_key: str) -> pd.DataFrame:
 
 
 @st.cache_data(show_spinner=False)
-def _load_consultivo_cached(db_path_key: str) -> tuple[pd.DataFrame, dict]:
+def _load_consultivo_cached(db_path_key: str) -> tuple[pd.DataFrame, dict[str, Any]]:
     """Mantém o histórico consultivo em cache até uma atualização explícita."""
     del db_path_key
     return load_consultivo_snapshot()
 
 
 def _trim_for_test_runtime(
-    frame: pd.DataFrame, stats: dict
-) -> tuple[pd.DataFrame, dict]:
+    frame: pd.DataFrame, stats: dict[str, Any]
+) -> tuple[pd.DataFrame, dict[str, Any]]:
     """Reduz a massa de dados em testes de UI sem alterar o comportamento em produção."""
     if os.getenv("PYTEST_CURRENT_TEST") is None or frame.empty:
         return frame, stats
@@ -1281,7 +1281,7 @@ def _trim_for_test_runtime(
 
 def _drive_service_account() -> Mapping[str, Any] | None:
     try:
-        return st.secrets["gcp_service_account"]
+        return cast(Mapping[str, Any], st.secrets["gcp_service_account"])
     except (KeyError, StreamlitSecretNotFoundError):
         raw_env = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "").strip()
         if raw_env:

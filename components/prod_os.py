@@ -19,23 +19,11 @@ from components.painel_quantidades import (
     AZUL_TOTALE,
     CHART_CONFIG,
     LARANJA_TOTALE,
-)
-from components.painel_quantidades import (
     best_month_style as _best_month_style,
-)
-from components.painel_quantidades import (
     chart_layout as _chart_layout,
-)
-from components.painel_quantidades import (
     csv_download as _csv_download,
-)
-from components.painel_quantidades import (
     metric_card as _metric_card,
-)
-from components.painel_quantidades import (
     section_heading as _section_heading,
-)
-from components.painel_quantidades import (
     total_column_style as _total_column_style,
 )
 from components.visoes_dashboards import selecionar_periodo_anterior
