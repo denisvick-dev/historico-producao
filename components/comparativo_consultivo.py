@@ -18,8 +18,12 @@ from components.componentes import (
     TemaKPIType,
     TipoInsightType,
     TipoTrendType,
+    formatar_delta_decimal_br,
+    formatar_delta_inteiro_br,
     formatar_numero_br,
+    formatar_variacao_pct_br,
     injetar_css,
+    render_delta_card,
     render_insight,
     render_kpi,
     render_section_header,
@@ -141,6 +145,10 @@ class ResumoComparativoConsultivo:
     por_monitor: pd.DataFrame
     por_un: pd.DataFrame
     por_vendedor: pd.DataFrame
+
+    @property
+    def rotulo_recorte_meses(self) -> str:
+        return _formatar_lista_meses(self.meses_considerados)
 
 
 def _variacao_pct(atual: float | int, base: float | int) -> float | None:
@@ -1867,6 +1875,149 @@ def render_comparativo_consultivo(
         unsafe_allow_html=True,
     )
 
+    # Seção dedicada de Cards de Saldo / Delta (Δ): Consultivos, Produtos, Conversão e Mix Comercial.
+    render_section_header(
+        f"Cards de Delta (Δ) · Consultivo {ano_comp} vs {ano_base}",
+        subtitulo="Variação líquida absoluta e percentual em Consultivos, Produtos comercializados e Mix (Mesh, TV Box e Virtua)",
+        icone="Δ",
+        badge=resumo.rotulo_recorte_meses,
+    )
+
+    diff_mc = resumo.media_mensal_cons_comp - resumo.media_mensal_cons_base
+    diff_mp = resumo.media_mensal_prod_comp - resumo.media_mensal_prod_base
+    diff_eq = resumo.equipes_produtivas_comp - resumo.equipes_produtivas_base
+
+    d_cons_top = st.columns(3)
+    render_delta_card(
+        d_cons_top[0],
+        "Δ Total de Consultivos",
+        formatar_delta_inteiro_br(resumo.delta_consultivos, "cons."),
+        valor_base=formatar_numero_br(resumo.consultivos_base),
+        valor_atual=formatar_numero_br(resumo.consultivos_comp),
+        rotulo_base=str(ano_base),
+        rotulo_atual=str(ano_comp),
+        variacao_pct=formatar_variacao_pct_br(
+            resumo.pct_consultivos,
+            atual=resumo.consultivos_comp,
+            base=resumo.consultivos_base,
+        ),
+        direcao=_trend_variacao(resumo.delta_consultivos),
+        icone="📋",
+        detalhe=f"Média ativa: {formatar_delta_decimal_br(diff_mc, 1, 'cons./mês')}",
+        num_base=resumo.consultivos_base,
+        num_atual=resumo.consultivos_comp,
+    )
+    render_delta_card(
+        d_cons_top[1],
+        "Δ Total de Produtos",
+        formatar_delta_inteiro_br(resumo.delta_produtos, "prod."),
+        valor_base=formatar_numero_br(resumo.produtos_base),
+        valor_atual=formatar_numero_br(resumo.produtos_comp),
+        rotulo_base=str(ano_base),
+        rotulo_atual=str(ano_comp),
+        variacao_pct=formatar_variacao_pct_br(
+            resumo.pct_produtos,
+            atual=resumo.produtos_comp,
+            base=resumo.produtos_base,
+        ),
+        direcao=_trend_variacao(resumo.delta_produtos),
+        icone="📦",
+        detalhe=f"Média ativa: {formatar_delta_decimal_br(diff_mp, 1, 'prod./mês')}",
+        num_base=resumo.produtos_base,
+        num_atual=resumo.produtos_comp,
+    )
+    render_delta_card(
+        d_cons_top[2],
+        "Δ Conversão Prod./Cons.",
+        formatar_delta_decimal_br(resumo.delta_conversao, 2, "x"),
+        valor_base=f"{_formatar_decimal_br(resumo.conversao_base, 2)}x",
+        valor_atual=f"{_formatar_decimal_br(resumo.conversao_comp, 2)}x",
+        rotulo_base=str(ano_base),
+        rotulo_atual=str(ano_comp),
+        variacao_pct=formatar_variacao_pct_br(
+            resumo.pct_conversao,
+            atual=resumo.conversao_comp,
+            base=resumo.conversao_base,
+        ),
+        direcao=_trend_variacao(resumo.delta_conversao),
+        icone="🎯",
+        detalhe=f"Equipes produtivas: {formatar_delta_inteiro_br(diff_eq, 'eq.')}",
+        num_base=resumo.conversao_base,
+        num_atual=resumo.conversao_comp,
+    )
+
+    st.markdown("<div style='height:0.45rem'></div>", unsafe_allow_html=True)
+
+    def _delta_share_pp(vol_b: int, vol_c: int) -> str:
+        sh_b = (
+            (vol_b / resumo.produtos_base * 100.0) if resumo.produtos_base > 0 else 0.0
+        )
+        sh_c = (
+            (vol_c / resumo.produtos_comp * 100.0) if resumo.produtos_comp > 0 else 0.0
+        )
+        return formatar_delta_decimal_br(sh_c - sh_b, 1, "p.p.")
+
+    d_cons_mix = st.columns(3)
+    render_delta_card(
+        d_cons_mix[0],
+        "Δ Mesh",
+        formatar_delta_inteiro_br(resumo.delta_mesh, "un."),
+        valor_base=formatar_numero_br(resumo.mesh_base),
+        valor_atual=formatar_numero_br(resumo.mesh_comp),
+        rotulo_base=str(ano_base),
+        rotulo_atual=str(ano_comp),
+        variacao_pct=formatar_variacao_pct_br(
+            resumo.pct_mesh,
+            atual=resumo.mesh_comp,
+            base=resumo.mesh_base,
+        ),
+        direcao=_trend_variacao(resumo.delta_mesh),
+        icone="📶",
+        detalhe=f"Δ Participação no mix: {_delta_share_pp(resumo.mesh_base, resumo.mesh_comp)}",
+        num_base=resumo.mesh_base,
+        num_atual=resumo.mesh_comp,
+    )
+    render_delta_card(
+        d_cons_mix[1],
+        "Δ TV Box",
+        formatar_delta_inteiro_br(resumo.delta_tv, "un."),
+        valor_base=formatar_numero_br(resumo.tv_base),
+        valor_atual=formatar_numero_br(resumo.tv_comp),
+        rotulo_base=str(ano_base),
+        rotulo_atual=str(ano_comp),
+        variacao_pct=formatar_variacao_pct_br(
+            resumo.pct_tv,
+            atual=resumo.tv_comp,
+            base=resumo.tv_base,
+        ),
+        direcao=_trend_variacao(resumo.delta_tv),
+        icone="📺",
+        detalhe=f"Δ Participação no mix: {_delta_share_pp(resumo.tv_base, resumo.tv_comp)}",
+        num_base=resumo.tv_base,
+        num_atual=resumo.tv_comp,
+    )
+    render_delta_card(
+        d_cons_mix[2],
+        "Δ Virtua",
+        formatar_delta_inteiro_br(resumo.delta_virtua, "un."),
+        valor_base=formatar_numero_br(resumo.virtua_base),
+        valor_atual=formatar_numero_br(resumo.virtua_comp),
+        rotulo_base=str(ano_base),
+        rotulo_atual=str(ano_comp),
+        variacao_pct=formatar_variacao_pct_br(
+            resumo.pct_virtua,
+            atual=resumo.virtua_comp,
+            base=resumo.virtua_base,
+        ),
+        direcao=_trend_variacao(resumo.delta_virtua),
+        icone="🌐",
+        detalhe=f"Δ Participação no mix: {_delta_share_pp(resumo.virtua_base, resumo.virtua_comp)}",
+        num_base=resumo.virtua_base,
+        num_atual=resumo.virtua_comp,
+    )
+
+    st.markdown("<div style='height:0.65rem'></div>", unsafe_allow_html=True)
+
     # Linha 1 de KPIs: Consultivos, Produtos e Conversão.
     k_row1 = st.columns(3)
     render_kpi(
@@ -1875,7 +2026,7 @@ def render_comparativo_consultivo(
         formatar_numero_br(resumo.consultivos_comp),
         sub=(
             f"Base {ano_base}: {formatar_numero_br(resumo.consultivos_base)} · "
-            f"Δ {resumo.delta_consultivos:+d}".replace(",", ".")
+            f"Δ {formatar_delta_inteiro_br(resumo.delta_consultivos)}"
         ),
         icone="📋",
         tema=_tema_variacao(resumo.delta_consultivos, "azul"),
@@ -1888,7 +2039,7 @@ def render_comparativo_consultivo(
         formatar_numero_br(resumo.produtos_comp),
         sub=(
             f"Base {ano_base}: {formatar_numero_br(resumo.produtos_base)} · "
-            f"Δ {resumo.delta_produtos:+d}".replace(",", ".")
+            f"Δ {formatar_delta_inteiro_br(resumo.delta_produtos)}"
         ),
         icone="📦",
         tema=_tema_variacao(resumo.delta_produtos, "laranja"),
@@ -1912,8 +2063,6 @@ def render_comparativo_consultivo(
     st.markdown("<div style='height:0.55rem'></div>", unsafe_allow_html=True)
 
     # Linha 2 de KPIs: Médias Mensais Ativas e Produtividade / Meta por Equipe.
-    diff_mc = resumo.media_mensal_cons_comp - resumo.media_mensal_cons_base
-    diff_mp = resumo.media_mensal_prod_comp - resumo.media_mensal_prod_base
     k_row2 = st.columns(3)
     render_kpi(
         k_row2[0],

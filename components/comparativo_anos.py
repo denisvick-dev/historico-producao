@@ -23,14 +23,19 @@ import plotly.graph_objects as go
 import streamlit as st
 from pandas.io.formats.style import Styler
 
+from components.comparativo_consultivo import calcular_comparativo_consultivo
 from components.componentes import (
     Cores,
     Fontes,
     TemaKPIType,
     TipoInsightType,
     TipoTrendType,
+    formatar_delta_decimal_br,
+    formatar_delta_inteiro_br,
     formatar_numero_br,
+    formatar_variacao_pct_br,
     injetar_css,
+    render_delta_card,
     render_insight,
     render_kpi,
     render_section_header,
@@ -235,8 +240,21 @@ class ResumoComparativoAnos:
     os_por_tecnico_comp: float
     pontos_prod_base: float
     pontos_prod_comp: float
+    delta_pontos_prod: float
+    pct_pontos_prod: float | None
+    pontos_gpon_base: float
+    pontos_gpon_comp: float
+    delta_pontos_gpon: float
+    pct_pontos_gpon: float | None
     pontos_totais_base: float
     pontos_totais_comp: float
+    delta_pontos_totais: float
+    pct_pontos_totais: float | None
+    meses_ativos_pontos_base: int
+    meses_ativos_pontos_comp: int
+    media_mensal_pontos_base: float
+    media_mensal_pontos_comp: float
+    pct_media_pontos: float | None
     sem_contrato_registros: int
     linhas_incompletas: int
     mensal: pd.DataFrame
@@ -641,6 +659,7 @@ def calcular_comparativo_anos(
     if preparado.empty:
         ct_por_ano_mes: dict[tuple[int, int], int] = {}
         os_por_ano_mes: dict[tuple[int, int], int] = {}
+        pts_por_ano_mes: dict[tuple[int, int], float] = {}
     else:
         ct_dedup_all = preparado[preparado["contract_valid"]].drop_duplicates(
             ["year", "month", "technician", "period", "contract_clean"]
@@ -654,24 +673,34 @@ def calcular_comparativo_anos(
             (int(k[0]), int(k[1])): int(v)
             for k, v in os_prod_all.groupby(["year", "month"]).size().items()
         }
+        pts_por_ano_mes = {
+            (int(k[0]), int(k[1])): float(v)
+            for k, v in preparado.groupby(["year", "month"])["points"].sum().items()
+        }
 
     linhas_mensais: list[dict[str, object]] = []
     acum_ct_b = 0
     acum_ct_c = 0
     acum_os_b = 0
     acum_os_c = 0
+    acum_pts_b = 0.0
+    acum_pts_c = 0.0
     considerados_set = set(meses_considerados)
     for mes_num in range(1, 13):
         cb = ct_por_ano_mes.get((ano_base, mes_num), 0)
         cc = ct_por_ano_mes.get((ano_comp, mes_num), 0)
         ob = os_por_ano_mes.get((ano_base, mes_num), 0)
         oc = os_por_ano_mes.get((ano_comp, mes_num), 0)
+        pb = pts_por_ano_mes.get((ano_base, mes_num), 0.0)
+        pc = pts_por_ano_mes.get((ano_comp, mes_num), 0.0)
         eh_considerado = mes_num in considerados_set
         if eh_considerado:
             acum_ct_b += cb
             acum_ct_c += cc
             acum_os_b += ob
             acum_os_c += oc
+            acum_pts_b += pb
+            acum_pts_c += pc
         linhas_mensais.append(
             {
                 "month": mes_num,
@@ -690,6 +719,12 @@ def calcular_comparativo_anos(
                 "pct_os": _variacao_pct(oc, ob),
                 "acum_os_base": acum_os_b if eh_considerado else None,
                 "acum_os_comp": acum_os_c if eh_considerado else None,
+                "pontos_base": pb,
+                "pontos_comp": pc,
+                "delta_pontos": pc - pb,
+                "pct_pontos": _variacao_pct(pc, pb),
+                "acum_pontos_base": acum_pts_b if eh_considerado else None,
+                "acum_pontos_comp": acum_pts_c if eh_considerado else None,
                 "os_por_contrato_base": (ob / cb) if cb > 0 else 0.0,
                 "os_por_contrato_comp": (oc / cc) if cc > 0 else 0.0,
             }
@@ -731,12 +766,17 @@ def calcular_comparativo_anos(
     media_os_c = (os_comp / meses_os_c) if meses_os_c > 0 else 0.0
     pct_media_os = _variacao_pct(media_os_c, media_os_b)
 
+    meses_pts_b = int(mensal_rec["pontos_base"].gt(0).sum())
+    meses_pts_c = int(mensal_rec["pontos_comp"].gt(0).sum())
+
     if recorte.empty:
         tecs_ativos_b = 0
         tecs_ativos_c = 0
         tecs_comuns = 0
         pts_prod_b = 0.0
         pts_prod_c = 0.0
+        pts_gpon_b = 0.0
+        pts_gpon_c = 0.0
         pts_tot_b = 0.0
         pts_tot_c = 0.0
     else:
@@ -758,8 +798,30 @@ def calcular_comparativo_anos(
                 "points",
             ].sum()
         )
+        pts_gpon_b = float(
+            recorte.loc[
+                recorte["year"].eq(ano_base) & recorte["source_sheet"].eq(GPON),
+                "points",
+            ].sum()
+        )
+        pts_gpon_c = float(
+            recorte.loc[
+                recorte["year"].eq(ano_comp) & recorte["source_sheet"].eq(GPON),
+                "points",
+            ].sum()
+        )
         pts_tot_b = float(recorte.loc[recorte["year"].eq(ano_base), "points"].sum())
         pts_tot_c = float(recorte.loc[recorte["year"].eq(ano_comp), "points"].sum())
+
+    delta_pts_prod = pts_prod_c - pts_prod_b
+    pct_pts_prod = _variacao_pct(pts_prod_c, pts_prod_b)
+    delta_pts_gpon = pts_gpon_c - pts_gpon_b
+    pct_pts_gpon = _variacao_pct(pts_gpon_c, pts_gpon_b)
+    delta_pts_tot = pts_tot_c - pts_tot_b
+    pct_pts_tot = _variacao_pct(pts_tot_c, pts_tot_b)
+    media_pts_b = (pts_tot_b / meses_pts_b) if meses_pts_b > 0 else 0.0
+    media_pts_c = (pts_tot_c / meses_pts_c) if meses_pts_c > 0 else 0.0
+    pct_media_pts = _variacao_pct(media_pts_c, media_pts_b)
 
     ct_por_tec_b = (contratos_base / tecs_ativos_b) if tecs_ativos_b > 0 else 0.0
     ct_por_tec_c = (contratos_comp / tecs_ativos_c) if tecs_ativos_c > 0 else 0.0
@@ -994,8 +1056,21 @@ def calcular_comparativo_anos(
         os_por_tecnico_comp=os_por_tec_c,
         pontos_prod_base=pts_prod_b,
         pontos_prod_comp=pts_prod_c,
+        delta_pontos_prod=delta_pts_prod,
+        pct_pontos_prod=pct_pts_prod,
+        pontos_gpon_base=pts_gpon_b,
+        pontos_gpon_comp=pts_gpon_c,
+        delta_pontos_gpon=delta_pts_gpon,
+        pct_pontos_gpon=pct_pts_gpon,
         pontos_totais_base=pts_tot_b,
         pontos_totais_comp=pts_tot_c,
+        delta_pontos_totais=delta_pts_tot,
+        pct_pontos_totais=pct_pts_tot,
+        meses_ativos_pontos_base=meses_pts_b,
+        meses_ativos_pontos_comp=meses_pts_c,
+        media_mensal_pontos_base=media_pts_b,
+        media_mensal_pontos_comp=media_pts_c,
+        pct_media_pontos=pct_media_pts,
         sem_contrato_registros=sem_contrato,
         linhas_incompletas=incompletos,
         mensal=mensal_df,
@@ -1063,7 +1138,10 @@ def _grafico_mensal_comparativo(
         y=mensal[col_base],
         name=str(ano_base),
         marker=dict(color=cor_base, opacity=opacidades_base),
-        text=[formatar_numero_br(v) if int(v) > 0 else "" for v in mensal[col_base]],
+        text=[
+            formatar_numero_br(round(float(v))) if float(v) > 0 else ""
+            for v in mensal[col_base]
+        ],
         textposition="outside",
         textfont=dict(size=9.5, color="#475569"),
         cliponaxis=False,
@@ -1074,7 +1152,10 @@ def _grafico_mensal_comparativo(
         y=mensal[col_comp],
         name=str(ano_comp),
         marker=dict(color=cor_comp, opacity=opacidades_comp),
-        text=[formatar_numero_br(v) if int(v) > 0 else "" for v in mensal[col_comp]],
+        text=[
+            formatar_numero_br(round(float(v))) if float(v) > 0 else ""
+            for v in mensal[col_comp]
+        ],
         textposition="outside",
         textfont=dict(size=9.5, color=cor_comp),
         cliponaxis=False,
@@ -1377,9 +1458,10 @@ def _trend_variacao(delta: float | int) -> TipoTrendType:
 def render_comparativo_anos(
     records: pd.DataFrame,
     roster: pd.DataFrame | None = None,
+    *,
+    consultivo_frame: pd.DataFrame | None = None,
 ) -> None:
-    """Renderiza a página executiva de Comparativo 2025 x 2026 (Contratos e O.S.)."""
-    del roster
+    """Renderiza a página executiva de Comparativo 2025 x 2026 (Produção, Contratos e O.S.)."""
     injetar_css(_CSS_COMPARATIVO)
 
     if records.empty:
@@ -1572,8 +1654,8 @@ def render_comparativo_anos(
             <div class="comp-hero-top">
                 <div>
                     <span class="comp-hero-eyebrow">⚖️ Análise Interanual · {ano_base} x {ano_comp}</span>
-                    <h2>Comparativo {ano_base} x {ano_comp} · Contratos e O.S.</h2>
-                    <p>Visão analítica integrada de volume de contratos distintos, quantidade de Ordens de Serviço (aba Prod), giro O.S./contrato e produtividade por equipe.</p>
+                    <h2>Comparativo {ano_base} x {ano_comp} · Produção, Contratos e O.S.</h2>
+                    <p>Visão analítica integrada de pontuação de Produção (Prod + Gpon), contratos distintos, quantidade de Ordens de Serviço (aba Prod), giro O.S./contrato e produtividade por equipe.</p>
                 </div>
             </div>
             <div class="comp-pills">
@@ -1680,15 +1762,231 @@ def render_comparativo_anos(
         unsafe_allow_html=True,
     )
 
-    # Linha 1 de KPIs: Volumes Acumulados + Giro O.S./Contrato.
-    k_row1 = st.columns(3)
+    # Seção dedicada de Cards de Saldo / Delta (Δ): Produção, O.S., Contratos (e Consultivo cruzado quando carregado).
+    resumo_cons_cruzado = None
+    if consultivo_frame is not None and not consultivo_frame.empty:
+        resumo_cons_cruzado = calcular_comparativo_consultivo(
+            consultivo_frame,
+            roster=roster,
+            ano_base=ano_base,
+            ano_comp=ano_comp,
+            modo_meses=modo_meses,
+            meses_personalizados=meses_manuais,
+            escopo_equipe=escopo_equipe,
+            bases=sel_bases or None,
+            monitores=sel_monitores or None,
+        )
+
+    render_section_header(
+        f"Cards de Delta (Δ) · {ano_comp} vs {ano_base}",
+        subtitulo=(
+            "Variação líquida absoluta e percentual nos comparativos de Produção (Pontos), "
+            "Quantidade de O.S., Contratos"
+            + (
+                " e Consultivo"
+                if resumo_cons_cruzado is not None
+                and (
+                    resumo_cons_cruzado.consultivos_base > 0
+                    or resumo_cons_cruzado.consultivos_comp > 0
+                )
+                else ""
+            )
+        ),
+        icone="Δ",
+        badge=resumo.rotulo_recorte_meses,
+    )
+
+    diff_media_pts = resumo.media_mensal_pontos_comp - resumo.media_mensal_pontos_base
+    diff_media_ct = (
+        resumo.media_mensal_contratos_comp - resumo.media_mensal_contratos_base
+    )
+    diff_media_os = resumo.media_mensal_os_comp - resumo.media_mensal_os_base
+
+    tem_cons_cruzado = resumo_cons_cruzado is not None and (
+        resumo_cons_cruzado.consultivos_base > 0
+        or resumo_cons_cruzado.consultivos_comp > 0
+    )
+    d_cols_top = st.columns(4 if tem_cons_cruzado else 3)
+    render_delta_card(
+        d_cols_top[0],
+        "Δ Produção Total (Pontos)",
+        formatar_delta_decimal_br(resumo.delta_pontos_totais, 2, "pts"),
+        valor_base=format_points(resumo.pontos_totais_base),
+        valor_atual=format_points(resumo.pontos_totais_comp),
+        rotulo_base=str(ano_base),
+        rotulo_atual=str(ano_comp),
+        variacao_pct=formatar_variacao_pct_br(
+            resumo.pct_pontos_totais,
+            atual=resumo.pontos_totais_comp,
+            base=resumo.pontos_totais_base,
+        ),
+        direcao=_trend_variacao(resumo.delta_pontos_totais),
+        icone="⚡",
+        detalhe=(
+            f"Prod: {formatar_delta_decimal_br(resumo.delta_pontos_prod, 2)} · "
+            f"Gpon: {formatar_delta_decimal_br(resumo.delta_pontos_gpon, 2)}"
+        ),
+        num_base=resumo.pontos_totais_base,
+        num_atual=resumo.pontos_totais_comp,
+    )
+    render_delta_card(
+        d_cols_top[1],
+        "Δ Quantidade de O.S. (Prod)",
+        formatar_delta_inteiro_br(resumo.delta_os, "O.S."),
+        valor_base=formatar_numero_br(resumo.os_base),
+        valor_atual=formatar_numero_br(resumo.os_comp),
+        rotulo_base=str(ano_base),
+        rotulo_atual=str(ano_comp),
+        variacao_pct=formatar_variacao_pct_br(
+            resumo.pct_os,
+            atual=resumo.os_comp,
+            base=resumo.os_base,
+        ),
+        direcao=_trend_variacao(resumo.delta_os),
+        icone="📋",
+        detalhe=(
+            f"Média ativa: {formatar_delta_decimal_br(diff_media_os, 1, 'O.S./mês')}"
+        ),
+        num_base=resumo.os_base,
+        num_atual=resumo.os_comp,
+    )
+    render_delta_card(
+        d_cols_top[2],
+        "Δ Contratos Distintos",
+        formatar_delta_inteiro_br(resumo.delta_contratos, "ct"),
+        valor_base=formatar_numero_br(resumo.contratos_base),
+        valor_atual=formatar_numero_br(resumo.contratos_comp),
+        rotulo_base=str(ano_base),
+        rotulo_atual=str(ano_comp),
+        variacao_pct=formatar_variacao_pct_br(
+            resumo.pct_contratos,
+            atual=resumo.contratos_comp,
+            base=resumo.contratos_base,
+        ),
+        direcao=_trend_variacao(resumo.delta_contratos),
+        icone="📄",
+        detalhe=(
+            f"Média ativa: {formatar_delta_decimal_br(diff_media_ct, 1, 'ct/mês')}"
+        ),
+        num_base=resumo.contratos_base,
+        num_atual=resumo.contratos_comp,
+    )
+    if tem_cons_cruzado and resumo_cons_cruzado is not None:
+        render_delta_card(
+            d_cols_top[3],
+            "Δ Consultivos Realizados",
+            formatar_delta_inteiro_br(resumo_cons_cruzado.delta_consultivos, "cons."),
+            valor_base=formatar_numero_br(resumo_cons_cruzado.consultivos_base),
+            valor_atual=formatar_numero_br(resumo_cons_cruzado.consultivos_comp),
+            rotulo_base=str(ano_base),
+            rotulo_atual=str(ano_comp),
+            variacao_pct=formatar_variacao_pct_br(
+                resumo_cons_cruzado.pct_consultivos,
+                atual=resumo_cons_cruzado.consultivos_comp,
+                base=resumo_cons_cruzado.consultivos_base,
+            ),
+            direcao=_trend_variacao(resumo_cons_cruzado.delta_consultivos),
+            icone="🎯",
+            detalhe=(
+                f"Produtos: {formatar_delta_inteiro_br(resumo_cons_cruzado.delta_produtos, 'un.')} "
+                f"({resumo_cons_cruzado.rotulo_recorte_meses})"
+            ),
+            num_base=resumo_cons_cruzado.consultivos_base,
+            num_atual=resumo_cons_cruzado.consultivos_comp,
+        )
+
+    st.markdown("<div style='height:0.45rem'></div>", unsafe_allow_html=True)
+
+    share_gpon_comp = (
+        (resumo.pontos_gpon_comp / resumo.pontos_totais_comp) * 100.0
+        if resumo.pontos_totais_comp > 0
+        else 0.0
+    )
+    d_cols_sub = st.columns(3)
+    render_delta_card(
+        d_cols_sub[0],
+        "Δ Pontos em Prod",
+        formatar_delta_decimal_br(resumo.delta_pontos_prod, 2, "pts"),
+        valor_base=format_points(resumo.pontos_prod_base),
+        valor_atual=format_points(resumo.pontos_prod_comp),
+        rotulo_base=str(ano_base),
+        rotulo_atual=str(ano_comp),
+        variacao_pct=formatar_variacao_pct_br(
+            resumo.pct_pontos_prod,
+            atual=resumo.pontos_prod_comp,
+            base=resumo.pontos_prod_base,
+        ),
+        direcao=_trend_variacao(resumo.delta_pontos_prod),
+        icone="🔧",
+        detalhe=(
+            f"Média total ativa: {formatar_delta_decimal_br(diff_media_pts, 1, 'pts/mês')}"
+        ),
+        num_base=resumo.pontos_prod_base,
+        num_atual=resumo.pontos_prod_comp,
+    )
+    render_delta_card(
+        d_cols_sub[1],
+        "Δ Pontos em Gpon",
+        formatar_delta_decimal_br(resumo.delta_pontos_gpon, 2, "pts"),
+        valor_base=format_points(resumo.pontos_gpon_base),
+        valor_atual=format_points(resumo.pontos_gpon_comp),
+        rotulo_base=str(ano_base),
+        rotulo_atual=str(ano_comp),
+        variacao_pct=formatar_variacao_pct_br(
+            resumo.pct_pontos_gpon,
+            atual=resumo.pontos_gpon_comp,
+            base=resumo.pontos_gpon_base,
+        ),
+        direcao=_trend_variacao(resumo.delta_pontos_gpon),
+        icone="🌐",
+        detalhe=f"Participação Gpon em {ano_comp}: {_formatar_decimal_br(share_gpon_comp, 1)}%",
+        num_base=resumo.pontos_gpon_base,
+        num_atual=resumo.pontos_gpon_comp,
+    )
+    render_delta_card(
+        d_cols_sub[2],
+        "Δ Giro O.S. / Contrato",
+        formatar_delta_decimal_br(resumo.delta_os_por_contrato, 2, "x"),
+        valor_base=f"{_formatar_decimal_br(resumo.os_por_contrato_base, 2)}x",
+        valor_atual=f"{_formatar_decimal_br(resumo.os_por_contrato_comp, 2)}x",
+        rotulo_base=str(ano_base),
+        rotulo_atual=str(ano_comp),
+        variacao_pct=formatar_variacao_pct_br(
+            resumo.pct_os_por_contrato,
+            atual=resumo.os_por_contrato_comp,
+            base=resumo.os_por_contrato_base,
+        ),
+        direcao=_trend_variacao(resumo.delta_os_por_contrato),
+        icone="🔄",
+        detalhe="Densidade média de ordens de serviço por contrato",
+        num_base=resumo.os_por_contrato_base,
+        num_atual=resumo.os_por_contrato_comp,
+    )
+
+    st.markdown("<div style='height:0.65rem'></div>", unsafe_allow_html=True)
+
+    # Linha 1 de KPIs: Volumes Acumulados (Produção, Contratos, O.S.) + Giro O.S./Contrato.
+    k_row1 = st.columns(4)
     render_kpi(
         k_row1[0],
+        f"Produção Total ({ano_comp} vs {ano_base})",
+        format_points(resumo.pontos_totais_comp),
+        sub=(
+            f"Base {ano_base}: {format_points(resumo.pontos_totais_base)} · "
+            f"Δ {formatar_delta_decimal_br(resumo.delta_pontos_totais, 2)}"
+        ),
+        icone="⚡",
+        tema=_tema_variacao(resumo.delta_pontos_totais, "azul"),
+        delta=_formatar_pct_br(resumo.pct_pontos_totais),
+        delta_tipo=_trend_variacao(resumo.delta_pontos_totais),
+    )
+    render_kpi(
+        k_row1[1],
         f"Contratos ({ano_comp} vs {ano_base})",
         formatar_numero_br(resumo.contratos_comp),
         sub=(
             f"Base {ano_base}: {formatar_numero_br(resumo.contratos_base)} · "
-            f"Δ {resumo.delta_contratos:+d}".replace(",", ".")
+            f"Δ {formatar_delta_inteiro_br(resumo.delta_contratos)}"
         ),
         icone="📄",
         tema=_tema_variacao(resumo.delta_contratos, "azul"),
@@ -1696,12 +1994,12 @@ def render_comparativo_anos(
         delta_tipo=_trend_variacao(resumo.delta_contratos),
     )
     render_kpi(
-        k_row1[1],
+        k_row1[2],
         f"Quantidade de O.S. ({ano_comp} vs {ano_base})",
         formatar_numero_br(resumo.os_comp),
         sub=(
             f"Base {ano_base}: {formatar_numero_br(resumo.os_base)} · "
-            f"Δ {resumo.delta_os:+d}".replace(",", ".")
+            f"Δ {formatar_delta_inteiro_br(resumo.delta_os)}"
         ),
         icone="📋",
         tema=_tema_variacao(resumo.delta_os, "laranja"),
@@ -1709,7 +2007,7 @@ def render_comparativo_anos(
         delta_tipo=_trend_variacao(resumo.delta_os),
     )
     render_kpi(
-        k_row1[2],
+        k_row1[3],
         f"Giro O.S. / Contrato ({ano_comp})",
         f"{_formatar_decimal_br(resumo.os_por_contrato_comp, 2)}x",
         sub=(
@@ -1725,10 +2023,6 @@ def render_comparativo_anos(
     st.markdown("<div style='height:0.55rem'></div>", unsafe_allow_html=True)
 
     # Linha 2 de KPIs: Médias Mensais Ativas e Produtividade por Técnico.
-    diff_media_ct = (
-        resumo.media_mensal_contratos_comp - resumo.media_mensal_contratos_base
-    )
-    diff_media_os = resumo.media_mensal_os_comp - resumo.media_mensal_os_base
     k_row2 = st.columns(3)
     render_kpi(
         k_row2[0],
@@ -1780,6 +2074,28 @@ def render_comparativo_anos(
     )
 
     with aba_mensal:
+        with st.container(border=True):
+            render_section_header(
+                f"Produção Total (Pontos) por mês · {ano_base} x {ano_comp}",
+                subtitulo="Soma mensal de pontos nas abas Prod + Gpon (barras sólidas = meses do recorte ativo)",
+                icone="⚡",
+            )
+            st.plotly_chart(
+                _grafico_mensal_comparativo(
+                    resumo.mensal,
+                    col_base="pontos_base",
+                    col_comp="pontos_comp",
+                    ano_base=ano_base,
+                    ano_comp=ano_comp,
+                    cor_base="#94A3B8",
+                    cor_comp=AZUL_TOTALE,
+                    unidade="Pontos",
+                ),
+                width="stretch",
+                config=CHART_CONFIG,
+                key="comp_chart_mensal_pontos",
+            )
+
         g_cols = st.columns(2)
         with g_cols[0]:
             with st.container(border=True):

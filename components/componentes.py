@@ -650,7 +650,7 @@ class Formatadores:
 def _garantir_container(container: Any = None) -> Any:
     if container is None:
         return st
-    if hasattr(container, "markdown"):
+    if hasattr(container, "markdown") or hasattr(container, "html"):
         return container
     logger.warning(
         "Container inválido recebido: %s. Usando st.", type(container).__name__
@@ -1078,6 +1078,61 @@ _CSS_EXTRAS = """
 }
 .totale-icon-tile--section .totale-icon-glyph { font-size: 22px !important; }
 .totale-icon-tile:empty, .totale-icon-glyph:empty { display: none !important; }
+.totale-delta-card {
+    position: relative; background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 14px;
+    padding: 15px 16px 13px; overflow: hidden; height: 100%;
+    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.045);
+    transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+    display: flex; flex-direction: column; justify-content: space-between; gap: 8px;
+}
+.totale-delta-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 14px 28px rgba(15, 23, 42, 0.085);
+}
+.totale-delta-accent { position: absolute; top: 0; left: 0; right: 0; height: 3.5px; }
+.totale-delta-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.totale-delta-title-wrap { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.totale-delta-icon {
+    width: 26px; height: 26px; border-radius: 8px; display: inline-flex;
+    align-items: center; justify-content: center; font-size: 13px; flex-shrink: 0;
+}
+.totale-delta-title {
+    font-size: 11px; font-weight: 800; letter-spacing: 0.055em; text-transform: uppercase;
+    color: #475569; line-height: 1.25;
+}
+.totale-delta-pill {
+    display: inline-flex; align-items: center; gap: 3px; padding: 3px 8px;
+    border-radius: 999px; font-size: 11px; font-weight: 800; white-space: nowrap;
+    font-variant-numeric: tabular-nums; flex-shrink: 0;
+}
+.totale-delta-hero { display: flex; align-items: baseline; gap: 7px; flex-wrap: wrap; margin: 1px 0 2px; }
+.totale-delta-tag {
+    font-size: 9.5px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase;
+    padding: 2px 6px; border-radius: 5px; background: #F1F5F9; color: #64748B;
+}
+.totale-delta-value {
+    font-size: clamp(21px, 2vw, 26px); font-weight: 800; letter-spacing: -0.03em;
+    line-height: 1.1; font-variant-numeric: tabular-nums;
+}
+.totale-delta-versus {
+    background: #F8FAFC; border: 1px solid #E6EDF5; border-radius: 10px;
+    padding: 8px 10px; display: flex; flex-direction: column; gap: 6px;
+}
+.totale-delta-versus-row {
+    display: flex; align-items: center; justify-content: space-between; gap: 6px;
+    font-size: 11.5px; color: #475569; font-variant-numeric: tabular-nums;
+}
+.totale-delta-versus-col { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.totale-delta-versus-col--end { text-align: right; align-items: flex-end; }
+.totale-delta-versus-lbl { font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #64748B; }
+.totale-delta-versus-num { font-size: 12.5px; font-weight: 750; color: #0F172A; }
+.totale-delta-arrow { color: #94A3B8; font-weight: 700; font-size: 12px; flex-shrink: 0; }
+.totale-delta-bars { display: flex; flex-direction: column; gap: 3px; }
+.totale-delta-track { width: 100%; height: 4px; background: #E2E8F0; border-radius: 999px; overflow: hidden; }
+.totale-delta-fill { height: 100%; border-radius: 999px; transition: width .25s ease; }
+.totale-delta-detail {
+    font-size: 11px; color: #64748B; line-height: 1.35; font-variant-numeric: tabular-nums;
+}
 """
 
 _CSS_STREAMLIT_CHROME = """
@@ -1784,6 +1839,213 @@ def render_kpi_card(
     )
 
 
+_CSS_DELTA_CARDS_STANDALONE = """
+.totale-delta-card {
+    position: relative; background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 14px;
+    padding: 15px 16px 13px; overflow: hidden; height: 100%;
+    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.045);
+    transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+    display: flex; flex-direction: column; justify-content: space-between; gap: 8px;
+}
+.totale-delta-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 14px 28px rgba(15, 23, 42, 0.085);
+}
+"""
+
+
+def injetar_css_delta_cards(container: Any = None) -> None:
+    """Injeta estilos responsivos e de hover dos cards corporativos de Delta (Δ)."""
+    injetar_css(_CSS_DELTA_CARDS_STANDALONE, container=container)
+
+
+def formatar_delta_inteiro_br(valor: int | float, sufixo: str = "") -> str:
+    """Formata variação inteira com sinal explícito (+/-) e separador de milhar BR."""
+    inteiro = int(round(float(valor)))
+    suf = f" {sufixo.strip()}" if sufixo.strip() else ""
+    if inteiro > 0:
+        return f"+{inteiro:,}".replace(",", ".") + suf
+    if inteiro < 0:
+        return f"{inteiro:,}".replace(",", ".") + suf
+    return f"0{suf}"
+
+
+def formatar_delta_decimal_br(
+    valor: float | int, casas: int = 2, sufixo: str = ""
+) -> str:
+    """Formata variação decimal com sinal explícito (+/-) no padrão brasileiro."""
+    num = float(valor)
+    suf = f" {sufixo.strip()}" if sufixo.strip() else ""
+    limite_zero = 0.5 * (10 ** (-max(casas, 0)))
+    if abs(num) < limite_zero:
+        zero_txt = (
+            f"{0.0:,.{casas}f}".replace(",", "_").replace(".", ",").replace("_", ".")
+        )
+        return f"{zero_txt}{suf}"
+    sinal = "+" if num > 0 else "-"
+    corpo = (
+        f"{abs(num):,.{casas}f}".replace(",", "_").replace(".", ",").replace("_", ".")
+    )
+    return f"{sinal}{corpo}{suf}"
+
+
+def formatar_variacao_pct_br(
+    pct: float | None,
+    *,
+    casas: int = 1,
+    atual: float | int | None = None,
+    base: float | int | None = None,
+) -> str:
+    """Formata variação percentual BR ou identifica abertura de base ('Novo')."""
+    if pct is None:
+        if (
+            base is not None
+            and atual is not None
+            and float(base) == 0.0
+            and float(atual) > 0.0
+        ):
+            return "Novo"
+        return "—"
+    limite_zero = 0.5 * (10 ** (-max(casas, 0)))
+    if abs(float(pct)) < limite_zero:
+        return f"0,{'0' * casas}%" if casas > 0 else "0%"
+    return f"{float(pct):+.{casas}f}%".replace(".", ",")
+
+
+def render_delta_card(
+    container: Any,
+    titulo: str,
+    delta_formatado: str,
+    *,
+    valor_base: str,
+    valor_atual: str,
+    rotulo_base: str = "2025",
+    rotulo_atual: str = "2026",
+    variacao_pct: str = "",
+    direcao: TipoTrendType = "neutral",
+    icone: str = "",
+    detalhe: str = "",
+    num_base: float | int | None = None,
+    num_atual: float | int | None = None,
+) -> None:
+    """Renderiza card executivo destacando o Saldo/Delta (Δ) entre dois recortes."""
+    dir_norm = normalizar_tipo_trend(direcao)
+    if dir_norm == "up":
+        grad_topo = "linear-gradient(90deg, #059669 0%, #10B981 100%)"
+        cor_delta = "#047857"
+        cor_borda = "#D1FAE5"
+        bg_pill = "#ECFDF5"
+        borda_pill = "#A7F3D0"
+        seta = "▲"
+        cor_barra_atual = "#059669"
+        bg_icone = "#ECFDF5"
+    elif dir_norm == "down":
+        grad_topo = "linear-gradient(90deg, #DC2626 0%, #EF4444 100%)"
+        cor_delta = "#B91C1C"
+        cor_borda = "#FEE2E2"
+        bg_pill = "#FEF2F2"
+        borda_pill = "#FECACA"
+        seta = "▼"
+        cor_barra_atual = "#DC2626"
+        bg_icone = "#FEF2F2"
+    else:
+        grad_topo = "linear-gradient(90deg, #012869 0%, #3B82F6 100%)"
+        cor_delta = "#012869"
+        cor_borda = "#E2E8F0"
+        bg_pill = "#F1F5F9"
+        borda_pill = "#CBD5E1"
+        seta = "•"
+        cor_barra_atual = "#012869"
+        bg_icone = "#EFF6FF"
+
+    titulo_esc = Validadores.html_escape(titulo)
+    delta_esc = Validadores.html_escape(delta_formatado)
+    r_base_esc = Validadores.html_escape(rotulo_base)
+    r_atual_esc = Validadores.html_escape(rotulo_atual)
+    v_base_esc = Validadores.html_escape(valor_base)
+    v_atual_esc = Validadores.html_escape(valor_atual)
+
+    icone_html = ""
+    if icone:
+        icone_seg = _texto_icone_seguro(icone)
+        if icone_seg:
+            icone_html = (
+                f'<span class="totale-delta-icon" style="width:26px;height:26px;border-radius:8px;'
+                f"display:inline-flex;align-items:center;justify-content:center;font-size:13px;"
+                f'flex-shrink:0;background:{bg_icone};color:{cor_delta};" aria-hidden="true">'
+                f"{Validadores.html_escape(icone_seg)}</span>"
+            )
+
+    pill_html = ""
+    if variacao_pct:
+        var_esc = Validadores.html_escape(variacao_pct)
+        mostra_seta = variacao_pct not in {"—", "Novo"}
+        seta_html = f'<span aria-hidden="true">{seta}</span>' if mostra_seta else ""
+        pill_html = (
+            f'<span class="totale-delta-pill" style="display:inline-flex;align-items:center;gap:3px;'
+            f"padding:3px 8px;border-radius:999px;font-size:11px;font-weight:800;white-space:nowrap;"
+            f"font-variant-numeric:tabular-nums;background:{bg_pill};color:{cor_delta};"
+            f'border:1px solid {borda_pill};">{seta_html}{var_esc}</span>'
+        )
+
+    barras_html = ""
+    if num_base is not None and num_atual is not None:
+        nb = max(0.0, float(num_base))
+        na = max(0.0, float(num_atual))
+        teto = max(nb, na, 1e-9)
+        w_base = 0.0 if nb <= 0 else max(5.0, min(100.0, (nb / teto) * 100.0))
+        w_atual = 0.0 if na <= 0 else max(5.0, min(100.0, (na / teto) * 100.0))
+        barras_html = (
+            '<div class="totale-delta-bars" style="display:flex;flex-direction:column;gap:3px;margin-top:2px;" aria-hidden="true">'
+            '<div class="totale-delta-track" style="width:100%;height:4px;background:#E2E8F0;border-radius:999px;overflow:hidden;">'
+            f'<div class="totale-delta-fill" style="width:{w_base:.1f}%;height:100%;background:#94A3B8;border-radius:999px;"></div></div>'
+            '<div class="totale-delta-track" style="width:100%;height:4px;background:#E2E8F0;border-radius:999px;overflow:hidden;">'
+            f'<div class="totale-delta-fill" style="width:{w_atual:.1f}%;height:100%;background:{cor_barra_atual};border-radius:999px;"></div></div>'
+            "</div>"
+        )
+
+    detalhe_html = (
+        '<div class="totale-delta-detail" style="font-size:11px;color:#64748B;line-height:1.35;'
+        f'font-variant-numeric:tabular-nums;">{Validadores.html_escape(detalhe)}</div>'
+        if detalhe
+        else ""
+    )
+
+    markup = (
+        f'<div class="totale-delta-card" style="position:relative;background:#FFFFFF;border:1px solid {cor_borda};'
+        "border-radius:14px;padding:15px 16px 13px;overflow:hidden;"
+        "box-shadow:0 8px 20px rgba(15,23,42,0.045);display:flex;flex-direction:column;"
+        f'justify-content:space-between;gap:8px;" role="region" aria-label="{titulo_esc}: {delta_esc}">'
+        f'<div class="totale-delta-accent" style="position:absolute;top:0;left:0;right:0;height:3.5px;background:{grad_topo};"></div>'
+        '<div class="totale-delta-head" style="display:flex;align-items:center;justify-content:space-between;gap:8px;">'
+        '<div class="totale-delta-title-wrap" style="display:flex;align-items:center;gap:7px;min-width:0;">'
+        f"{icone_html}"
+        '<span class="totale-delta-title" style="font-size:11px;font-weight:800;letter-spacing:0.055em;'
+        f'text-transform:uppercase;color:#475569;line-height:1.25;">{titulo_esc}</span></div>'
+        f"{pill_html}</div>"
+        '<div class="totale-delta-hero" style="display:flex;align-items:baseline;gap:7px;flex-wrap:wrap;margin:1px 0 2px;">'
+        '<span class="totale-delta-tag" style="font-size:9.5px;font-weight:800;letter-spacing:0.08em;'
+        'text-transform:uppercase;padding:2px 6px;border-radius:5px;background:#F1F5F9;color:#64748B;">SALDO Δ</span>'
+        '<span class="totale-delta-value" style="font-size:clamp(20px,1.9vw,25px);font-weight:800;'
+        f'letter-spacing:-0.03em;line-height:1.1;font-variant-numeric:tabular-nums;color:{cor_delta};">{delta_esc}</span>'
+        "</div>"
+        '<div class="totale-delta-versus" style="background:#F8FAFC;border:1px solid #E6EDF5;border-radius:10px;'
+        'padding:8px 10px;display:flex;flex-direction:column;gap:5px;">'
+        '<div class="totale-delta-versus-row" style="display:flex;align-items:center;justify-content:space-between;'
+        'gap:6px;font-size:11.5px;color:#475569;font-variant-numeric:tabular-nums;">'
+        '<div class="totale-delta-versus-col" style="display:flex;flex-direction:column;gap:1px;min-width:0;">'
+        f'<span class="totale-delta-versus-lbl" style="font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:#64748B;">{r_base_esc}</span>'
+        f'<span class="totale-delta-versus-num" style="font-size:12.5px;font-weight:750;color:#334155;">{v_base_esc}</span></div>'
+        '<span class="totale-delta-arrow" style="color:#94A3B8;font-weight:700;font-size:12px;flex-shrink:0;" aria-hidden="true">→</span>'
+        '<div class="totale-delta-versus-col totale-delta-versus-col--end" style="display:flex;flex-direction:column;gap:1px;min-width:0;text-align:right;align-items:flex-end;">'
+        f'<span class="totale-delta-versus-lbl" style="font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:#64748B;">{r_atual_esc}</span>'
+        f'<span class="totale-delta-versus-num" style="font-size:12.5px;font-weight:800;color:#0F172A;">{v_atual_esc}</span></div>'
+        f"</div>{barras_html}</div>"
+        f"{detalhe_html}</div>"
+    )
+    _safe_render_html(markup, container)
+
+
 def render_insight(msg: str, tipo: TipoInsightType = "info", titulo: str = "") -> None:
     if not msg:
         return
@@ -2219,13 +2481,18 @@ __all__ = [
     "definir_tema_sidebar",
     "detectar_formato_data",
     "formatar_datetime_exibicao",
+    "formatar_delta_decimal_br",
+    "formatar_delta_inteiro_br",
     "formatar_numero_br",
+    "formatar_variacao_pct_br",
     "injetar_css",
+    "injetar_css_delta_cards",
     "normalizar_tema_sidebar",
     "normalizar_texto_badge",
     "normalizar_tipo",
     "render_badge",
     "render_card",
+    "render_delta_card",
     "render_empty_state",
     "render_hero",
     "render_hero_migracao",

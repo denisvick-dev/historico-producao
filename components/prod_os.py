@@ -6,7 +6,15 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from components.componentes import formatar_numero_br, render_ticker
+from components.componentes import (
+    formatar_delta_decimal_br,
+    formatar_delta_inteiro_br,
+    formatar_numero_br,
+    formatar_variacao_pct_br,
+    injetar_css_delta_cards,
+    render_delta_card,
+    render_ticker,
+)
 from components.painel_quantidades import (
     AZUL_TOTALE,
     CHART_CONFIG,
@@ -30,6 +38,7 @@ from components.painel_quantidades import (
 from components.painel_quantidades import (
     total_column_style as _total_column_style,
 )
+from components.visoes_dashboards import selecionar_periodo_anterior
 from production import PROD, month_label, summarize_os
 
 
@@ -51,7 +60,16 @@ def _technician_monthly_table(
     return table.reset_index()
 
 
-def render_prod_orders(filtered: pd.DataFrame) -> None:
+def render_prod_orders(
+    filtered: pd.DataFrame,
+    *,
+    records: pd.DataFrame | None = None,
+    technicians: list[str] | None = None,
+    months: int | None = None,
+    projects: list[str] | None = None,
+    period_start: pd.Timestamp | None = None,
+    period_end: pd.Timestamp | None = None,
+) -> None:
     """Renderiza contagem mensal e por técnico das linhas da aba Prod.
 
     O importador armazena uma linha por registro válido da planilha, portanto
@@ -127,6 +145,108 @@ def render_prod_orders(filtered: pd.DataFrame) -> None:
             "No recorte selecionado",
             "Ø",
         )
+
+    if records is not None and not records.empty:
+        previous_all = selecionar_periodo_anterior(
+            records,
+            filtered,
+            technicians or [],
+            months,
+            projects or [],
+            period_start,
+            period_end,
+        )
+        prev_prod = (
+            previous_all[previous_all["source_sheet"].eq(PROD)]
+            if not previous_all.empty and "source_sheet" in previous_all.columns
+            else pd.DataFrame()
+        )
+        if not prev_prod.empty:
+            prev_total_os = int(len(prev_prod))
+            prev_active_tecs = int(prev_prod["technician"].nunique())
+            prev_avg = prev_total_os / prev_active_tecs if prev_active_tecs else 0.0
+            delta_os = int(total_os) - prev_total_os
+            delta_tecs = int(active_technicians) - prev_active_tecs
+            delta_avg = float(average) - prev_avg
+            pct_os = (
+                (float(total_os) / prev_total_os - 1.0) * 100.0
+                if prev_total_os > 0
+                else None
+            )
+            pct_tecs = (
+                (float(active_technicians) / prev_active_tecs - 1.0) * 100.0
+                if prev_active_tecs > 0
+                else None
+            )
+            pct_avg = (
+                (float(average) / prev_avg - 1.0) * 100.0 if prev_avg > 0 else None
+            )
+            prev_avg_fmt = (
+                f"{prev_avg:,.1f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            )
+
+            injetar_css_delta_cards()
+            st.markdown("<div style='height:0.5rem'></div>", unsafe_allow_html=True)
+            d_os_cols = st.columns(3)
+            render_delta_card(
+                d_os_cols[0],
+                "Δ Total de O.S. vs Período Anterior",
+                formatar_delta_inteiro_br(delta_os, "O.S."),
+                valor_base=formatar_numero_br(prev_total_os),
+                valor_atual=formatar_numero_br(total_os),
+                rotulo_base="Anterior",
+                rotulo_atual="Atual",
+                variacao_pct=formatar_variacao_pct_br(
+                    pct_os, atual=total_os, base=prev_total_os
+                ),
+                direcao=(
+                    "up" if delta_os > 0 else ("down" if delta_os < 0 else "neutral")
+                ),
+                icone="📋",
+                detalhe="Comparativo de linhas válidas da aba Prod contra a janela anterior",
+                num_base=prev_total_os,
+                num_atual=total_os,
+            )
+            render_delta_card(
+                d_os_cols[1],
+                "Δ Técnicos c/ O.S. vs Anterior",
+                formatar_delta_inteiro_br(delta_tecs, "téc."),
+                valor_base=formatar_numero_br(prev_active_tecs),
+                valor_atual=formatar_numero_br(active_technicians),
+                rotulo_base="Anterior",
+                rotulo_atual="Atual",
+                variacao_pct=formatar_variacao_pct_br(
+                    pct_tecs, atual=active_technicians, base=prev_active_tecs
+                ),
+                direcao=(
+                    "up"
+                    if delta_tecs > 0
+                    else ("down" if delta_tecs < 0 else "neutral")
+                ),
+                icone="👷",
+                detalhe="Variação de técnicos ativos com ordens produtivas",
+                num_base=prev_active_tecs,
+                num_atual=active_technicians,
+            )
+            render_delta_card(
+                d_os_cols[2],
+                "Δ Média O.S. / Técnico vs Anterior",
+                formatar_delta_decimal_br(delta_avg, 1, "O.S."),
+                valor_base=prev_avg_fmt,
+                valor_atual=formatted_average,
+                rotulo_base="Anterior",
+                rotulo_atual="Atual",
+                variacao_pct=formatar_variacao_pct_br(
+                    pct_avg, atual=average, base=prev_avg
+                ),
+                direcao=(
+                    "up" if delta_avg > 0 else ("down" if delta_avg < 0 else "neutral")
+                ),
+                icone="⚡",
+                detalhe="Intensidade média de O.S. por técnico no recorte",
+                num_base=prev_avg,
+                num_atual=float(average),
+            )
 
     _section_heading(
         "Quantidade de O.S.",
