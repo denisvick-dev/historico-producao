@@ -140,7 +140,7 @@ COLORS = {
 ICONE_PAGINA_TOTALE = LOGO_PADRAO_TOTALE.parent / "totale.ico"
 
 st.set_page_config(
-    page_title="Histórico de produção | Totale",
+    page_title="Inteligência & Gestão Operacional | Totale",
     page_icon=(
         str(ICONE_PAGINA_TOTALE)
         if ICONE_PAGINA_TOTALE.is_file()
@@ -1501,7 +1501,7 @@ def _resumo_janela_sidebar(frame: pd.DataFrame) -> tuple[str, int]:
 with st.sidebar:
     render_sidebar_brand(
         nome="TOTALE",
-        subtitulo="Gestão de Produção & Performance",
+        subtitulo="Inteligência & Gestão Operacional",
         versao="2025 · 2026",
         logo=LOGO_PADRAO_TOTALE,
         logo_banner=True,
@@ -1526,21 +1526,21 @@ with st.sidebar:
         ],
         fontes=("Produção", "lista_ativos", "Consultivo"),
     )
-    render_sidebar_section("Navegação", icone="🧭")
+    render_sidebar_section("Módulos Executivos", icone="🧭")
     nav_labels = {
-        "Visão geral": ":material/dashboard:  Visão geral",
-        "Comparativo 2025 x 2026": ":material/compare_arrows:  Comparativo 2025 x 2026",
-        "Consultivo 2025 x 2026": ":material/trending_up:  Consultivo 2025 x 2026",
-        "Projetos": ":material/account_tree:  Projetos",
-        "Quantidade de O.S.": ":material/assignment:  Quantidade de O.S.",
-        "Contratos": ":material/description:  Contratos",
-        "Produtividade unitária": ":material/speed:  Produtividade unitária",
-        "Consultivo": ":material/support_agent:  Consultivo",
-        "Regularidade": ":material/calendar_month:  Regularidade",
-        "Eficiência": ":material/bolt:  Eficiência por técnico",
-        "Técnicos": ":material/person:  Técnicos",
-        "Quadro de técnicos": ":material/groups:  Quadro de técnicos",
-        "Saúde dos dados": ":material/monitor_heart:  Saúde dos dados",
+        "Visão geral": ":material/dashboard:  Visão Executiva · Produção",
+        "Comparativo 2025 x 2026": ":material/compare_arrows:  Produção 2025 × 2026",
+        "Consultivo 2025 x 2026": ":material/trending_up:  Consultivo 2025 × 2026",
+        "Consultivo": ":material/support_agent:  Performance Consultiva",
+        "Projetos": ":material/account_tree:  Gestão por Projeto",
+        "Quantidade de O.S.": ":material/assignment:  Ordens de Serviço (O.S.)",
+        "Contratos": ":material/description:  Gestão de Contratos",
+        "Produtividade unitária": ":material/speed:  Produtividade Unitária",
+        "Regularidade": ":material/calendar_month:  Regularidade Operacional",
+        "Eficiência": ":material/bolt:  Matriz de Eficiência",
+        "Técnicos": ":material/person:  Desempenho Individual",
+        "Quadro de técnicos": ":material/groups:  Quadro Cadastral (Ativos)",
+        "Saúde dos dados": ":material/monitor_heart:  Governança & Dados",
     }
     # Evita seleções de navegação que não existam mais.
     if st.session_state.get("navigation") not in (None, *nav_labels):
@@ -1588,7 +1588,7 @@ with st.sidebar:
         },
         unidade="Sincronização sob demanda e na abertura",
         ambiente="Demo" if _sb_is_demo else "Produção",
-        copyright="Totale · Histórico de produção",
+        copyright="Totale · Inteligência & Gestão Operacional",
     )
 
 
@@ -1605,61 +1605,72 @@ def render_dashboard() -> None:
     )
     page_titles = {
         "Visão geral": (
-            "Histórico de produção",
-            "Acompanhe a evolução e os resultados da equipe técnica.",
+            "Visão Executiva · Produção Operacional",
+            "Monitoramento consolidado de pontuação técnica (Prod + Gpon), produtividade e evolução das equipes.",
         ),
         "Comparativo 2025 x 2026": (
-            "Comparativo 2025 x 2026 · Contratos e O.S.",
-            "Análise interanual de contratos distintos, ordens de serviço (Prod), giro O.S./contrato e evolução por equipe.",
+            "Comparativo Interanual 2025 × 2026 · Produção, Contratos e O.S.",
+            "Análise interanual de pontuação, contratos distintos, ordens de serviço (Prod), giro O.S./contrato e evolução por equipe.",
         ),
         "Consultivo 2025 x 2026": (
-            "Comparativo 2025 x 2026 · Consultivos",
-            "Análise interanual de consultivos realizados, mix de produtos (Mesh, TV Box, Virtua), conversão e metas por equipe.",
+            "Comparativo Interanual 2025 × 2026 · Performance Consultiva",
+            "Análise interanual de consultivos realizados, mix comercial (Mesh, TV Box, Virtua), conversão e metas por equipe.",
         ),
         "Projetos": (
-            "Produção por projeto",
-            "Compare pontos, ordens de serviço e participação por projeto.",
+            "Gestão Operacional por Projeto",
+            "Comparativo executivo de pontuação, ordens de serviço e participação percentual por frente de projeto.",
         ),
         "Quantidade de O.S.": (
-            "Quantidade de O.S.",
-            "Ordens de serviço registradas na aba Prod, por competência e técnico.",
+            "Gestão de Ordens de Serviço (O.S.)",
+            "Acompanhamento de ordens de serviço produtivas (aba Prod) por competência, projeto e técnico.",
         ),
         "Contratos": (
-            "Contratos e eficiência",
-            "Acompanhe os contratos atendidos por competência, técnico e faixa de eficiência.",
+            "Gestão & Eficiência de Contratos",
+            "Monitoramento de contratos distintos atendidos por competência, técnico e faixa de eficiência operacional.",
         ),
         "Produtividade unitária": (
-            "Produtividade unitária",
-            "Compare pontos por O.S., pontos por contrato e o perfil volume × complexidade da equipe.",
+            "Produtividade Unitária & Densidade Técnica",
+            "Relação entre pontos por O.S., pontos por contrato e posicionamento volume × complexidade da equipe.",
         ),
         "Consultivo": (
-            "Total de Consultivos",
-            "Histórico de consultivos realizados, mix de produtos (Mesh, TV Box, Virtua) e vínculo com lista_ativos.",
+            "Performance Consultiva & Mix Comercial",
+            "Indicadores consolidados de consultivos realizados, mix comercial (Mesh, TV Box, Virtua) e vínculo com o quadro ativo.",
         ),
         "Regularidade": (
-            "Regularidade da produção",
-            "Compare médias, medianas, oscilações e competências sem registros.",
+            "Regularidade & Consistência Operacional",
+            "Análise estatística de médias, medianas, coeficiente de variação e continuidade mensal por técnico.",
         ),
         "Eficiência": (
-            "Eficiência por técnico por mês",
-            "Acompanhe as faixas mensais e a faixa mais frequente no período.",
+            "Matriz de Eficiência Mensal por Técnico",
+            "Classificação mensal de faixas de entrega e predominância histórica de performance da equipe.",
         ),
         "Técnicos": (
-            "Produção por técnico",
-            "Analise a evolução individual e compare com a equipe.",
+            "Desempenho Individual de Técnicos",
+            "Histórico individual detalhado, melhor competência e comparativo direto frente à média da operação.",
         ),
         "Quadro de técnicos": (
-            "Quadro de técnicos · lista_ativos",
-            "Conciliação entre o cadastro oficial (lista_ativos / desligados) e a produção por Monitor, U.N. e Base.",
+            "Quadro Cadastral & Conciliação de Ativos",
+            "Conciliação executiva entre o cadastro oficial (lista_ativos / desligados) e entregas por Monitor, U.N. e Base.",
         ),
         "Saúde dos dados": (
-            "Saúde dos dados e importações",
-            "Confira a cobertura, a sincronização e o contador de contratos de "
-            "cada arquivo importado, com detalhamento e download em CSV.",
+            "Governança de Dados & Auditoria de Importações",
+            "Rastreabilidade de cobertura, lotes sincronizados no Google Drive, auditoria de contratos por arquivo e exportação CSV.",
         ),
     }
+    page_badges = {
+        "Projetos": "TOTALE · GESTÃO POR PROJETO",
+        "Quantidade de O.S.": "TOTALE · ORDENS DE SERVIÇO",
+        "Contratos": "TOTALE · GESTÃO DE CONTRATOS",
+        "Produtividade unitária": "TOTALE · PERFORMANCE & PRODUTIVIDADE",
+        "Regularidade": "TOTALE · PERFORMANCE & REGULARIDADE",
+        "Eficiência": "TOTALE · MATRIZ DE EFICIÊNCIA",
+        "Técnicos": "TOTALE · DESEMPENHO INDIVIDUAL",
+        "Quadro de técnicos": "TOTALE · GOVERNANÇA CADASTRAL",
+        "Saúde dos dados": "TOTALE · GOVERNANÇA DE DADOS",
+    }
     title, subtitle = page_titles[navigation]
-    updated = "Aguardando dados da produção"
+    hero_badge = page_badges.get(navigation, "TOTALE · GESTÃO OPERACIONAL")
+    updated = "Aguardando dados da operação"
     if current_stats["last_import"]:
         updated = pd.Timestamp(current_stats["last_import"]).strftime(
             "Atualizado em %d/%m/%Y às %H:%M"
@@ -1672,7 +1683,7 @@ def render_dashboard() -> None:
         render_hero_totale_1(
             titulo=title,
             subtitulo=subtitle,
-            badge="TOTALE · PRODUÇÃO",
+            badge=hero_badge,
             icone="monitoring",
             meta_info=updated,
         )
@@ -1876,8 +1887,8 @@ def render_dashboard() -> None:
             render_technicians(filtered)
 
     st.markdown(
-        '<div class="footer">Totale · Histórico de produção &nbsp;•&nbsp; '
-        "Pontos Totais = Prod + Gpon · Atualize os dados pela barra lateral</div>",
+        '<div class="footer">Totale · Inteligência &amp; Gestão Operacional &nbsp;•&nbsp; '
+        "Produção (Prod + Gpon), Contratos, O.S. &amp; Performance Consultiva · Atualize os dados pela barra lateral</div>",
         unsafe_allow_html=True,
     )
 

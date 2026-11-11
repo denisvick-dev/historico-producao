@@ -1,5 +1,10 @@
 FROM python:3.12-slim
 
+LABEL org.opencontainers.image.title="Totale · Inteligência & Gestão Operacional" \
+      org.opencontainers.image.description="Plataforma corporativa de Inteligência & Gestão Operacional da Totale (Produção Técnica, O.S., Contratos, Performance Consultiva e Quadro Ativo)" \
+      org.opencontainers.image.vendor="Totale" \
+      org.opencontainers.image.source="https://github.com/denisvick-dev/totale-gestao-operacional"
+
 WORKDIR /app
 
 # Dependências do sistema (necessárias para alguns pacotes Python)

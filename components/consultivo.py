@@ -1123,11 +1123,11 @@ def render_consultivo(
 
     # ── Hero Banner Corporativo ──
     render_hero_totale_2(
-        badge="CONSULTIVOS · TOTALE",
-        titulo="Total de Consultivos",
+        badge="TOTALE · PERFORMANCE CONSULTIVA",
+        titulo="Performance Consultiva & Mix Comercial",
         subtitulo=(
-            "Análise consolidada de consultivos realizados, mix de produtos (Mesh, TV Box, Virtua), "
-            f"evolução histórica mensal e interligação com lista_ativos · Recorte: {periodo_txt}."
+            "Monitoramento executivo de atendimentos consultivos, mix comercial (Mesh, TV Box, Virtua), "
+            f"evolução histórica mensal e conciliação cadastral (lista_ativos) · Recorte: {periodo_txt}."
         ),
         card_label="TOTAL CONSULTIVOS",
         card_valor=f"{tot_cons:,}".replace(",", "."),

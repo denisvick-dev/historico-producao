@@ -1,4 +1,4 @@
-name: CI
+name: Qualidade & CI · Totale Gestão Operacional
 
 on:
   push:

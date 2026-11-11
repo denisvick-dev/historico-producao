@@ -1671,8 +1671,8 @@ def render_comparativo_anos(
         <div class="comp-hero">
             <div class="comp-hero-top">
                 <div>
-                    <span class="comp-hero-eyebrow">⚖️ Análise Interanual · {ano_base} x {ano_comp}</span>
-                    <h2>Comparativo {ano_base} x {ano_comp} · Produção, Contratos e O.S.</h2>
+                    <span class="comp-hero-eyebrow">⚖️ TOTALE · INTELIGÊNCIA INTERANUAL ({ano_base} × {ano_comp})</span>
+                    <h2>Comparativo Interanual {ano_base} × {ano_comp} · Produção, Contratos e O.S.</h2>
                     <p>Visão analítica integrada de pontuação de Produção (Prod + Gpon), contratos distintos, quantidade de Ordens de Serviço (aba Prod), giro O.S./contrato e produtividade por equipe.</p>
                 </div>
             </div>

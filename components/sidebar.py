@@ -13,7 +13,7 @@ Uso básico:
     from sidebar import render_sidebar_theme_selector, render_sidebar_section
 
     aplicar_sidebar_corp()  # preserva o tema salvo na sessão
-    render_sidebar_brand(nome="TOTALE", subtitulo="Portal de Operações")
+    render_sidebar_brand(nome="TOTALE", subtitulo="Inteligência & Gestão Operacional")
     render_sidebar_theme_selector()
     render_sidebar_section("NAVEGAÇÃO")
 

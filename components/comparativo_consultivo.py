@@ -1832,10 +1832,10 @@ def render_comparativo_consultivo(
         f"""
         <div class="comp-cons-hero">
             <div class="comp-cons-hero-top">
-                <span class="comp-cons-badge">💬 Análise Interanual · Consultivos {ano_base} × {ano_comp}</span>
+                <span class="comp-cons-badge">📊 TOTALE · INTELIGÊNCIA INTERANUAL · Consultivos {ano_base} × {ano_comp}</span>
                 <span class="comp-cons-scope-pill">🗓️ {html.escape(modo_badge_map[resumo.modo_efetivo])} · {html.escape(escopo_meses_txt)}</span>
             </div>
-            <h2>Comparativo {ano_base} x {ano_comp} · Consultivos &amp; Mix de Produtos</h2>
+            <h2>Comparativo Interanual {ano_base} × {ano_comp} · Performance Consultiva &amp; Mix</h2>
             <p>
                 Evolução comparativa de atendimentos consultivos, produtos comercializados
                 (<b>Mesh</b>, <b>TV Box</b> e <b>Virtua</b>), taxa de conversão por atendimento e
