@@ -354,6 +354,69 @@ class PersistenceTests(unittest.TestCase):
         finally:
             production.DB_PATH = current_path
 
+    def test_drive_sync_migrates_legacy_demo_columns(self) -> None:
+        current_path = production.DB_PATH
+        production.DB_PATH = Path(self.temp_dir.name) / "legacy-demo.db"
+        try:
+            with sqlite3.connect(production.DB_PATH) as connection:
+                connection.executescript(
+                    """
+                    CREATE TABLE production_records (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        technician TEXT NOT NULL,
+                        reference_date TEXT NOT NULL,
+                        source_sheet TEXT NOT NULL,
+                        points REAL NOT NULL,
+                        source_file TEXT NOT NULL,
+                        source_row INTEGER NOT NULL,
+                        imported_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                    );
+                    INSERT INTO production_records
+                        (technician, reference_date, source_sheet, points, source_file, source_row)
+                    VALUES ('Ana', '2026-11-03', 'Prod', 10, 'legacy.xlsx', 2);
+                    CREATE TABLE technician_roster (
+                        technician_key TEXT PRIMARY KEY,
+                        technician TEXT NOT NULL,
+                        status TEXT NOT NULL DEFAULT 'ATIVO',
+                        monitor TEXT NOT NULL DEFAULT 'Sem monitor',
+                        base TEXT NOT NULL DEFAULT 'Sem base'
+                    );
+                    CREATE TABLE consultivo_records (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        reference_date TEXT NOT NULL,
+                        login_netsales TEXT NOT NULL DEFAULT ''
+                    );
+                    """
+                )
+            connection.close()
+            production.init_database()
+            self.assertEqual(
+                production.sync_drive_records([], set(), set()),
+                0,
+            )
+            with sqlite3.connect(production.DB_PATH) as connection:
+                for table_name in (
+                    "production_records",
+                    "technician_roster",
+                    "consultivo_records",
+                ):
+                    columns = {
+                        row[1]
+                        for row in connection.execute(
+                            f"PRAGMA table_info({table_name})"
+                        )
+                    }
+                    self.assertIn("is_demo", columns)
+                self.assertEqual(
+                    connection.execute(
+                        "SELECT is_demo FROM production_records"
+                    ).fetchone()[0],
+                    0,
+                )
+            connection.close()
+        finally:
+            production.DB_PATH = current_path
+
     def test_import_batches_conta_contratos_distintos_por_arquivo(self) -> None:
         principal = self.record(row=2)
         principal["contract"] = "001"

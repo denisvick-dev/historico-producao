@@ -1701,6 +1701,23 @@ def init_database() -> None:
             connection.execute(
                 "ALTER TABLE production_records ADD COLUMN contract_flag INTEGER"
             )
+        if "is_demo" not in columns:
+            connection.execute(
+                "ALTER TABLE production_records "
+                "ADD COLUMN is_demo INTEGER NOT NULL DEFAULT 0"
+            )
+        for table_name in ("technician_roster", "consultivo_records"):
+            table_columns = {
+                row["name"]
+                for row in connection.execute(
+                    f"PRAGMA table_info({table_name})"
+                ).fetchall()
+            }
+            if "is_demo" not in table_columns:
+                connection.execute(
+                    f"ALTER TABLE {table_name} "
+                    "ADD COLUMN is_demo INTEGER NOT NULL DEFAULT 0"
+                )
         connection.execute(
             "CREATE INDEX IF NOT EXISTS idx_production_project ON production_records(project)"
         )
