@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from typing import Any, cast
 
 import pandas as pd
 
@@ -98,10 +99,12 @@ class ProductionRegularityTests(unittest.TestCase):
         self.assertEqual(ana["active_months"], 3)
         self.assertEqual(ana["months_without_records"], 1)
         self.assertEqual(ana["missing_periods"], "mar/26")
-        self.assertAlmostEqual(ana["mean_active_monthly_points"], 500 / 3)
+        self.assertAlmostEqual(
+            float(cast(Any, ana["mean_active_monthly_points"])), 500 / 3
+        )
         self.assertEqual(ana["median_active_monthly_points"], 100)
         self.assertEqual(ana["peak_month"], "abr/26")
-        self.assertAlmostEqual(ana["peak_vs_median_pct"], 200)
+        self.assertAlmostEqual(float(cast(Any, ana["peak_vs_median_pct"])), 200.0)
         self.assertEqual(ana["regularity"], "Alta oscilação")
 
         bia = resumo.loc["Bia"]
@@ -159,7 +162,7 @@ class SeasonalityDashboardTests(unittest.TestCase):
             matrix.columns.tolist(),
             list(pd.date_range("2026-01-01", "2026-04-01", freq="MS")),
         )
-        self.assertEqual(matrix.loc["Bia"].tolist(), [40, 20, 0, 0])
+        self.assertEqual(list(matrix.loc["Bia"]), [40, 20, 0, 0])
 
     def test_heatmap_aceita_projeto_e_valida_dimensao(self) -> None:
         frame = pd.DataFrame(
@@ -206,7 +209,7 @@ class ExecutiveDashboardTests(unittest.TestCase):
         self.assertEqual(resultado.loc["Ana", "Status"], "Alta")
         self.assertEqual(resultado.loc["Ana", "Variação (%)"], 50)
         self.assertEqual(resultado.loc["Bia", "Status"], "Novo na janela")
-        self.assertTrue(pd.isna(resultado.loc["Bia", "Variação (%)"]))
+        self.assertTrue(bool(resultado["Variação (%)"].isna().loc["Bia"]))
         self.assertEqual(resultado.loc["Caio", "Status"], "Sem produção atual")
         self.assertEqual(resultado.loc["Caio", "Variação (%)"], -100)
 
@@ -218,7 +221,7 @@ class ExecutiveDashboardTests(unittest.TestCase):
         resultado = comparar_tecnicos(atual, pd.DataFrame())
 
         self.assertEqual(resultado.loc[0, "Status"], "Sem base anterior")
-        self.assertTrue(pd.isna(resultado.loc[0, "Variação (%)"]))
+        self.assertTrue(bool(resultado["Variação (%)"].isna().loc[0]))
 
     def test_comparison_label_uses_equal_length_month_windows(self) -> None:
         atual = pd.DataFrame(

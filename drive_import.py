@@ -9,7 +9,7 @@ from datetime import date, datetime
 from pathlib import Path
 from threading import Lock, local
 from time import perf_counter
-from typing import Any
+from typing import Any, cast
 from urllib.parse import quote
 
 import pandas as pd
@@ -49,7 +49,7 @@ class DriveImportError(RuntimeError):
 
 @dataclass(frozen=True)
 class DriveFolderImport:
-    records: list[dict]
+    records: list[dict[str, Any]]
     issues: list[str]
     successful_files: int
     file_ids: set[str]
@@ -59,7 +59,7 @@ class DriveFolderImport:
 
 @dataclass(frozen=True)
 class RosterSheetImport:
-    records: list[dict]
+    records: list[dict[str, Any]]
     issues: list[str]
     refreshed: bool
     unchanged: bool
@@ -117,7 +117,7 @@ def _request(
         raise DriveImportError(
             "Não foi possível acessar o Google Drive. Verifique a conexão e as credenciais."
         ) from error
-    return response
+    return cast(requests.Response, response)
 
 
 def _list_single_folder_items(session: Any, folder_id: str) -> list[dict[str, str]]:
@@ -261,7 +261,7 @@ def _import_drive_file(
     *,
     csv_origin: str,
     default_date: date | datetime | pd.Timestamp | None,
-) -> tuple[list[dict], list[str], bool]:
+) -> tuple[list[dict[str, Any]], list[str], bool]:
     drive_name = drive_file.get("name", "Arquivo sem nome")
     if _source_filename(drive_file) is None:
         return (
@@ -325,7 +325,7 @@ def import_drive_folder_snapshot(
         if callable(getattr(session, "close", None)):
             session.close()
     listing_seconds = perf_counter() - started
-    records: list[dict] = []
+    records: list[dict[str, Any]] = []
     issues: list[str] = []
     successful_files = 0
     file_ids = {
@@ -375,7 +375,7 @@ def import_drive_folder_snapshot(
                     changed_files,
                 )
                 for drive_file, (file_records, file_issues, refreshed) in zip(
-                    changed_files, results
+                    changed_files, results, strict=False
                 ):
                     if refreshed:
                         file_id = drive_file.get("id", "").strip()
@@ -426,7 +426,7 @@ def import_drive_folder(
     *,
     csv_origin: str = PROD,
     default_date: date | datetime | pd.Timestamp | None = None,
-) -> tuple[list[dict], list[str], int]:
+) -> tuple[list[dict[str, Any]], list[str], int]:
     result = import_drive_folder_snapshot(
         service_account_info,
         folder_id,
@@ -613,7 +613,7 @@ def _consultivo_file_fingerprint(drive_file: dict[str, str]) -> str | None:
 def _import_consultivo_drive_file(
     get_session: Callable[[], Any],
     drive_file: dict[str, str],
-) -> tuple[list[dict], list[str], bool]:
+) -> tuple[list[dict[str, Any]], list[str], bool]:
     drive_name = drive_file.get("name", "Arquivo sem nome")
     if _source_filename(drive_file) is None:
         return (
@@ -672,7 +672,7 @@ def import_consultivo_folder_snapshot(
             session.close()
     listing_seconds = perf_counter() - started
 
-    records: list[dict] = []
+    records: list[dict[str, Any]] = []
     issues: list[str] = []
     successful_files = 0
     file_ids = {
@@ -717,7 +717,7 @@ def import_consultivo_folder_snapshot(
                     changed_files,
                 )
                 for drive_file, (file_records, file_issues, refreshed) in zip(
-                    changed_files, results
+                    changed_files, results, strict=False
                 ):
                     if refreshed:
                         file_id = drive_file.get("id", "").strip()

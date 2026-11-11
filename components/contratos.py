@@ -12,6 +12,7 @@ from __future__ import annotations
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+from pandas.io.formats.style import Styler
 
 from components.componentes import formatar_numero_br, render_ticker
 from components.eficiencia import render_eficiencia_contrato
@@ -19,23 +20,11 @@ from components.painel_quantidades import (
     AZUL_TOTALE,
     CHART_CONFIG,
     LARANJA_TOTALE,
-)
-from components.painel_quantidades import (
     best_month_style as _best_month_style,
-)
-from components.painel_quantidades import (
     chart_layout as _chart_layout,
-)
-from components.painel_quantidades import (
     csv_download as _csv_download,
-)
-from components.painel_quantidades import (
     metric_card as _metric_card,
-)
-from components.painel_quantidades import (
     section_heading as _section_heading,
-)
-from components.painel_quantidades import (
     total_column_style as _total_column_style,
 )
 from production import clean_contract, is_valid_contract, month_label
@@ -303,6 +292,7 @@ def render_contratos(filtered: pd.DataFrame) -> None:
             "Na linha Total geral, a média usa os meses com contratos de qualquer técnico."
         )
         # Evita o custo e o limite de células do Styler em matrizes muito grandes.
+        visualizacao: Styler | pd.DataFrame
         if matriz.size <= 10_000:
             visualizacao = matriz.style.apply(
                 _best_month_style,

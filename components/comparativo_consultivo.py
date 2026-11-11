@@ -294,7 +294,9 @@ def _preparar_base_consultivo_comparativa(
         by_lg = r_copy[r_copy["_lg"].ne("")].drop_duplicates("_lg", keep="first")
         by_nm = r_copy[r_copy["_nm"].ne("")].drop_duplicates("_nm", keep="first")
 
-        map_name_lg = dict(zip(by_lg["_lg"], by_lg["technician"].astype(str)))
+        map_name_lg = dict(
+            zip(by_lg["_lg"], by_lg["technician"].astype(str), strict=False)
+        )
         seller_clean = seller_clean.mask(
             seller_clean.eq("") & login_clean.ne(""),
             login_clean.map(map_name_lg).fillna(""),
@@ -310,8 +312,8 @@ def _preparar_base_consultivo_comparativa(
                 not any(c in work.columns for c in src_Candidates)
                 and r_col in r_copy.columns
             ):
-                m_lg = dict(zip(by_lg["_lg"], by_lg[r_col].astype(str)))
-                m_nm = dict(zip(by_nm["_nm"], by_nm[r_col].astype(str)))
+                m_lg = dict(zip(by_lg["_lg"], by_lg[r_col].astype(str), strict=False))
+                m_nm = dict(zip(by_nm["_nm"], by_nm[r_col].astype(str), strict=False))
                 val_lg = login_clean.map(m_lg)
                 val_nm = seller_clean.map(normalize_text).map(m_nm)
                 work[dest_col] = val_lg.where(val_lg.notna() & val_lg.ne(""), val_nm)
@@ -342,7 +344,7 @@ def _preparar_base_consultivo_comparativa(
             .to_dict()
         )
         for nm_val, lg_val in zip(
-            name_norm.loc[full_name_mask], login_clean.loc[full_name_mask]
+            name_norm.loc[full_name_mask], login_clean.loc[full_name_mask], strict=False
         ):
             canon_lg = canonical_login_by_name.get(nm_val, lg_val)
             if canon_lg != lg_val:
@@ -485,19 +487,21 @@ def _agrupar_dimensao_consultivo(
 
     merged["Δ Cons."] = merged["cons_c"] - merged["cons_b"]
     merged["Var. Cons. (%)"] = [
-        _variacao_pct(ac, ab) for ac, ab in zip(merged["cons_c"], merged["cons_b"])
+        _variacao_pct(ac, ab)
+        for ac, ab in zip(merged["cons_c"], merged["cons_b"], strict=False)
     ]
     merged["Δ Prod."] = merged["prod_c"] - merged["prod_b"]
     merged["Var. Prod. (%)"] = [
-        _variacao_pct(oc, ob) for oc, ob in zip(merged["prod_c"], merged["prod_b"])
+        _variacao_pct(oc, ob)
+        for oc, ob in zip(merged["prod_c"], merged["prod_b"], strict=False)
     ]
     merged[f"Conv. {ano_base}"] = [
         round(pb / cb, 2) if cb > 0 else 0.0
-        for pb, cb in zip(merged["prod_b"], merged["cons_b"])
+        for pb, cb in zip(merged["prod_b"], merged["cons_b"], strict=False)
     ]
     merged[f"Conv. {ano_comp}"] = [
         round(pc / cc, 2) if cc > 0 else 0.0
-        for pc, cc in zip(merged["prod_c"], merged["cons_c"])
+        for pc, cc in zip(merged["prod_c"], merged["cons_c"], strict=False)
     ]
     merged = merged.rename(
         columns={
@@ -611,22 +615,24 @@ def _agrupar_por_vendedor_consultivo(
 
     merged["Δ Cons."] = merged["cons_c"] - merged["cons_b"]
     merged["Var. Cons. (%)"] = [
-        _variacao_pct(ac, ab) for ac, ab in zip(merged["cons_c"], merged["cons_b"])
+        _variacao_pct(ac, ab)
+        for ac, ab in zip(merged["cons_c"], merged["cons_b"], strict=False)
     ]
     merged["Δ Prod."] = merged["prod_c"] - merged["prod_b"]
     merged["Var. Prod. (%)"] = [
-        _variacao_pct(pc, pb) for pc, pb in zip(merged["prod_c"], merged["prod_b"])
+        _variacao_pct(pc, pb)
+        for pc, pb in zip(merged["prod_c"], merged["prod_b"], strict=False)
     ]
     merged["Δ Mesh"] = merged["mesh_c"] - merged["mesh_b"]
     merged["Δ TV Box"] = merged["tv_c"] - merged["tv_b"]
     merged["Δ Virtua"] = merged["virtua_c"] - merged["virtua_b"]
     merged[f"Conv. {ano_base}"] = [
         round(pb / cb, 2) if cb > 0 else 0.0
-        for pb, cb in zip(merged["prod_b"], merged["cons_b"])
+        for pb, cb in zip(merged["prod_b"], merged["cons_b"], strict=False)
     ]
     merged[f"Conv. {ano_comp}"] = [
         round(pc / cc, 2) if cc > 0 else 0.0
-        for pc, cc in zip(merged["prod_c"], merged["cons_c"])
+        for pc, cc in zip(merged["prod_c"], merged["cons_c"], strict=False)
     ]
     merged = merged.rename(
         columns={
@@ -809,20 +815,28 @@ def calcular_comparativo_consultivo(
     )
     mensal["pct_consultivos"] = [
         _variacao_pct(cc, cb)
-        for cc, cb in zip(mensal["consultivos_comp"], mensal["consultivos_base"])
+        for cc, cb in zip(
+            mensal["consultivos_comp"], mensal["consultivos_base"], strict=False
+        )
     ]
     mensal["delta_produtos"] = mensal["produtos_comp"] - mensal["produtos_base"]
     mensal["pct_produtos"] = [
         _variacao_pct(pc, pb)
-        for pc, pb in zip(mensal["produtos_comp"], mensal["produtos_base"])
+        for pc, pb in zip(
+            mensal["produtos_comp"], mensal["produtos_base"], strict=False
+        )
     ]
     mensal["conversao_base"] = [
         round(pb / cb, 2) if cb > 0 else 0.0
-        for pb, cb in zip(mensal["produtos_base"], mensal["consultivos_base"])
+        for pb, cb in zip(
+            mensal["produtos_base"], mensal["consultivos_base"], strict=False
+        )
     ]
     mensal["conversao_comp"] = [
         round(pc / cc, 2) if cc > 0 else 0.0
-        for pc, cc in zip(mensal["produtos_comp"], mensal["consultivos_comp"])
+        for pc, cc in zip(
+            mensal["produtos_comp"], mensal["consultivos_comp"], strict=False
+        )
     ]
     mensal["acum_consultivos_base"] = (
         mensal["consultivos_base"].where(mensal["em_escopo"], 0).cumsum()
@@ -1247,11 +1261,15 @@ def _grafico_conversao_mensal(
     fig = go.Figure()
     y_b = [
         float(v) if int(c) > 0 else None
-        for v, c in zip(mensal["conversao_base"], mensal["consultivos_base"])
+        for v, c in zip(
+            mensal["conversao_base"], mensal["consultivos_base"], strict=False
+        )
     ]
     y_c = [
         float(v) if int(c) > 0 else None
-        for v, c in zip(mensal["conversao_comp"], mensal["consultivos_comp"])
+        for v, c in zip(
+            mensal["conversao_comp"], mensal["consultivos_comp"], strict=False
+        )
     ]
     fig.add_trace(
         go.Scatter(
@@ -1435,7 +1453,9 @@ def _grafico_quadrante_vendedores(
         "#16A34A"
         if (dc >= 0 and dp >= 0)
         else ("#DC2626" if (dc < 0 and dp < 0) else "#F37C04")
-        for dc, dp in zip(por_vendedor["Δ Cons."], por_vendedor["Δ Prod."])
+        for dc, dp in zip(
+            por_vendedor["Δ Cons."], por_vendedor["Δ Prod."], strict=False
+        )
     ]
     fig.add_hline(y=0, line_dash="dash", line_color="#CBD5E1")
     fig.add_vline(x=0, line_dash="dash", line_color="#CBD5E1")
@@ -1529,7 +1549,7 @@ def _estilizar_tabela(
     styler = tabela.style.format(formatos)
     alvo = [c for c in [*colunas_delta, *colunas_pct] if c in tabela.columns]
     if alvo and tabela.size <= 5000:
-        styler = styler.map(_cor_delta, subset=alvo)
+        styler = styler.map(_cor_delta, subset=pd.Index(alvo))
     return styler
 
 

@@ -1,4 +1,5 @@
 import unittest
+from typing import Any, cast
 
 import pandas as pd
 from pandas.io.formats.style import Styler
@@ -186,8 +187,8 @@ class EficienciaTests(unittest.TestCase):
 
         c1 = matriz.set_index("Contrato").loc["C1"]
         self.assertEqual(c1["Meses com registros"], 2)
-        self.assertAlmostEqual(c1["Pontos totais"], 700.0)
-        self.assertAlmostEqual(c1["Média mensal"], 350.0)
+        self.assertAlmostEqual(float(cast(Any, c1["Pontos totais"])), 700.0)
+        self.assertAlmostEqual(float(cast(Any, c1["Média mensal"])), 350.0)
         self.assertEqual(c1["Faixa 1"], 1)
         self.assertEqual(c1["Faixa 5"], 1)
         self.assertEqual(c1["Faixa mais frequente"], "Faixa 1 / Faixa 5")

@@ -40,6 +40,7 @@ from components.sidebar import (
     TemaSidebarType,
     _css_tema,
     _obter_tema_sidebar,
+    aplicar_sidebar_corp as _aplicar_sidebar_corp_mod,
     carregar_layout_corporativo,
     definir_tema_sidebar,
     normalizar_tema_sidebar,
@@ -53,9 +54,6 @@ from components.sidebar import (
     render_sidebar_spacer,
     render_sidebar_status,
     render_sidebar_theme_selector,
-)
-from components.sidebar import (
-    aplicar_sidebar_corp as _aplicar_sidebar_corp_mod,
 )
 
 logger = logging.getLogger(__name__)
@@ -365,26 +363,11 @@ class ConfigCores:
     ]
 
 
-def _resolver_cor_tema(tema: str) -> str:
-    cor = ConfigCores.TEMA.get(tema)
-    if cor is None:
-        logger.warning("Tema desconhecido: '%s'. Usando 'azul'.", tema)
-        return Cores.PRIMARIA
-    return cor
-
-
 def _resolver_gradiente(tema: str) -> tuple[str, str]:
     grad = ConfigCores.GRADIENTES.get(tema)
     if grad is None:
         return ConfigCores.GRADIENTES["azul"]
     return grad
-
-
-def _markdown_inline_para_html(texto: str) -> str:
-    texto = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", texto)
-    texto = re.sub(r"(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)", r"<em>\1</em>", texto)
-    texto = re.sub(r"`([^`]+)`", r"<code>\1</code>", texto)
-    return texto
 
 
 def formatar_numero_br(valor: Any, casas: int = 0) -> str:

@@ -80,7 +80,12 @@ def _agregar_producao_por_chave(production_frame: pd.DataFrame) -> pd.DataFrame:
     if work.empty:
         return pd.DataFrame(columns=colunas)
 
-    work["points"] = pd.to_numeric(work.get("points", 0.0), errors="coerce").fillna(0.0)
+    pts_col = (
+        work["points"]
+        if "points" in work.columns
+        else pd.Series(0.0, index=work.index, dtype="float64")
+    )
+    work["points"] = pd.to_numeric(pts_col, errors="coerce").fillna(0.0)
     source = (
         work["source_sheet"].astype(str)
         if "source_sheet" in work.columns

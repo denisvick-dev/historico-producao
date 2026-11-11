@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import unittest
+from typing import Any, cast
 
 import pandas as pd
 from pandas.io.formats.style import Styler
@@ -80,18 +81,30 @@ class ProdutividadeUnitariaTests(unittest.TestCase):
         # Ana: 3 O.S. Prod somando 240 -> 80 pts/OS; 1 contrato válido somando 210 -> 210 pts/contrato
         por_tec = resumo.por_tecnico.set_index("technician")
         self.assertEqual(por_tec.loc["Ana", "os_count"], 3)
-        self.assertAlmostEqual(por_tec.loc["Ana", "points_prod"], 240.0)
-        self.assertAlmostEqual(por_tec.loc["Ana", "points_per_os"], 80.0)
+        self.assertAlmostEqual(
+            float(cast(Any, por_tec.loc["Ana", "points_prod"])), 240.0
+        )
+        self.assertAlmostEqual(
+            float(cast(Any, por_tec.loc["Ana", "points_per_os"])), 80.0
+        )
         self.assertEqual(por_tec.loc["Ana", "contracts_count"], 1)
-        self.assertAlmostEqual(por_tec.loc["Ana", "points_with_contract"], 210.0)
-        self.assertAlmostEqual(por_tec.loc["Ana", "points_per_contract"], 210.0)
+        self.assertAlmostEqual(
+            float(cast(Any, por_tec.loc["Ana", "points_with_contract"])), 210.0
+        )
+        self.assertAlmostEqual(
+            float(cast(Any, por_tec.loc["Ana", "points_per_contract"])), 210.0
+        )
 
         # Bia: 0 O.S. Prod -> 0.0 pts/OS e perfil Sem O.S.; 1 contrato -> 80 pts/contrato
         self.assertEqual(por_tec.loc["Bia", "os_count"], 0)
-        self.assertAlmostEqual(por_tec.loc["Bia", "points_per_os"], 0.0)
+        self.assertAlmostEqual(
+            float(cast(Any, por_tec.loc["Bia", "points_per_os"])), 0.0
+        )
         self.assertEqual(por_tec.loc["Bia", "profile_os"], "Sem O.S.")
         self.assertEqual(por_tec.loc["Bia", "contracts_count"], 1)
-        self.assertAlmostEqual(por_tec.loc["Bia", "points_per_contract"], 80.0)
+        self.assertAlmostEqual(
+            float(cast(Any, por_tec.loc["Bia", "points_per_contract"])), 80.0
+        )
 
         # Total geral usa média ponderada da equipe
         total_row = resumo.tabela_exibicao.iloc[-1]

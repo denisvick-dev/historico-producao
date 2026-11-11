@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import html
 from dataclasses import dataclass
-from typing import Literal, cast
+from typing import Literal
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -23,17 +23,9 @@ from components.componentes import Cores, formatar_numero_br, render_ticker
 from components.painel_quantidades import (
     AZUL_TOTALE,
     CHART_CONFIG,
-)
-from components.painel_quantidades import (
     LARANJA_TOTALE,
-)
-from components.painel_quantidades import (
     chart_layout as _chart_layout,
-)
-from components.painel_quantidades import (
     csv_download as _csv_download,
-)
-from components.painel_quantidades import (
     section_heading as _section_heading,
 )
 from production import (
@@ -192,14 +184,24 @@ def resumir_produtividade_unitaria(frame: pd.DataFrame) -> ResumoProdutividade:
     else:
         tecnicos = pd.Series(pd.NA, index=frame.index, dtype="string")
 
-    datas = pd.Series(pd.NaT, index=frame.index, dtype="datetime64[ns]")
+    datas: pd.Series = pd.Series(pd.NaT, index=frame.index, dtype="datetime64[ns]")
     if "period" in frame:
-        datas = pd.to_datetime(frame["period"], errors="coerce", format="mixed")
+        datas = pd.Series(
+            pd.to_datetime(frame["period"], errors="coerce", format="mixed"),
+            index=frame.index,
+        )
     if "reference_date" in frame:
         datas = datas.fillna(
-            pd.to_datetime(frame["reference_date"], errors="coerce", format="mixed")
+            pd.Series(
+                pd.to_datetime(
+                    frame["reference_date"], errors="coerce", format="mixed"
+                ),
+                index=frame.index,
+            )
         )
-    competencias = datas.dt.to_period("M").dt.to_timestamp()
+    competencias: pd.Series = pd.Series(
+        datas.dt.to_period("M").dt.to_timestamp(), index=frame.index
+    )
 
     incompletos = (
         tecnicos.isna()
@@ -869,9 +871,8 @@ def render_produtividade_unitaria(filtered: pd.DataFrame) -> None:
             key="unit_productivity_quadrant_mode",
         )
         escolha = str(selecionado or opcoes_quadrante[0])
-    modo_quadrante = cast(
-        Literal["os", "contrato"],
-        "contrato" if escolha == "Por Contrato" else "os",
+    modo_quadrante: Literal["os", "contrato"] = (
+        "contrato" if escolha == "Por Contrato" else "os"
     )
 
     col_evolucao, col_quadrantes = st.columns([1.05, 1.15])

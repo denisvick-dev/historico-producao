@@ -24,14 +24,16 @@ _APP_PATH = str(Path(__file__).resolve().parent.parent / "streamlit_app.py")
 
 
 class _FakeResponse:
-    def __init__(self, *, data: dict | None = None, content: bytes = b"") -> None:
+    def __init__(
+        self, *, data: dict[str, Any] | None = None, content: bytes = b""
+    ) -> None:
         self.data = data
         self.content = content
 
     def raise_for_status(self) -> None:
         return None
 
-    def json(self) -> dict | None:
+    def json(self) -> dict[str, Any] | None:
         return self.data
 
 
@@ -40,7 +42,11 @@ class _FakeSession:
         self.responses = list(responses)
 
     def get(
-        self, _url: str, *, params: dict | None = None, timeout: int | None = None
+        self,
+        _url: str,
+        *,
+        params: dict[str, Any] | None = None,
+        timeout: int | None = None,
     ) -> _FakeResponse:
         del params, timeout
         return self.responses.pop(0)

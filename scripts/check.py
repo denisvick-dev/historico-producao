@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import py_compile
 import subprocess
 import sys
@@ -18,19 +19,27 @@ def run_command(*args: str) -> None:
 
 def lint() -> None:
     # E402 é intencional: structlog é configurado antes dos módulos do app.
-    run_command("ruff", "check", ".", "--select", "E4,E7,E9,F", "--ignore", "E402")
+    run_command(
+        "ruff",
+        "check",
+        ".",
+        "--select",
+        "E4,E7,E9,F,B,W,PIE",
+        "--ignore",
+        "E402",
+    )
     run_command("ruff", "format", "--check", ".")
 
 
 def types() -> None:
-    run_command(
-        "mypy",
-        "--follow-imports=silent",
-        "--disable-error-code=type-arg",
-        "--disable-error-code=no-any-return",
-        "--disable-error-code=unused-ignore",
-        ".",
-    )
+    mypy_args = ["mypy"]
+    if importlib.util.find_spec("pandas-stubs") is None:
+        mypy_args.append("--disable-error-code=no-any-return")
+    mypy_args.append(".")
+    run_command(*mypy_args)
+
+    if importlib.util.find_spec("pyright") is not None:
+        run_command("pyright", "--pythonpath", sys.executable)
 
 
 def tests() -> None:

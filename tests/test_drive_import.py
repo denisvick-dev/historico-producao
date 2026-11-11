@@ -1,6 +1,7 @@
 import unittest
 from datetime import date
 from threading import Barrier
+from typing import Any
 from unittest.mock import patch
 
 import pandas as pd
@@ -11,24 +12,30 @@ import production
 
 
 class FakeResponse:
-    def __init__(self, *, data: dict | None = None, content: bytes = b"") -> None:
+    def __init__(
+        self, *, data: dict[str, Any] | None = None, content: bytes = b""
+    ) -> None:
         self.data = data
         self.content = content
 
     def raise_for_status(self) -> None:
         return None
 
-    def json(self) -> dict | None:
+    def json(self) -> dict[str, Any] | None:
         return self.data
 
 
 class FakeSession:
     def __init__(self, responses: list[FakeResponse]) -> None:
         self.responses = list(responses)
-        self.calls: list[tuple[str, dict | None, int | None]] = []
+        self.calls: list[tuple[str, dict[str, Any] | None, int | None]] = []
 
     def get(
-        self, url: str, *, params: dict | None = None, timeout: int | None = None
+        self,
+        url: str,
+        *,
+        params: dict[str, Any] | None = None,
+        timeout: int | None = None,
     ) -> FakeResponse:
         self.calls.append((url, params, timeout))
         return self.responses.pop(0)

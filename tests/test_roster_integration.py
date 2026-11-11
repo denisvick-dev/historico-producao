@@ -224,7 +224,8 @@ class RosterIntegrationTests(unittest.TestCase):
         quadro = conciliar_quadro_tecnicos(roster, prod_df).set_index("Técnico")
 
         self.assertAlmostEqual(
-            quadro.loc["Alex Bernardes da Silva", "Pontos Totais"], 350.0
+            float(cast(Any, quadro.loc["Alex Bernardes da Silva", "Pontos Totais"])),
+            350.0,
         )
         self.assertEqual(quadro.loc["Alex Bernardes da Silva", "O.S. (Prod)"], 1)
         self.assertEqual(quadro.loc["Alex Bernardes da Silva", "Contratos"], 1)

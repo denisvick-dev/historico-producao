@@ -5,6 +5,7 @@ import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Any, cast
 
 import pandas as pd
 
@@ -290,7 +291,7 @@ class PersistenceTests(unittest.TestCase):
         origin: str = "Prod",
         row: int = 2,
         project: str = "Sem projeto",
-    ) -> dict:
+    ) -> dict[str, Any]:
         return {
             "technician": technician,
             "reference_date": "2026-11-03",
@@ -432,8 +433,10 @@ class PersistenceTests(unittest.TestCase):
         production.save_records([principal, repetido, outro, ausente, outro_arquivo])
 
         lotes = production.import_batches().set_index("source_file")
-        self.assertEqual(int(lotes.loc["producao.xlsx", "contracts_count"]), 2)
-        self.assertEqual(int(lotes.loc["outro.xlsx", "contracts_count"]), 1)
+        self.assertEqual(
+            int(cast(Any, lotes.loc["producao.xlsx", "contracts_count"])), 2
+        )
+        self.assertEqual(int(cast(Any, lotes.loc["outro.xlsx", "contracts_count"])), 1)
 
     def test_import_batches_sem_contratos(self) -> None:
         production.save_records([self.record()])
