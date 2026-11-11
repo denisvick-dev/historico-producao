@@ -87,6 +87,53 @@ class ConfiguracoesConsultivo:
 CONFIG_CONSULTIVO = ConfiguracoesConsultivo()
 
 
+def formatar_data_brasileira(
+    valor: date | datetime | pd.Timestamp | str | None,
+    *,
+    incluir_hora: bool = False,
+) -> str:
+    """Padroniza datas para o formato brasileiro DD/MM/AAAA."""
+    if valor is None or valor is pd.NA or valor is pd.NaT:
+        return "—"
+    if isinstance(valor, float) and pd.isna(valor):
+        return "—"
+    if isinstance(valor, (pd.Timestamp, datetime)):
+        if pd.isna(valor):
+            return "—"
+        formato = "%d/%m/%Y %H:%M" if incluir_hora else "%d/%m/%Y"
+        return valor.strftime(formato)
+    if isinstance(valor, date):
+        return valor.strftime("%d/%m/%Y")
+
+    texto = str(valor).strip()
+    if not texto or texto.lower() in {"nan", "nat", "none", "null", "-"}:
+        return "—"
+
+    serie_conv = converter_data_consultivo_br(pd.Series([texto]))
+    if not serie_conv.notna().iloc[0]:
+        return "—"
+
+    ts = pd.Timestamp(serie_conv.iloc[0])
+    formato = "%d/%m/%Y %H:%M" if incluir_hora else "%d/%m/%Y"
+    return ts.strftime(formato)
+
+
+def formatar_numero_inteiro_br(valor: Any) -> str:
+    """Converte valores numéricos ou nulos em texto inteiro com separador brasileiro."""
+    if pd.isna(valor):
+        return "0"
+
+    try:
+        numero = int(valor)
+    except (TypeError, ValueError):
+        try:
+            numero = int(float(valor))
+        except (TypeError, ValueError):
+            return "0"
+
+    return f"{numero:,}".replace(",", ".")
+
+
 class CalculosConsultivo:
     """Utilitários matemáticos vetorizados do painel de Consultivos."""
 
@@ -414,7 +461,7 @@ def preparar_resumo_diario_monitor(
         "Meta atingida",
         "Abaixo da meta",
     )
-    resumo["Data"] = resumo["Data_Ref"].map(formatar_data_br_consultivo)
+    resumo["Data"] = resumo["Data_Ref"].map(formatar_data_brasileira)
     return resumo[
         [
             "Data",
@@ -1026,7 +1073,9 @@ def render_consultivo(
     proj_cons = int(round(tot_cons * fator_proj))
     proj_prod = int(round(tot_prod * fator_proj))
 
-    periodo_txt = f"{data_ini.strftime('%d/%m/%Y')} a {data_fim.strftime('%d/%m/%Y')}"
+    periodo_txt = (
+        f"{formatar_data_brasileira(data_ini)} a {formatar_data_brasileira(data_fim)}"
+    )
 
     # ── Hero Banner Corporativo ──
     render_hero_totale_2(
@@ -1233,7 +1282,9 @@ def render_consultivo(
                     name="Total Consultivos",
                     marker_color=Cores.PRIMARIA,
                     text=df_mensal["Total Consultivos"].map(
-                        lambda v: f"{int(v):,}".replace(",", ".")
+                        lambda v: (
+                            f"{int(v):,}".replace(",", ".") if pd.notna(v) else "0"
+                        )
                     ),
                     textposition="outside",
                 )
@@ -1247,7 +1298,9 @@ def render_consultivo(
                     line={"color": Cores.SECUNDARIA, "width": 3},
                     marker={"size": 8, "color": Cores.SECUNDARIA},
                     text=df_mensal["Total Produtos"].map(
-                        lambda v: f"{int(v):,}".replace(",", ".")
+                        lambda v: (
+                            f"{int(v):,}".replace(",", ".") if pd.notna(v) else "0"
+                        )
                     ),
                     textposition="top center",
                 )
