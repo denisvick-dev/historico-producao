@@ -39,6 +39,7 @@ from components.componentes import (
 )
 from components.sidebar import render_sidebar_pulse
 from components.comparativo_anos import render_comparativo_anos
+from components.comparativo_consultivo import render_comparativo_consultivo
 from components.consultivo import render_consultivo
 from components.contratos import render_contratos
 from components.eficiencia import render_eficiencia
@@ -1346,6 +1347,14 @@ def _abrir_comparativo_anos() -> None:
     st.session_state["navigation"] = "Comparativo 2025 x 2026"
 
 
+def _abrir_comparativo_consultivo() -> None:
+    st.session_state["navigation"] = "Consultivo 2025 x 2026"
+
+
+def _abrir_painel_consultivo() -> None:
+    st.session_state["navigation"] = "Consultivo"
+
+
 def _resumo_janela_sidebar(frame: pd.DataFrame) -> tuple[str, int]:
     if frame.empty or "period" not in frame.columns:
         return "Sem dados", 0
@@ -1391,6 +1400,7 @@ with st.sidebar:
     nav_labels = {
         "Visão geral": ":material/dashboard:  Visão geral",
         "Comparativo 2025 x 2026": ":material/compare_arrows:  Comparativo 2025 x 2026",
+        "Consultivo 2025 x 2026": ":material/trending_up:  Consultivo 2025 x 2026",
         "Projetos": ":material/account_tree:  Projetos",
         "Quantidade de O.S.": ":material/assignment:  Quantidade de O.S.",
         "Contratos": ":material/description:  Contratos",
@@ -1472,6 +1482,10 @@ def render_dashboard() -> None:
             "Comparativo 2025 x 2026 · Contratos e O.S.",
             "Análise interanual de contratos distintos, ordens de serviço (Prod), giro O.S./contrato e evolução por equipe.",
         ),
+        "Consultivo 2025 x 2026": (
+            "Comparativo 2025 x 2026 · Consultivos",
+            "Análise interanual de consultivos realizados, mix de produtos (Mesh, TV Box, Virtua), conversão e metas por equipe.",
+        ),
         "Projetos": (
             "Produção por projeto",
             "Compare pontos, ordens de serviço e participação por projeto.",
@@ -1520,7 +1534,11 @@ def render_dashboard() -> None:
         updated = pd.Timestamp(current_stats["last_import"]).strftime(
             "Atualizado em %d/%m/%Y às %H:%M"
         )
-    if navigation not in ("Consultivo", "Comparativo 2025 x 2026"):
+    if navigation not in (
+        "Consultivo",
+        "Comparativo 2025 x 2026",
+        "Consultivo 2025 x 2026",
+    ):
         render_hero_totale_1(
             titulo=title,
             subtitulo=subtitle,
@@ -1537,9 +1555,10 @@ def render_dashboard() -> None:
         == current_consultivo_stats.get("records")
     )
 
+    _paginas_consultivo = ("Consultivo", "Consultivo 2025 x 2026")
     if (
-        (navigation != "Consultivo" and is_demo)
-        or (navigation == "Consultivo" and is_demo_consultivo)
+        (navigation not in _paginas_consultivo and is_demo)
+        or (navigation in _paginas_consultivo and is_demo_consultivo)
     ) and navigation != "Saúde dos dados":
         st.markdown(
             """
@@ -1552,6 +1571,12 @@ def render_dashboard() -> None:
         )
 
     if navigation == "Consultivo":
+        st.button(
+            "Abrir Comparativo 2025 x 2026 de Consultivos",
+            key="atalho_comp_consultivo",
+            icon=":material/trending_up:",
+            on_click=_abrir_comparativo_consultivo,
+        )
         render_consultivo(
             current_consultivo,
             current_roster,
@@ -1559,7 +1584,22 @@ def render_dashboard() -> None:
             consultivo_folder_id=CONSULTIVO_FOLDER_ID,
             drive_configured=_drive_service_account() is not None,
         )
+    elif navigation == "Consultivo 2025 x 2026":
+        render_comparativo_consultivo(
+            current_consultivo,
+            roster=current_roster,
+            consultivo_folder_id=CONSULTIVO_FOLDER_ID,
+            on_abrir_painel_consultivo=_abrir_painel_consultivo,
+            on_abrir_comparativo_contratos=_abrir_comparativo_anos,
+            on_dados_importados=_load_consultivo_cached.clear,
+        )
     elif navigation == "Comparativo 2025 x 2026":
+        st.button(
+            "Ver Comparativo 2025 x 2026 de Consultivos",
+            key="atalho_ir_comp_consultivo",
+            icon=":material/trending_up:",
+            on_click=_abrir_comparativo_consultivo,
+        )
         render_comparativo_anos(current_records, roster=current_roster)
     elif navigation == "Saúde dos dados":
         render_saude_dados(

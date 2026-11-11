@@ -2444,14 +2444,23 @@ def _seed_consultivo_demonstration(
     names: list[str],
     periods: pd.PeriodIndex,
 ) -> None:
-    with connect() as connection:
-        row = connection.execute(
-            "SELECT COUNT(*) AS total FROM consultivo_records"
-        ).fetchone()
-        if row and int(row["total"]) > 0:
-            return
     if get_setting("consultivo_demo_disabled") == "1":
         return
+    with connect() as connection:
+        row = connection.execute(
+            """
+            SELECT COUNT(*) AS total,
+                   COALESCE(SUM(is_demo), 0) AS demo_rows,
+                   MIN(reference_date) AS first_date
+            FROM consultivo_records
+            """
+        ).fetchone()
+        if row and int(row["total"]) > 0:
+            is_pure_demo = int(row["demo_rows"]) == int(row["total"])
+            first_date = str(row["first_date"] or "")
+            if not is_pure_demo or (first_date and first_date <= "2025-01-31"):
+                return
+            connection.execute("DELETE FROM consultivo_records WHERE is_demo = 1")
 
     consultivo_demo: list[dict] = []
     seq = 1
@@ -2464,15 +2473,25 @@ def _seed_consultivo_demonstration(
             if month_index == len(periods) - 1 and tech_index >= len(names) - 2:
                 continue
             login = f"Z64{tech_index:04d}"
-            entries = 2 + ((tech_index + month_index) % 4)
+            bonus_2026 = (
+                1 if period.year >= 2026 and (tech_index + month_index) % 3 == 0 else 0
+            )
+            entries = 2 + ((tech_index + month_index) % 4) + bonus_2026
             for offset in range(entries):
-                day_num = min(26, 2 + offset * 6 + (tech_index % 4))
+                day_num = min(27, 2 + offset * 4 + (tech_index % 4))
                 ref_date = (
                     period.to_timestamp().replace(day=day_num).strftime("%Y-%m-%d")
                 )
                 kind = (tech_index + month_index + offset) % 4
                 if kind == 0:
-                    q_cons, q_prod, q_mesh, q_tv, q_vir = 1, 2, 2, 0, 0
+                    extra_mesh = 1 if period.year >= 2026 and offset == 0 else 0
+                    q_cons, q_prod, q_mesh, q_tv, q_vir = (
+                        1,
+                        2 + extra_mesh,
+                        2 + extra_mesh,
+                        0,
+                        0,
+                    )
                     plano_tv, plano_net, tipo_serv = (
                         "",
                         "SERVIÇOS AVANÇADOS",
@@ -2523,8 +2542,8 @@ def _seed_consultivo_demonstration(
                 )
                 seq += 1
                 file_row += 1
-        # Inclui histórico de colaborador hoje desligado nas competências anteriores.
-        if month_index < len(periods) - 3:
+        # Inclui histórico de colaborador hoje desligado nas competências anteriores (especialmente 2025).
+        if period.year == 2025 or month_index < len(periods) - 3:
             consultivo_demo.append(
                 {
                     "reference_date": period.to_timestamp()
@@ -2541,8 +2560,8 @@ def _seed_consultivo_demonstration(
                     "plano_internet": "SERVIÇOS AVANÇADOS",
                     "tipo_servico": "SERVIÇOS AVANÇADOS",
                     "qtde_consultivo": 1,
-                    "qtde_produtos": 1,
-                    "qtde_mesh": 1,
+                    "qtde_produtos": 2 if period.year == 2025 else 1,
+                    "qtde_mesh": 2 if period.year == 2025 else 1,
                     "qtde_tv": 0,
                     "qtde_virtua": 0,
                     "source_file": source_file,
@@ -2582,7 +2601,7 @@ def create_demonstration() -> None:
         pd.Period("2026-10", freq="M"), pd.Timestamp.today().to_period("M")
     )
     periods = pd.period_range(start="2025-01", end=end_period, freq="M")
-    consultivo_periods = periods[-12:] if len(periods) > 12 else periods
+    consultivo_periods = periods
     stats = database_stats()
     if get_setting("demo_disabled") == "1":
         return

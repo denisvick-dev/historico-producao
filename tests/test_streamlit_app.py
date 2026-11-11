@@ -251,6 +251,7 @@ render_contratos(pd.DataFrame({"contract": ["Sem contrato"], "technician": ["Ana
         app = AppTest.from_file(_APP_PATH).run(timeout=30)
         for pagina in (
             "Comparativo 2025 x 2026",
+            "Consultivo 2025 x 2026",
             "Projetos",
             "Quantidade de O.S.",
             "Contratos",
