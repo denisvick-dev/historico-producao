@@ -380,7 +380,9 @@ def _preparar_base_limpa(
             datas.loc[faltam] = _parse_datas_seguras(
                 frame.loc[faltam, "reference_date"]
             ).astype("datetime64[ns]")
-    competencias = datas.dt.to_period("M").dt.to_timestamp()
+    competencias = pd.Series(
+        datas.dt.to_period("M").dt.to_timestamp(), index=frame.index
+    )
 
     incompletos = (
         tecnicos.isna()
