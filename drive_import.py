@@ -33,6 +33,7 @@ DRIVE_API_URL = "https://www.googleapis.com/drive/v3"
 GOOGLE_SHEETS_EXPORT_URL = "https://docs.google.com/spreadsheets/d/{sheet_id}/export"
 DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.readonly"
 GOOGLE_SHEET_MIME_TYPE = "application/vnd.google-apps.spreadsheet"
+DRIVE_FOLDER_MIME_TYPE = "application/vnd.google-apps.folder"
 SUPPORTED_SUFFIXES = {".csv", ".xls", ".xlsx"}
 MAX_PARALLEL_DOWNLOADS = 8
 IMPORT_PARSER_VERSION = "contracts-v2"
@@ -119,7 +120,7 @@ def _request(
     return response
 
 
-def list_folder_files(session: Any, folder_id: str) -> list[dict[str, str]]:
+def _list_single_folder_items(session: Any, folder_id: str) -> list[dict[str, str]]:
     files: list[dict[str, str]] = []
     page_token: str | None = None
     seen_tokens: set[str] = set()
@@ -169,6 +170,26 @@ def list_folder_files(session: Any, folder_id: str) -> list[dict[str, str]]:
         if not isinstance(page_token, str) or page_token in seen_tokens:
             raise DriveImportError("O Google Drive retornou uma paginação inválida.")
         seen_tokens.add(page_token)
+
+
+def list_folder_files(session: Any, folder_id: str) -> list[dict[str, str]]:
+    """Lista arquivos da pasta e subpastas imediatas/aninhadas evitando ciclos."""
+    collected: list[dict[str, str]] = []
+    visited_folders: set[str] = set()
+    queue: list[str] = [folder_id]
+    while queue:
+        current_folder = queue.pop(0)
+        if not current_folder or current_folder in visited_folders:
+            continue
+        visited_folders.add(current_folder)
+        for item in _list_single_folder_items(session, current_folder):
+            if item.get("mimeType") == DRIVE_FOLDER_MIME_TYPE:
+                sub_id = item.get("id", "").strip()
+                if sub_id and sub_id not in visited_folders:
+                    queue.append(sub_id)
+            else:
+                collected.append(item)
+    return collected
 
 
 def _file_fingerprint(

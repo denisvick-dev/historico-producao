@@ -574,13 +574,31 @@ def parse_reference_date(value: object) -> pd.Timestamp | None:
 
 
 def infer_date_from_filename(filename: str) -> pd.Timestamp | None:
-    stem = Path(filename).stem
+    stem = re.sub(r"\s*\[[^\]]+\]\s*$", "", Path(filename).stem).strip()
     match = re.search(r"(?<!\d)(20\d{2})[-_.](0?[1-9]|1[0-2])(?!\d)", stem)
     if match:
         return pd.Timestamp(int(match.group(1)), int(match.group(2)), 1)
     match = re.search(r"(?<!\d)(0?[1-9]|1[0-2])[-_.](20\d{2})(?!\d)", stem)
     if match:
         return pd.Timestamp(int(match.group(2)), int(match.group(1)), 1)
+
+    normalized = unicodedata.normalize("NFKD", stem.lower())
+    normalized = "".join(c for c in normalized if not unicodedata.combining(c))
+    month_match = re.search(
+        r"\b(janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro|jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)\b",
+        normalized,
+    )
+    if month_match:
+        remainder = (
+            normalized[: month_match.start()] + " " + normalized[month_match.end() :]
+        )
+        year_match = re.search(r"(?<!\d)(20\d{2}|\d{2})(?!\d)", remainder)
+        if year_match:
+            month = MONTHS_PT[month_match.group(1)]
+            year = int(year_match.group(1))
+            year = year + 2000 if year < 100 else year
+            if 2000 <= year <= 2099:
+                return pd.Timestamp(year, month, 1)
     return None
 
 
@@ -2555,54 +2573,142 @@ def create_demonstration() -> None:
         "Lucas Moreira",
         "Marcelo Dias",
     ]
-    periods = pd.period_range(
-        end=pd.Timestamp.today().to_period("M"), periods=12, freq="M"
-    )
-    stats = database_stats()
-    if stats["records"] or get_setting("demo_disabled") == "1":
-        if stats["records"] and stats["demo_rows"] == stats["records"]:
-            _seed_consultivo_demonstration(names, periods)
-        return
-    records: list[dict] = []
-    for tech_index, technician in enumerate(names):
-        for month_index, period in enumerate(periods):
-            # Série determinística com tendência e variações entre técnicos/meses.
-            prod = (
-                520
-                + tech_index * 47
-                + month_index * (18 + tech_index % 4 * 3)
-                + ((tech_index * 7 + month_index * 5) % 9) * 38
-            )
-            gpon = (
-                180
-                + (tech_index % 6) * 39
-                + month_index * (8 + tech_index % 3)
-                + ((tech_index * 3 + month_index * 2) % 7) * 24
-            )
-            if (tech_index + month_index) % 11 == 0:
-                gpon = 0
-            # Carteira demonstrativa: o pool de contratos cresce mês a mês.
-            pool = 8 + month_index % 6
-            contract = f"CT-{((tech_index + month_index * 3) % pool) + 1:03d}"
-            for origin, points in ((PROD, prod), (GPON, gpon)):
-                records.append(
-                    {
-                        "technician": technician,
-                        "reference_date": period.to_timestamp().strftime("%Y-%m-%d"),
-                        "source_sheet": origin,
-                        "contract": contract,
-                        "points": float(points),
-                        # Um arquivo por competência, como nas exportações do Drive.
-                        "source_file": f"{DEMO_SOURCE}_{period.strftime('%Y-%m')}",
-                        "source_row": tech_index * len(periods) + month_index + 2,
-                    }
-                )
-    save_records(records, is_demo=True)
     demo_monitors = [
         ("Edson Marco Pinheiro", "ABCDM-TOTALE", "NET-ABCDM"),
         ("Adriano Nascimento da Silva", "GRS-TOTALE", "NET-GUARULHOS"),
         ("Elisangela Cassimiro Goncalves", "SPO-TOTALLESTE", "NET-LESTE"),
     ]
+    end_period = max(
+        pd.Period("2026-10", freq="M"), pd.Timestamp.today().to_period("M")
+    )
+    periods = pd.period_range(start="2025-01", end=end_period, freq="M")
+    consultivo_periods = periods[-12:] if len(periods) > 12 else periods
+    stats = database_stats()
+    if get_setting("demo_disabled") == "1":
+        return
+    if stats["records"]:
+        if stats["demo_rows"] == stats["records"]:
+            min_date = str(stats.get("min_date") or "")
+            if min_date and min_date <= "2025-01-31":
+                _seed_consultivo_demonstration(names, consultivo_periods)
+                return
+            with connect() as connection:
+                connection.execute("DELETE FROM production_records WHERE is_demo = 1")
+                connection.execute("DELETE FROM technician_roster WHERE is_demo = 1")
+        else:
+            return
+
+    records: list[dict] = []
+    source_row = 2
+    for tech_index, technician in enumerate(names):
+        project_name = demo_monitors[tech_index % len(demo_monitors)][2]
+        for month_index, period in enumerate(periods):
+            # Série determinística 2025–2026 com múltiplos contratos e giro O.S./contrato realista.
+            year_boost = 1.09 if period.year >= 2026 else 1.0
+            prod_total = round(
+                (
+                    480
+                    + tech_index * 42
+                    + (month_index % 12) * (15 + (tech_index % 4) * 3)
+                    + ((tech_index * 7 + month_index * 5) % 9) * 34
+                )
+                * year_boost,
+                2,
+            )
+            gpon_total = round(
+                (
+                    165
+                    + (tech_index % 6) * 35
+                    + (month_index % 12) * (7 + tech_index % 3)
+                    + ((tech_index * 3 + month_index * 2) % 7) * 22
+                )
+                * year_boost,
+                2,
+            )
+            if (tech_index + month_index) % 11 == 0:
+                gpon_total = 0.0
+
+            contracts_in_month = (
+                2
+                + (tech_index + month_index * 2) % 3
+                + (
+                    1
+                    if period.year >= 2026 and (tech_index + month_index) % 3 == 0
+                    else 0
+                )
+            )
+            pool = 18 + (month_index % 8)
+            month_contracts = [
+                f"CT-{((tech_index * 5 + month_index * 3 + c_idx * 7) % pool) + 1:03d}"
+                for c_idx in range(contracts_in_month)
+            ]
+            # Garante contratos distintos dentro da competência do técnico.
+            distinct_contracts: list[str] = []
+            for idx_ct, candidate in enumerate(month_contracts):
+                if candidate in distinct_contracts:
+                    candidate = f"CT-{pool + idx_ct + 1:03d}"
+                distinct_contracts.append(candidate)
+
+            extra_os = 1 + ((tech_index + month_index) % 2)
+            total_os_rows = len(distinct_contracts) + extra_os
+            os_weights = [1.25 if i == 0 else 1.0 for i in range(total_os_rows)]
+            weight_sum = sum(os_weights)
+            allocated_prod = 0.0
+            for os_idx in range(total_os_rows):
+                ct = distinct_contracts[os_idx % len(distinct_contracts)]
+                if os_idx == total_os_rows - 1:
+                    pts = round(prod_total - allocated_prod, 2)
+                else:
+                    pts = round(prod_total * (os_weights[os_idx] / weight_sum), 2)
+                    allocated_prod = round(allocated_prod + pts, 2)
+                records.append(
+                    {
+                        "technician": technician,
+                        "reference_date": period.to_timestamp().strftime("%Y-%m-%d"),
+                        "source_sheet": PROD,
+                        "project": project_name,
+                        "contract": ct,
+                        "points": float(pts),
+                        "source_file": f"{DEMO_SOURCE}_{period.strftime('%Y-%m')}",
+                        "source_row": source_row,
+                    }
+                )
+                source_row += 1
+
+            records.append(
+                {
+                    "technician": technician,
+                    "reference_date": period.to_timestamp().strftime("%Y-%m-%d"),
+                    "source_sheet": GPON,
+                    "project": project_name,
+                    "contract": distinct_contracts[0],
+                    "points": float(gpon_total),
+                    "source_file": f"{DEMO_SOURCE}_{period.strftime('%Y-%m')}",
+                    "source_row": source_row,
+                }
+            )
+            source_row += 1
+
+    # Histórico 2025 de colaborador desligado para exercitar escopos de equipe no comparativo 2025 x 2026.
+    for month_index, period in enumerate(periods):
+        if period.year != 2025 or period.month > 8:
+            continue
+        for ct_offset in range(2):
+            records.append(
+                {
+                    "technician": "Tiago Henrique Mendes",
+                    "reference_date": period.to_timestamp().strftime("%Y-%m-%d"),
+                    "source_sheet": PROD,
+                    "project": "NET-GUARULHOS",
+                    "contract": f"CT-9{period.month:02d}{ct_offset}",
+                    "points": float(210 + month_index * 12 + ct_offset * 35),
+                    "source_file": f"{DEMO_SOURCE}_{period.strftime('%Y-%m')}",
+                    "source_row": source_row,
+                }
+            )
+            source_row += 1
+
+    save_records(records, is_demo=True)
     demo_roster = [
         {
             "technician": technician,
@@ -2646,7 +2752,7 @@ def create_demonstration() -> None:
         ]
     )
     save_roster_records(demo_roster, is_demo=True)
-    _seed_consultivo_demonstration(names, periods)
+    _seed_consultivo_demonstration(names, consultivo_periods)
 
 
 def summarize(frame: pd.DataFrame, keys: str | list[str]) -> pd.DataFrame:

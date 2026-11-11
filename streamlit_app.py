@@ -28,14 +28,17 @@ from components.componentes import (
     Cores,
     Fontes,
     aplicar_estilo_corp,
+    formatar_numero_br,
     render_hero_totale_1,
     render_sidebar_brand,
     render_sidebar_divider,
     render_sidebar_footer_info,
+    render_sidebar_pulse,
     render_sidebar_section,
     render_sidebar_theme_selector,
     render_ticker,
 )
+from components.comparativo_anos import render_comparativo_anos
 from components.consultivo import render_consultivo
 from components.contratos import render_contratos
 from components.eficiencia import render_eficiencia
@@ -161,32 +164,6 @@ st.markdown(
     #MainMenu, footer { visibility: hidden; }
     [data-testid="stHeader"] { background: rgba(243,246,251,.88); }
     [data-testid="stMainBlockContainer"] { max-width: 1440px; padding-top: 2rem; padding-bottom: 3rem; }
-    [data-testid="stSidebar"] [role="radiogroup"] { gap:.3rem; }
-    [data-testid="stSidebar"] [role="radiogroup"] label {
-        width:100%; padding:.68rem .75rem; border-radius:10px; transition:all .16s ease;
-    }
-    [data-testid="stSidebar"] [role="radiogroup"] label > div:first-child { display:none !important; }
-    [data-testid="stSidebar"] [role="radiogroup"] label:hover {
-        background:var(--totale-sb-nav-hover-bg);
-    }
-    [data-testid="stSidebar"] [role="radiogroup"] label:has(input:checked) {
-        background:var(--totale-sb-nav-active-bg);
-        border-left:3px solid var(--totale-sb-nav-active-accent);
-        box-shadow:0 4px 12px rgba(0,0,0,.12);
-    }
-    [data-testid="stSidebar"] [role="radiogroup"] label {
-        display:flex; align-items:center; justify-content:flex-start;
-        border:1px solid transparent;
-        background:rgba(255,255,255,0.12);
-    }
-    [data-testid="stSidebar"] [role="radiogroup"] label p {
-        font-size:13px; font-weight:700; letter-spacing:.01em; line-height:1.2;
-        margin:0; color:#123861;
-    }
-    [data-testid="stSidebar"] [role="radiogroup"] label:hover {
-        background:rgba(18,56,97,.06);
-        border-color:rgba(18,56,97,.08);
-    }
 
     h1, h2, h3 { color:#012869; letter-spacing:-.035em; }
     h1 { font-size:2rem !important; font-weight:800 !important; margin-bottom:.1rem !important; }
@@ -1364,31 +1341,66 @@ logger.info(
     dados_demonstracao=stats.get("demo_rows", 0),
 )
 
+
+def _abrir_comparativo_anos() -> None:
+    st.session_state["navigation"] = "Comparativo 2025 x 2026"
+
+
+def _resumo_janela_sidebar(frame: pd.DataFrame) -> tuple[str, int]:
+    if frame.empty or "period" not in frame.columns:
+        return "Sem dados", 0
+    periodos = pd.to_datetime(frame["period"], errors="coerce").dropna()
+    if periodos.empty:
+        return "Sem dados", 0
+    inicio = month_label(periodos.min())
+    fim = month_label(periodos.max())
+    qtd = int(periodos.dt.to_period("M").nunique())
+    janela = inicio if inicio == fim else f"{inicio} – {fim}"
+    return janela, qtd
+
+
 with st.sidebar:
     render_sidebar_brand(
         nome="TOTALE",
-        subtitulo="Gestão de produção",
+        subtitulo="Gestão de Produção & Performance",
+        versao="2025 · 2026",
         logo=LOGO_PADRAO_TOTALE,
         logo_banner=True,
     )
-    render_sidebar_theme_selector(
-        label="Tema da barra lateral",
-        help="Escolha entre os temas claro, azul e laranja.",
-        mostrar_icone=False,
+    _sb_is_demo = bool(
+        stats.get("records") and stats.get("demo_rows") == stats.get("records")
     )
-    render_sidebar_section("Acompanhamento")
+    _sb_janela, _sb_competencias = _resumo_janela_sidebar(records)
+    render_sidebar_pulse(
+        status_label="Modo Demonstração"
+        if _sb_is_demo
+        else (
+            "Drive Conectado" if _drive_service_account() is not None else "Base Local"
+        ),
+        tipo="alerta" if _sb_is_demo else "ok",
+        escopo=_sb_janela,
+        metricas=[
+            ("Registros", formatar_numero_br(stats.get("records", 0))),
+            ("Técnicos", formatar_numero_br(stats.get("technicians", 0))),
+            ("Competências", f"{_sb_competencias} meses"),
+            ("Arquivos", formatar_numero_br(stats.get("files", 0))),
+        ],
+        fontes=("Produção", "lista_ativos", "Consultivo"),
+    )
+    render_sidebar_section("Navegação", icone="🧭")
     nav_labels = {
-        "Visão geral": "▦  Visão geral",
-        "Projetos": "◈  Projetos",
-        "Quantidade de O.S.": "▤  Quantidade de O.S.",
-        "Contratos": "◈  Contratos",
-        "Produtividade unitária": "◫  Produtividade unitária",
-        "Consultivo": "📋  Consultivo",
-        "Regularidade": "◌  Regularidade",
-        "Eficiência": "▧  Eficiência por técnico",
-        "Técnicos": "♙  Técnicos",
-        "Quadro de técnicos": "⊞  Quadro de técnicos",
-        "Saúde dos dados": "◉  Saúde dos dados",
+        "Visão geral": ":material/dashboard:  Visão geral",
+        "Comparativo 2025 x 2026": ":material/compare_arrows:  Comparativo 2025 x 2026",
+        "Projetos": ":material/account_tree:  Projetos",
+        "Quantidade de O.S.": ":material/assignment:  Quantidade de O.S.",
+        "Contratos": ":material/description:  Contratos",
+        "Produtividade unitária": ":material/speed:  Produtividade unitária",
+        "Consultivo": ":material/support_agent:  Consultivo",
+        "Regularidade": ":material/calendar_month:  Regularidade",
+        "Eficiência": ":material/bolt:  Eficiência por técnico",
+        "Técnicos": ":material/person:  Técnicos",
+        "Quadro de técnicos": ":material/groups:  Quadro de técnicos",
+        "Saúde dos dados": ":material/monitor_heart:  Saúde dos dados",
     }
     # Evita seleções de navegação que não existam mais.
     if st.session_state.get("navigation") not in (None, *nav_labels):
@@ -1423,10 +1435,19 @@ with st.sidebar:
             "info": st.info,
         }.get(str(sync_status["type"]), st.info)
         status_renderer(str(sync_status["message"]))
+    render_sidebar_section("Aparência", icone="🎨")
+    render_sidebar_theme_selector(
+        label="Tema da barra lateral",
+        help="Escolha entre os temas claro corporativo, navy executivo e terracota.",
+        mostrar_icone=True,
+    )
     render_sidebar_footer_info(
-        itens={"Registros": stats["records"], "Técnicos": stats["technicians"]},
-        unidade="Atualização manual pela barra lateral",
-        ambiente="Produção",
+        itens={
+            "Registros": formatar_numero_br(stats["records"]),
+            "Técnicos": formatar_numero_br(stats["technicians"]),
+        },
+        unidade="Sincronização sob demanda e na abertura",
+        ambiente="Demo" if _sb_is_demo else "Produção",
         copyright="Totale · Histórico de produção",
     )
 
@@ -1446,6 +1467,10 @@ def render_dashboard() -> None:
         "Visão geral": (
             "Histórico de produção",
             "Acompanhe a evolução e os resultados da equipe técnica.",
+        ),
+        "Comparativo 2025 x 2026": (
+            "Comparativo 2025 x 2026 · Contratos e O.S.",
+            "Análise interanual de contratos distintos, ordens de serviço (Prod), giro O.S./contrato e evolução por equipe.",
         ),
         "Projetos": (
             "Produção por projeto",
@@ -1495,7 +1520,7 @@ def render_dashboard() -> None:
         updated = pd.Timestamp(current_stats["last_import"]).strftime(
             "Atualizado em %d/%m/%Y às %H:%M"
         )
-    if navigation != "Consultivo":
+    if navigation not in ("Consultivo", "Comparativo 2025 x 2026"):
         render_hero_totale_1(
             titulo=title,
             subtitulo=subtitle,
@@ -1534,6 +1559,8 @@ def render_dashboard() -> None:
             consultivo_folder_id=CONSULTIVO_FOLDER_ID,
             drive_configured=_drive_service_account() is not None,
         )
+    elif navigation == "Comparativo 2025 x 2026":
+        render_comparativo_anos(current_records, roster=current_roster)
     elif navigation == "Saúde dos dados":
         render_saude_dados(
             current_records,
@@ -1603,8 +1630,20 @@ def render_dashboard() -> None:
         elif navigation == "Projetos":
             render_projetos(filtered)
         elif navigation == "Quantidade de O.S.":
+            st.button(
+                "Abrir Comparativo 2025 x 2026 de Contratos e O.S.",
+                key="atalho_comp_os",
+                icon=":material/compare_arrows:",
+                on_click=_abrir_comparativo_anos,
+            )
             render_prod_orders(filtered)
         elif navigation == "Contratos":
+            st.button(
+                "Abrir Comparativo 2025 x 2026 de Contratos e O.S.",
+                key="atalho_comp_contratos",
+                icon=":material/compare_arrows:",
+                on_click=_abrir_comparativo_anos,
+            )
             render_contratos(filtered)
         elif navigation == "Produtividade unitária":
             render_produtividade_unitaria(filtered)
