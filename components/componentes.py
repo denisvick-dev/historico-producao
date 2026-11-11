@@ -614,7 +614,33 @@ class Formatadores:
     def markdown_para_html(texto: str) -> str:
         if not texto:
             return texto
-        texto = html_lib.escape(texto)
+
+        tags_permitidas = (
+            "strong",
+            "b",
+            "em",
+            "i",
+            "code",
+            "br",
+            "span",
+            "p",
+            "ul",
+            "ol",
+            "li",
+            "div",
+            "small",
+            "mark",
+        )
+        padrao_tag = r"</?(?:" + "|".join(tags_permitidas) + r")[^>]*>"
+        partes = re.split(f"({padrao_tag})", texto, flags=re.IGNORECASE)
+        resultado: list[str] = []
+        for parte in partes:
+            if re.fullmatch(padrao_tag, parte, flags=re.IGNORECASE):
+                resultado.append(parte)
+            else:
+                resultado.append(html_lib.escape(parte))
+
+        texto = "".join(resultado)
         texto = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", texto)
         texto = re.sub(r"(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)", r"<em>\1</em>", texto)
         texto = re.sub(r"`([^`]+)`", r"<code>\1</code>", texto)

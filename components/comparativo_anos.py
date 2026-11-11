@@ -1597,25 +1597,25 @@ def render_comparativo_anos(
 
     if not resumo.meses_disponiveis_base:
         render_insight(
-            f"<strong>Base de {ano_base} ainda não localizada no banco atual:</strong> "
-            f"foram encontradas competências em <strong>{ano_comp}</strong> ({html.escape(_descrever_meses(resumo.meses_disponiveis_comp))}), "
-            f"mas nenhuma competência de <strong>{ano_base}</strong>. Sincronize as planilhas de {ano_base} na pasta do Google Drive "
-            f"(<em>Atualizar dados</em> na barra lateral) para destravar as variações interanuais.",
+            f"**Base de {ano_base} ainda não localizada no banco atual:** "
+            f"foram encontradas competências em **{ano_comp}** ({html.escape(_descrever_meses(resumo.meses_disponiveis_comp))}), "
+            f"mas nenhuma competência de **{ano_base}**. Sincronize as planilhas de {ano_base} na pasta do Google Drive "
+            f"(*Atualizar dados* na barra lateral) para destravar as variações interanuais.",
             tipo="alerta",
         )
     elif not resumo.meses_disponiveis_comp:
         render_insight(
-            f"<strong>Base de {ano_comp} sem competências nos filtros atuais:</strong> "
-            f"há dados em <strong>{ano_base}</strong> ({html.escape(_descrever_meses(resumo.meses_disponiveis_base))}), "
-            f"mas nenhum registro em <strong>{ano_comp}</strong> para este recorte.",
+            f"**Base de {ano_comp} sem competências nos filtros atuais:** "
+            f"há dados em **{ano_base}** ({html.escape(_descrever_meses(resumo.meses_disponiveis_base))}), "
+            f"mas nenhum registro em **{ano_comp}** para este recorte.",
             tipo="alerta",
         )
     elif resumo.fallback_sem_intersecao:
         render_insight(
-            f"<strong>Competências sem sobreposição direta ainda:</strong> "
-            f"<strong>{ano_base}</strong> possui dados em <em>{html.escape(_descrever_meses(resumo.meses_disponiveis_base))}</em> e "
-            f"<strong>{ano_comp}</strong> em <em>{html.escape(_descrever_meses(resumo.meses_disponiveis_comp))}</em>. "
-            f"Os painéis abaixo exibem todos os meses disponíveis e destacam a <strong>Média Mensal Ativa</strong> "
+            f"**Competências sem sobreposição direta ainda:** "
+            f"**{ano_base}** possui dados em *{html.escape(_descrever_meses(resumo.meses_disponiveis_base))}* e "
+            f"**{ano_comp}** em *{html.escape(_descrever_meses(resumo.meses_disponiveis_comp))}*. "
+            f"Os painéis abaixo exibem todos os meses disponíveis e destacam a **Média Mensal Ativa** "
             f"para comparação proporcional até que os mesmos meses estejam sincronizados.",
             tipo="alerta",
         )
@@ -1635,13 +1635,13 @@ def render_comparativo_anos(
             )
         )
         render_insight(
-            f"<strong>Diagnóstico {ano_base} → {ano_comp} ({html.escape(resumo.rotulo_recorte_meses)}):</strong> "
-            f"Carteira em <strong>{direcao_ct}</strong> de <strong>{formatar_numero_br(resumo.contratos_base)}</strong> para "
-            f"<strong>{formatar_numero_br(resumo.contratos_comp)}</strong> contratos "
-            f"(<strong>{_formatar_pct_br(resumo.pct_contratos)}</strong>), enquanto o volume de O.S. Prod passou de "
-            f"<strong>{formatar_numero_br(resumo.os_base)}</strong> para <strong>{formatar_numero_br(resumo.os_comp)}</strong> "
-            f"(<strong>{_formatar_pct_br(resumo.pct_os)}</strong>) — giro médio de "
-            f"<strong>{_formatar_decimal_br(resumo.os_por_contrato_comp, 2)} O.S./contrato</strong> em {ano_comp} "
+            f"**Diagnóstico {ano_base} → {ano_comp} ({html.escape(resumo.rotulo_recorte_meses)}):** "
+            f"Carteira em **{direcao_ct}** de **{formatar_numero_br(resumo.contratos_base)}** para "
+            f"**{formatar_numero_br(resumo.contratos_comp)}** contratos "
+            f"(**{_formatar_pct_br(resumo.pct_contratos)}**), enquanto o volume de O.S. Prod passou de "
+            f"**{formatar_numero_br(resumo.os_base)}** para **{formatar_numero_br(resumo.os_comp)}** "
+            f"(**{_formatar_pct_br(resumo.pct_os)}**) — giro médio de "
+            f"**{_formatar_decimal_br(resumo.os_por_contrato_comp, 2)} O.S./contrato** em {ano_comp} "
             f"(ante {_formatar_decimal_br(resumo.os_por_contrato_base, 2)} em {ano_base}).",
             tipo=tipo_diag,
         )

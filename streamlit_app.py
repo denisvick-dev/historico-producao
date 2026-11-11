@@ -33,11 +33,11 @@ from components.componentes import (
     render_sidebar_brand,
     render_sidebar_divider,
     render_sidebar_footer_info,
-    render_sidebar_pulse,
     render_sidebar_section,
     render_sidebar_theme_selector,
     render_ticker,
 )
+from components.sidebar import render_sidebar_pulse
 from components.comparativo_anos import render_comparativo_anos
 from components.consultivo import render_consultivo
 from components.contratos import render_contratos
