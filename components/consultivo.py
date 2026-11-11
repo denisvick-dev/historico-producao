@@ -1183,17 +1183,22 @@ def render_consultivo(
         c2,
         "Equipes Produtivas",
         f"{equipes_produtivas:,}".replace(",", "."),
-        f"{perc_produtivos:.1f}% do total",
+        "do total monitorado",
         tema="verde",
         icone="⚡",
+        delta=f"{perc_produtivos:.1f}%".replace(".", ","),
+        delta_tipo="up" if perc_produtivos > 0 else "neutral",
     )
+    perc_zerados = max(0.0, 100.0 - perc_produtivos) if tot_equipes > 0 else 0.0
     render_kpi(
         c3,
         "Técnicos Zerados",
         f"{equipes_zeradas:,}".replace(",", "."),
-        f"{100 - perc_produtivos:.1f}% sem vendas",
+        "sem vendas no período",
         tema="vermelho" if equipes_zeradas > 0 else "cinza",
         icone="🚫",
+        delta=f"{perc_zerados:.1f}%".replace(".", ","),
+        delta_tipo="down" if equipes_zeradas > 0 else "neutral",
     )
     eficiencia_media = (tot_prod / tot_cons) if tot_cons > 0 else 0.0
     render_kpi(
@@ -1208,6 +1213,9 @@ def render_consultivo(
     st.markdown("<div style='height: 12px'></div>", unsafe_allow_html=True)
 
     # ── Visão Executiva de KPIs (Linha 2: Consultivos & Mix de Produtos) ──
+    sh_mesh_op = CalculosConsultivo.share(tot_mesh, tot_prod)
+    sh_tv_op = CalculosConsultivo.share(tot_tv, tot_prod)
+    sh_virtua_op = CalculosConsultivo.share(tot_virtua, tot_prod)
     m1, m2, m3, m4, m5 = st.columns(5)
     render_kpi(
         m1,
@@ -1229,25 +1237,31 @@ def render_consultivo(
         m3,
         "Total Mesh",
         f"{tot_mesh:,}".replace(",", "."),
-        f"{CalculosConsultivo.share(tot_mesh, tot_prod):.1f}% do mix",
+        "do mix de produtos",
         tema="verde",
         icone="📶",
+        delta=f"{sh_mesh_op:.1f}%".replace(".", ","),
+        delta_tipo="neutral",
     )
     render_kpi(
         m4,
         "Total TV Box",
         f"{tot_tv:,}".replace(",", "."),
-        f"{CalculosConsultivo.share(tot_tv, tot_prod):.1f}% do mix",
+        "do mix de produtos",
         tema="roxo",
         icone="📺",
+        delta=f"{sh_tv_op:.1f}%".replace(".", ","),
+        delta_tipo="neutral",
     )
     render_kpi(
         m5,
         "Total Virtua",
         f"{tot_virtua:,}".replace(",", "."),
-        f"{CalculosConsultivo.share(tot_virtua, tot_prod):.1f}% do mix",
+        "do mix de produtos",
         tema="cinza",
         icone="🌐",
+        delta=f"{sh_virtua_op:.1f}%".replace(".", ","),
+        delta_tipo="neutral",
     )
 
     # ── Cards de Delta (Δ) contra a Janela Anterior Equivalente ──

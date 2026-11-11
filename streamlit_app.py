@@ -266,9 +266,19 @@ st.markdown(
         letter-spacing:-.045em; font-weight:800; color:#012869; margin:.45rem 0 .15rem;
         font-variant-numeric:tabular-nums;
     }
-    .kpi-note { font-size:11px; line-height:1.4; color:#718198; }
-    .kpi-note.positive { color:#218361; }
-    .kpi-note.negative { color:#bc5d58; }
+    .kpi-note { font-size:11.5px; line-height:1.4; color:#64748B; font-variant-numeric:tabular-nums; }
+    .kpi-note.positive,
+    .kpi-note.negative,
+    .kpi-note.share-orange,
+    .kpi-note.share-green {
+        display:inline-flex; align-items:center; width:fit-content;
+        padding:3px 9px; border-radius:999px; font-size:12px; font-weight:800;
+        letter-spacing:-0.01em; margin-top:2px;
+    }
+    .kpi-note.positive { background:#ECFDF5; color:#047857; border:1px solid #A7F3D0; }
+    .kpi-note.negative { background:#FEF2F2; color:#B91C1C; border:1px solid #FECACA; }
+    .kpi-note.share-orange { background:#FFF7ED; color:#C2410C; border:1px solid #FED7AA; }
+    .kpi-note.share-green { background:#ECFDF5; color:#047857; border:1px solid #A7F3D0; }
     .section-heading { margin:1.45rem 0 .75rem; display:flex; justify-content:space-between; align-items:end; }
     .section-heading h2 { margin:0 !important; font-family:"Manrope", "Inter", sans-serif; font-weight:750 !important; }
     .section-heading p { margin:.15rem 0 0; font-size:12px; }
@@ -745,23 +755,23 @@ def render_metrics(
             "kpi-card--azul",
         )
     with columns[1]:
-        share = current_prod / current_total * 100 if current_total else 0
+        share_prod = current_prod / current_total * 100 if current_total else 0
         metric_card(
             "PONTOS EM PROD",
             format_points(current_prod),
-            f"{share:.1f}% do total".replace(".", ","),
+            f"{share_prod:.1f}% do total".replace(".", ","),
             "P",
-            "",
+            "share-orange",
             "kpi-card--laranja",
         )
     with columns[2]:
-        share = current_gpon / current_total * 100 if current_total else 0
+        share_gpon = current_gpon / current_total * 100 if current_total else 0
         metric_card(
             "PONTOS EM GPON",
             format_points(current_gpon),
-            f"{share:.1f}% do total".replace(".", ","),
+            f"{share_gpon:.1f}% do total".replace(".", ","),
             "G",
-            "",
+            "share-green",
             "kpi-card--verde",
         )
     with columns[3]:
@@ -834,6 +844,8 @@ def render_metrics(
             ),
             icone="🔧",
             detalhe="Saldo líquido de pontos na aba Prod",
+            detalhe_pct=f"Mix atual: {share_prod:.1f}%".replace(".", ","),
+            detalhe_pct_direcao="neutral",
             num_base=prev_prod,
             num_atual=float(current_prod),
         )
@@ -855,6 +867,8 @@ def render_metrics(
             ),
             icone="🌐",
             detalhe="Saldo líquido de pontos na aba Gpon",
+            detalhe_pct=f"Mix atual: {share_gpon:.1f}%".replace(".", ","),
+            detalhe_pct_direcao="neutral",
             num_base=prev_gpon,
             num_atual=float(current_gpon),
         )

@@ -1133,6 +1133,23 @@ def _grafico_mensal_comparativo(
     opacidades_base = [1.0 if bool(c) else 0.30 for c in mensal["considerado"]]
     opacidades_comp = [1.0 if bool(c) else 0.30 for c in mensal["considerado"]]
 
+    textos_comp: list[str] = []
+    hovers_pct_comp: list[str] = []
+    for vb_raw, vc_raw in zip(mensal[col_base], mensal[col_comp], strict=False):
+        vb_f = float(vb_raw)
+        vc_f = float(vc_raw)
+        pct_mes = _variacao_pct(vc_f, vb_f)
+        pct_txt = formatar_variacao_pct_br(pct_mes, atual=vc_f, base=vb_f)
+        hovers_pct_comp.append(pct_txt)
+        if vc_f <= 0:
+            textos_comp.append("")
+        elif pct_mes is not None:
+            textos_comp.append(
+                f"{formatar_numero_br(round(vc_f))}<br><b>({pct_txt})</b>"
+            )
+        else:
+            textos_comp.append(formatar_numero_br(round(vc_f)))
+
     fig.add_bar(
         x=mensal["mes_label"],
         y=mensal[col_base],
@@ -1152,14 +1169,15 @@ def _grafico_mensal_comparativo(
         y=mensal[col_comp],
         name=str(ano_comp),
         marker=dict(color=cor_comp, opacity=opacidades_comp),
-        text=[
-            formatar_numero_br(round(float(v))) if float(v) > 0 else ""
-            for v in mensal[col_comp]
-        ],
+        customdata=hovers_pct_comp,
+        text=textos_comp,
         textposition="outside",
         textfont=dict(size=9.5, color=cor_comp),
         cliponaxis=False,
-        hovertemplate=f"<b>%{{x}}/{ano_comp}</b><br>{unidade}: %{{y:,.0f}}<extra></extra>",
+        hovertemplate=(
+            f"<b>%{{x}}/{ano_comp}</b><br>{unidade}: %{{y:,.0f}}"
+            f"<br><b>Variação vs {ano_base}: %{{customdata}}</b><extra></extra>"
+        ),
     )
 
     ativos_comp = mensal.loc[mensal["considerado"] & mensal[col_comp].gt(0), col_comp]
@@ -1180,7 +1198,7 @@ def _grafico_mensal_comparativo(
         float(mensal[col_comp].max()) if not mensal.empty else 0.0,
         1.0,
     )
-    fig.update_yaxes(range=[0, max_y * 1.24])
+    fig.update_yaxes(range=[0, max_y * 1.28])
     return _aplicar_layout_grafico(fig, height=345)
 
 
@@ -1752,7 +1770,7 @@ def render_comparativo_anos(
             ),
             (
                 f"PONTOS TOTAIS {ano_comp}",
-                format_points(resumo.pontos_totais_comp),
+                f"{format_points(resumo.pontos_totais_comp)} ({_formatar_pct_br(resumo.pct_pontos_totais)})",
             ),
         ]
     )
@@ -1780,7 +1798,7 @@ def render_comparativo_anos(
     render_section_header(
         f"Cards de Delta (Δ) · {ano_comp} vs {ano_base}",
         subtitulo=(
-            "Variação líquida absoluta e percentual nos comparativos de Produção (Pontos), "
+            "Variação líquida absoluta e destaque percentual nos comparativos de Produção (Pontos), "
             "Quantidade de O.S., Contratos"
             + (
                 " e Consultivo"
@@ -1794,6 +1812,7 @@ def render_comparativo_anos(
         ),
         icone="Δ",
         badge=resumo.rotulo_recorte_meses,
+        badge_tipo="info",
     )
 
     diff_media_pts = resumo.media_mensal_pontos_comp - resumo.media_mensal_pontos_base
@@ -1826,6 +1845,10 @@ def render_comparativo_anos(
             f"Prod: {formatar_delta_decimal_br(resumo.delta_pontos_prod, 2)} · "
             f"Gpon: {formatar_delta_decimal_br(resumo.delta_pontos_gpon, 2)}"
         ),
+        detalhe_pct=(
+            f"Média/mês: {formatar_variacao_pct_br(resumo.pct_media_pontos, atual=resumo.media_mensal_pontos_comp, base=resumo.media_mensal_pontos_base)}"
+        ),
+        detalhe_pct_direcao=_trend_variacao(diff_media_pts),
         num_base=resumo.pontos_totais_base,
         num_atual=resumo.pontos_totais_comp,
     )
@@ -1847,6 +1870,10 @@ def render_comparativo_anos(
         detalhe=(
             f"Média ativa: {formatar_delta_decimal_br(diff_media_os, 1, 'O.S./mês')}"
         ),
+        detalhe_pct=(
+            f"Média: {formatar_variacao_pct_br(resumo.pct_media_os, atual=resumo.media_mensal_os_comp, base=resumo.media_mensal_os_base)}"
+        ),
+        detalhe_pct_direcao=_trend_variacao(diff_media_os),
         num_base=resumo.os_base,
         num_atual=resumo.os_comp,
     )
@@ -1868,6 +1895,10 @@ def render_comparativo_anos(
         detalhe=(
             f"Média ativa: {formatar_delta_decimal_br(diff_media_ct, 1, 'ct/mês')}"
         ),
+        detalhe_pct=(
+            f"Média: {formatar_variacao_pct_br(resumo.pct_media_contratos, atual=resumo.media_mensal_contratos_comp, base=resumo.media_mensal_contratos_base)}"
+        ),
+        detalhe_pct_direcao=_trend_variacao(diff_media_ct),
         num_base=resumo.contratos_base,
         num_atual=resumo.contratos_comp,
     )
@@ -1888,15 +1919,23 @@ def render_comparativo_anos(
             direcao=_trend_variacao(resumo_cons_cruzado.delta_consultivos),
             icone="🎯",
             detalhe=(
-                f"Produtos: {formatar_delta_inteiro_br(resumo_cons_cruzado.delta_produtos, 'un.')} "
-                f"({resumo_cons_cruzado.rotulo_recorte_meses})"
+                f"Produtos: {formatar_delta_inteiro_br(resumo_cons_cruzado.delta_produtos, 'un.')}"
             ),
+            detalhe_pct=(
+                f"Prod.: {formatar_variacao_pct_br(resumo_cons_cruzado.pct_produtos, atual=resumo_cons_cruzado.produtos_comp, base=resumo_cons_cruzado.produtos_base)}"
+            ),
+            detalhe_pct_direcao=_trend_variacao(resumo_cons_cruzado.delta_produtos),
             num_base=resumo_cons_cruzado.consultivos_base,
             num_atual=resumo_cons_cruzado.consultivos_comp,
         )
 
     st.markdown("<div style='height:0.45rem'></div>", unsafe_allow_html=True)
 
+    share_prod_comp = (
+        (resumo.pontos_prod_comp / resumo.pontos_totais_comp) * 100.0
+        if resumo.pontos_totais_comp > 0
+        else 0.0
+    )
     share_gpon_comp = (
         (resumo.pontos_gpon_comp / resumo.pontos_totais_comp) * 100.0
         if resumo.pontos_totais_comp > 0
@@ -1918,9 +1957,9 @@ def render_comparativo_anos(
         ),
         direcao=_trend_variacao(resumo.delta_pontos_prod),
         icone="🔧",
-        detalhe=(
-            f"Média total ativa: {formatar_delta_decimal_br(diff_media_pts, 1, 'pts/mês')}"
-        ),
+        detalhe=f"Média total ativa: {formatar_delta_decimal_br(diff_media_pts, 1, 'pts/mês')}",
+        detalhe_pct=f"Mix {ano_comp}: {_formatar_decimal_br(share_prod_comp, 1)}%",
+        detalhe_pct_direcao="neutral",
         num_base=resumo.pontos_prod_base,
         num_atual=resumo.pontos_prod_comp,
     )
@@ -1939,7 +1978,9 @@ def render_comparativo_anos(
         ),
         direcao=_trend_variacao(resumo.delta_pontos_gpon),
         icone="🌐",
-        detalhe=f"Participação Gpon em {ano_comp}: {_formatar_decimal_br(share_gpon_comp, 1)}%",
+        detalhe=f"Aba Gpon ({resumo.rotulo_recorte_meses})",
+        detalhe_pct=f"Mix {ano_comp}: {_formatar_decimal_br(share_gpon_comp, 1)}%",
+        detalhe_pct_direcao="neutral",
         num_base=resumo.pontos_gpon_base,
         num_atual=resumo.pontos_gpon_comp,
     )

@@ -1136,6 +1136,21 @@ def _grafico_mensal_consultivo(
     unidade: str,
 ) -> go.Figure:
     opacidades = [1.0 if bool(esc) else 0.30 for esc in mensal["em_escopo"]]
+    textos_comp: list[str] = []
+    hovers_pct_comp: list[str] = []
+    for vb_raw, vc_raw in zip(mensal[col_base], mensal[col_comp], strict=False):
+        vb_i = int(vb_raw)
+        vc_i = int(vc_raw)
+        pct_mes = _variacao_pct(vc_i, vb_i)
+        pct_txt = formatar_variacao_pct_br(pct_mes, atual=vc_i, base=vb_i)
+        hovers_pct_comp.append(pct_txt)
+        if vc_i <= 0:
+            textos_comp.append("")
+        elif pct_mes is not None:
+            textos_comp.append(f"{formatar_numero_br(vc_i)}<br><b>({pct_txt})</b>")
+        else:
+            textos_comp.append(formatar_numero_br(vc_i))
+
     fig = go.Figure()
     fig.add_trace(
         go.Bar(
@@ -1158,18 +1173,19 @@ def _grafico_mensal_consultivo(
             x=mensal["mes_abrev"],
             y=mensal[col_comp],
             marker={"color": cor_comp, "opacity": opacidades},
-            text=[
-                formatar_numero_br(int(v)) if int(v) > 0 else ""
-                for v in mensal[col_comp]
-            ],
+            customdata=hovers_pct_comp,
+            text=textos_comp,
             textposition="outside",
             cliponaxis=False,
-            hovertemplate=f"<b>%{{x}}/{ano_comp}</b><br>{unidade}: %{{y:,.0f}}<extra></extra>",
+            hovertemplate=(
+                f"<b>%{{x}}/{ano_comp}</b><br>{unidade}: %{{y:,.0f}}"
+                f"<br><b>Variação vs {ano_base}: %{{customdata}}</b><extra></extra>"
+            ),
         )
     )
     fig.update_layout(barmode="group", bargap=0.22, bargroupgap=0.10)
     ymax = max(float(mensal[col_base].max()), float(mensal[col_comp].max()), 1.0)
-    fig.update_yaxes(range=[0, ymax * 1.22], title_text=unidade)
+    fig.update_yaxes(range=[0, ymax * 1.28], title_text=unidade)
     return _layout_base_plotly(fig, altura=355)
 
 
@@ -1878,14 +1894,18 @@ def render_comparativo_consultivo(
     # Seção dedicada de Cards de Saldo / Delta (Δ): Consultivos, Produtos, Conversão e Mix Comercial.
     render_section_header(
         f"Cards de Delta (Δ) · Consultivo {ano_comp} vs {ano_base}",
-        subtitulo="Variação líquida absoluta e percentual em Consultivos, Produtos comercializados e Mix (Mesh, TV Box e Virtua)",
+        subtitulo="Variação líquida absoluta e destaque percentual em Consultivos, Produtos comercializados e Mix (Mesh, TV Box e Virtua)",
         icone="Δ",
         badge=resumo.rotulo_recorte_meses,
+        badge_tipo="info",
     )
 
     diff_mc = resumo.media_mensal_cons_comp - resumo.media_mensal_cons_base
     diff_mp = resumo.media_mensal_prod_comp - resumo.media_mensal_prod_base
     diff_eq = resumo.equipes_produtivas_comp - resumo.equipes_produtivas_base
+    pct_eq = _variacao_pct(
+        resumo.equipes_produtivas_comp, resumo.equipes_produtivas_base
+    )
 
     d_cons_top = st.columns(3)
     render_delta_card(
@@ -1904,6 +1924,10 @@ def render_comparativo_consultivo(
         direcao=_trend_variacao(resumo.delta_consultivos),
         icone="📋",
         detalhe=f"Média ativa: {formatar_delta_decimal_br(diff_mc, 1, 'cons./mês')}",
+        detalhe_pct=(
+            f"Média: {formatar_variacao_pct_br(resumo.pct_media_cons, atual=resumo.media_mensal_cons_comp, base=resumo.media_mensal_cons_base)}"
+        ),
+        detalhe_pct_direcao=_trend_variacao(diff_mc),
         num_base=resumo.consultivos_base,
         num_atual=resumo.consultivos_comp,
     )
@@ -1923,6 +1947,10 @@ def render_comparativo_consultivo(
         direcao=_trend_variacao(resumo.delta_produtos),
         icone="📦",
         detalhe=f"Média ativa: {formatar_delta_decimal_br(diff_mp, 1, 'prod./mês')}",
+        detalhe_pct=(
+            f"Média: {formatar_variacao_pct_br(resumo.pct_media_prod, atual=resumo.media_mensal_prod_comp, base=resumo.media_mensal_prod_base)}"
+        ),
+        detalhe_pct_direcao=_trend_variacao(diff_mp),
         num_base=resumo.produtos_base,
         num_atual=resumo.produtos_comp,
     )
@@ -1942,20 +1970,35 @@ def render_comparativo_consultivo(
         direcao=_trend_variacao(resumo.delta_conversao),
         icone="🎯",
         detalhe=f"Equipes produtivas: {formatar_delta_inteiro_br(diff_eq, 'eq.')}",
+        detalhe_pct=(
+            f"Equipes: {formatar_variacao_pct_br(pct_eq, atual=resumo.equipes_produtivas_comp, base=resumo.equipes_produtivas_base)}"
+        ),
+        detalhe_pct_direcao=_trend_variacao(diff_eq),
         num_base=resumo.conversao_base,
         num_atual=resumo.conversao_comp,
     )
 
     st.markdown("<div style='height:0.45rem'></div>", unsafe_allow_html=True)
 
-    def _delta_share_pp(vol_b: int, vol_c: int) -> str:
+    def _info_share_mix(vol_b: int, vol_c: int) -> tuple[str, str, TipoTrendType]:
         sh_b = (
             (vol_b / resumo.produtos_base * 100.0) if resumo.produtos_base > 0 else 0.0
         )
         sh_c = (
             (vol_c / resumo.produtos_comp * 100.0) if resumo.produtos_comp > 0 else 0.0
         )
-        return formatar_delta_decimal_br(sh_c - sh_b, 1, "p.p.")
+        diff_pp = sh_c - sh_b
+        return (
+            f"Mix {ano_comp}: {_formatar_decimal_br(sh_c, 1)}%",
+            f"Δ Mix: {formatar_delta_decimal_br(diff_pp, 1, 'p.p.')}",
+            _trend_variacao(diff_pp),
+        )
+
+    det_mesh, pp_mesh, dir_pp_mesh = _info_share_mix(resumo.mesh_base, resumo.mesh_comp)
+    det_tv, pp_tv, dir_pp_tv = _info_share_mix(resumo.tv_base, resumo.tv_comp)
+    det_virt, pp_virt, dir_pp_virt = _info_share_mix(
+        resumo.virtua_base, resumo.virtua_comp
+    )
 
     d_cons_mix = st.columns(3)
     render_delta_card(
@@ -1973,7 +2016,9 @@ def render_comparativo_consultivo(
         ),
         direcao=_trend_variacao(resumo.delta_mesh),
         icone="📶",
-        detalhe=f"Δ Participação no mix: {_delta_share_pp(resumo.mesh_base, resumo.mesh_comp)}",
+        detalhe=det_mesh,
+        detalhe_pct=pp_mesh,
+        detalhe_pct_direcao=dir_pp_mesh,
         num_base=resumo.mesh_base,
         num_atual=resumo.mesh_comp,
     )
@@ -1992,7 +2037,9 @@ def render_comparativo_consultivo(
         ),
         direcao=_trend_variacao(resumo.delta_tv),
         icone="📺",
-        detalhe=f"Δ Participação no mix: {_delta_share_pp(resumo.tv_base, resumo.tv_comp)}",
+        detalhe=det_tv,
+        detalhe_pct=pp_tv,
+        detalhe_pct_direcao=dir_pp_tv,
         num_base=resumo.tv_base,
         num_atual=resumo.tv_comp,
     )
@@ -2011,7 +2058,9 @@ def render_comparativo_consultivo(
         ),
         direcao=_trend_variacao(resumo.delta_virtua),
         icone="🌐",
-        detalhe=f"Δ Participação no mix: {_delta_share_pp(resumo.virtua_base, resumo.virtua_comp)}",
+        detalhe=det_virt,
+        detalhe_pct=pp_virt,
+        detalhe_pct_direcao=dir_pp_virt,
         num_base=resumo.virtua_base,
         num_atual=resumo.virtua_comp,
     )
