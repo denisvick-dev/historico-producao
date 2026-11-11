@@ -20,7 +20,13 @@ from components.componentes import (
     TipoTrendType,
     Validadores,
     converter_data_br,
+    formatar_delta_decimal_br,
+    formatar_delta_inteiro_br,
+    formatar_numero_br,
+    formatar_variacao_pct_br,
     injetar_css,
+    injetar_css_delta_cards,
+    render_delta_card,
     render_hero_totale_2,
     render_insight,
     render_kpi,
@@ -1243,6 +1249,92 @@ def render_consultivo(
         tema="cinza",
         icone="🌐",
     )
+
+    # ── Cards de Delta (Δ) contra a Janela Anterior Equivalente ──
+    if not df_hist_filtrado.empty and "DATA" in df_hist_filtrado.columns:
+        dias_jan = max(1, (data_fim - data_ini).days + 1)
+        ant_fim_dt = data_ini - timedelta(days=1)
+        ant_ini_dt = ant_fim_dt - timedelta(days=dias_jan - 1)
+        datas_hist = pd.to_datetime(df_hist_filtrado["DATA"], errors="coerce").dt.date
+        df_ant = df_hist_filtrado[datas_hist.ge(ant_ini_dt) & datas_hist.le(ant_fim_dt)]
+        if not df_ant.empty:
+            ant_cons = int(df_ant["Qtde. Cons."].sum())
+            ant_prod = int(df_ant["Qtde. Prod."].sum())
+            ant_conv = (ant_prod / ant_cons) if ant_cons > 0 else 0.0
+            diff_c_ant = tot_cons - ant_cons
+            diff_p_ant = tot_prod - ant_prod
+            diff_conv_ant = eficiencia_media - ant_conv
+            pct_c_ant = CalculosConsultivo.variacao(tot_cons, ant_cons)
+            pct_p_ant = CalculosConsultivo.variacao(tot_prod, ant_prod)
+            pct_conv_ant = CalculosConsultivo.variacao(eficiencia_media, ant_conv)
+            ant_txt = f"{formatar_data_brasileira(ant_ini_dt)} a {formatar_data_brasileira(ant_fim_dt)}"
+
+            injetar_css_delta_cards()
+            st.markdown("<div style='height: 12px'></div>", unsafe_allow_html=True)
+            d_c_cols = st.columns(3)
+            render_delta_card(
+                d_c_cols[0],
+                "Δ Consultivos vs Janela Anterior",
+                formatar_delta_inteiro_br(diff_c_ant, "cons."),
+                valor_base=formatar_numero_br(ant_cons),
+                valor_atual=formatar_numero_br(tot_cons),
+                rotulo_base="Anterior",
+                rotulo_atual="Atual",
+                variacao_pct=formatar_variacao_pct_br(
+                    pct_c_ant, atual=tot_cons, base=ant_cons
+                ),
+                direcao=(
+                    "up"
+                    if diff_c_ant > 0
+                    else ("down" if diff_c_ant < 0 else "neutral")
+                ),
+                icone="📋",
+                detalhe=f"Base anterior: {ant_txt}",
+                num_base=ant_cons,
+                num_atual=tot_cons,
+            )
+            render_delta_card(
+                d_c_cols[1],
+                "Δ Produtos vs Janela Anterior",
+                formatar_delta_inteiro_br(diff_p_ant, "prod."),
+                valor_base=formatar_numero_br(ant_prod),
+                valor_atual=formatar_numero_br(tot_prod),
+                rotulo_base="Anterior",
+                rotulo_atual="Atual",
+                variacao_pct=formatar_variacao_pct_br(
+                    pct_p_ant, atual=tot_prod, base=ant_prod
+                ),
+                direcao=(
+                    "up"
+                    if diff_p_ant > 0
+                    else ("down" if diff_p_ant < 0 else "neutral")
+                ),
+                icone="📦",
+                detalhe=f"Mesh + TV Box + Virtua ({ant_txt})",
+                num_base=ant_prod,
+                num_atual=tot_prod,
+            )
+            render_delta_card(
+                d_c_cols[2],
+                "Δ Conversão vs Janela Anterior",
+                formatar_delta_decimal_br(diff_conv_ant, 2, "x"),
+                valor_base=f"{ant_conv:.2f}x".replace(".", ","),
+                valor_atual=f"{eficiencia_media:.2f}x".replace(".", ","),
+                rotulo_base="Anterior",
+                rotulo_atual="Atual",
+                variacao_pct=formatar_variacao_pct_br(
+                    pct_conv_ant, atual=eficiencia_media, base=ant_conv
+                ),
+                direcao=(
+                    "up"
+                    if diff_conv_ant > 0
+                    else ("down" if diff_conv_ant < 0 else "neutral")
+                ),
+                icone="🎯",
+                detalhe="Variação de produtos comercializados por consultivo",
+                num_base=ant_conv,
+                num_atual=eficiencia_media,
+            )
 
     # ── Projeção Fim do Mês (Seg-Sáb quando competência vigente em andamento) ──
     if fator_proj > 1.0:

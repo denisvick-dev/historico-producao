@@ -32,6 +32,10 @@ from components.componentes import (
     aplicar_estilo_corp,
     formatar_numero_br,
     render_hero_totale_1,
+    formatar_delta_decimal_br,
+    formatar_variacao_pct_br,
+    injetar_css_delta_cards,
+    render_delta_card,
     render_sidebar_brand,
     render_sidebar_divider,
     render_sidebar_footer_info,
@@ -768,6 +772,91 @@ def render_metrics(
             "Ø",
             "",
             "kpi-card--roxo",
+        )
+
+    if not previous.empty:
+        prev_totals = summarize(previous, [])
+        prev_prod = (
+            float(prev_totals.iloc[0]["points_prod"]) if not prev_totals.empty else 0.0
+        )
+        prev_gpon = (
+            float(prev_totals.iloc[0]["points_gpon"]) if not prev_totals.empty else 0.0
+        )
+        prev_tot = float(previous_total)
+        delta_tot = float(current_total) - prev_tot
+        delta_prod_pts = float(current_prod) - prev_prod
+        delta_gpon_pts = float(current_gpon) - prev_gpon
+        pct_tot = (
+            ((float(current_total) / prev_tot - 1.0) * 100.0) if prev_tot > 0 else None
+        )
+        pct_prod = (
+            ((float(current_prod) / prev_prod - 1.0) * 100.0) if prev_prod > 0 else None
+        )
+        pct_gpon = (
+            ((float(current_gpon) / prev_gpon - 1.0) * 100.0) if prev_gpon > 0 else None
+        )
+
+        injetar_css_delta_cards()
+        st.markdown("<div style='height:0.5rem'></div>", unsafe_allow_html=True)
+        d_cols = st.columns(3)
+        render_delta_card(
+            d_cols[0],
+            "Δ Produção Total vs Período Anterior",
+            formatar_delta_decimal_br(delta_tot, 2, "pts"),
+            valor_base=format_points(prev_tot),
+            valor_atual=format_points(current_total),
+            rotulo_base="Anterior",
+            rotulo_atual="Atual",
+            variacao_pct=formatar_variacao_pct_br(
+                pct_tot, atual=current_total, base=prev_tot
+            ),
+            direcao="up" if delta_tot > 0 else ("down" if delta_tot < 0 else "neutral"),
+            icone="⚡",
+            detalhe="Comparativo contra a janela equivalente imediatamente anterior",
+            num_base=prev_tot,
+            num_atual=float(current_total),
+        )
+        render_delta_card(
+            d_cols[1],
+            "Δ Pontos em Prod vs Período Anterior",
+            formatar_delta_decimal_br(delta_prod_pts, 2, "pts"),
+            valor_base=format_points(prev_prod),
+            valor_atual=format_points(current_prod),
+            rotulo_base="Anterior",
+            rotulo_atual="Atual",
+            variacao_pct=formatar_variacao_pct_br(
+                pct_prod, atual=current_prod, base=prev_prod
+            ),
+            direcao=(
+                "up"
+                if delta_prod_pts > 0
+                else ("down" if delta_prod_pts < 0 else "neutral")
+            ),
+            icone="🔧",
+            detalhe="Saldo líquido de pontos na aba Prod",
+            num_base=prev_prod,
+            num_atual=float(current_prod),
+        )
+        render_delta_card(
+            d_cols[2],
+            "Δ Pontos em Gpon vs Período Anterior",
+            formatar_delta_decimal_br(delta_gpon_pts, 2, "pts"),
+            valor_base=format_points(prev_gpon),
+            valor_atual=format_points(current_gpon),
+            rotulo_base="Anterior",
+            rotulo_atual="Atual",
+            variacao_pct=formatar_variacao_pct_br(
+                pct_gpon, atual=current_gpon, base=prev_gpon
+            ),
+            direcao=(
+                "up"
+                if delta_gpon_pts > 0
+                else ("down" if delta_gpon_pts < 0 else "neutral")
+            ),
+            icone="🌐",
+            detalhe="Saldo líquido de pontos na aba Gpon",
+            num_base=prev_gpon,
+            num_atual=float(current_gpon),
         )
 
 
@@ -1666,7 +1755,11 @@ def render_dashboard() -> None:
             icon=":material/trending_up:",
             on_click=_abrir_comparativo_consultivo,
         )
-        render_comparativo_anos(current_records, roster=current_roster)
+        render_comparativo_anos(
+            current_records,
+            roster=current_roster,
+            consultivo_frame=current_consultivo,
+        )
     elif navigation == "Saúde dos dados":
         render_saude_dados(
             current_records,
@@ -1742,7 +1835,15 @@ def render_dashboard() -> None:
                 icon=":material/compare_arrows:",
                 on_click=_abrir_comparativo_anos,
             )
-            render_prod_orders(filtered)
+            render_prod_orders(
+                filtered,
+                records=current_records,
+                technicians=technicians,
+                months=months,
+                projects=projects,
+                period_start=period_start,
+                period_end=period_end,
+            )
         elif navigation == "Contratos":
             st.button(
                 "Abrir Comparativo 2025 x 2026 de Contratos e O.S.",

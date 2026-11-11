@@ -10,6 +10,14 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from components.componentes import (
+    formatar_delta_decimal_br,
+    formatar_delta_inteiro_br,
+    formatar_numero_br,
+    formatar_variacao_pct_br,
+    injetar_css_delta_cards,
+    render_delta_card,
+)
 from production import format_points, month_label, summarize, summarize_os
 
 AZUL_TOTALE = "#012869"
@@ -836,6 +844,109 @@ def render_resumo_executivo(
             "variações comparáveis."
         )
     else:
+        ant_tot_val = (
+            float(anterior_total["points_total"]) if anterior_total is not None else 0.0
+        )
+        ant_prod_val = (
+            float(anterior_total["points_prod"]) if anterior_total is not None else 0.0
+        )
+        ant_gpon_val = (
+            float(anterior_total["points_gpon"]) if anterior_total is not None else 0.0
+        )
+        atu_tot_val = float(atual_total["points_total"])
+        atu_prod_val = float(atual_total["points_prod"])
+        atu_gpon_val = float(atual_total["points_gpon"])
+
+        diff_tot = atu_tot_val - ant_tot_val
+        diff_prod = atu_prod_val - ant_prod_val
+        diff_gpon = atu_gpon_val - ant_gpon_val
+        diff_os = int(atual_os) - int(anterior_os)
+
+        pct_tot_v = (
+            ((atu_tot_val / ant_tot_val - 1.0) * 100.0) if ant_tot_val > 0 else None
+        )
+        pct_prod_v = (
+            ((atu_prod_val / ant_prod_val - 1.0) * 100.0) if ant_prod_val > 0 else None
+        )
+        pct_gpon_v = (
+            ((atu_gpon_val / ant_gpon_val - 1.0) * 100.0) if ant_gpon_val > 0 else None
+        )
+        pct_os_v = (
+            ((float(atual_os) / float(anterior_os) - 1.0) * 100.0)
+            if anterior_os > 0
+            else None
+        )
+
+        injetar_css_delta_cards()
+        d_exec = st.columns(4)
+        render_delta_card(
+            d_exec[0],
+            "Δ Produção Total",
+            formatar_delta_decimal_br(diff_tot, 2, "pts"),
+            valor_base=format_points(ant_tot_val),
+            valor_atual=format_points(atu_tot_val),
+            rotulo_base="Janela anterior",
+            rotulo_atual="Janela atual",
+            variacao_pct=formatar_variacao_pct_br(
+                pct_tot_v, atual=atu_tot_val, base=ant_tot_val
+            ),
+            direcao="up" if diff_tot > 0 else ("down" if diff_tot < 0 else "neutral"),
+            icone="⚡",
+            detalhe="Soma de pontos em Prod + Gpon",
+            num_base=ant_tot_val,
+            num_atual=atu_tot_val,
+        )
+        render_delta_card(
+            d_exec[1],
+            "Δ Pontos em Prod",
+            formatar_delta_decimal_br(diff_prod, 2, "pts"),
+            valor_base=format_points(ant_prod_val),
+            valor_atual=format_points(atu_prod_val),
+            rotulo_base="Janela anterior",
+            rotulo_atual="Janela atual",
+            variacao_pct=formatar_variacao_pct_br(
+                pct_prod_v, atual=atu_prod_val, base=ant_prod_val
+            ),
+            direcao="up" if diff_prod > 0 else ("down" if diff_prod < 0 else "neutral"),
+            icone="🔧",
+            detalhe="Variação líquida na aba Prod",
+            num_base=ant_prod_val,
+            num_atual=atu_prod_val,
+        )
+        render_delta_card(
+            d_exec[2],
+            "Δ Pontos em Gpon",
+            formatar_delta_decimal_br(diff_gpon, 2, "pts"),
+            valor_base=format_points(ant_gpon_val),
+            valor_atual=format_points(atu_gpon_val),
+            rotulo_base="Janela anterior",
+            rotulo_atual="Janela atual",
+            variacao_pct=formatar_variacao_pct_br(
+                pct_gpon_v, atual=atu_gpon_val, base=ant_gpon_val
+            ),
+            direcao="up" if diff_gpon > 0 else ("down" if diff_gpon < 0 else "neutral"),
+            icone="🌐",
+            detalhe="Variação líquida na aba Gpon",
+            num_base=ant_gpon_val,
+            num_atual=atu_gpon_val,
+        )
+        render_delta_card(
+            d_exec[3],
+            "Δ Quantidade de O.S.",
+            formatar_delta_inteiro_br(diff_os, "O.S."),
+            valor_base=formatar_numero_br(anterior_os),
+            valor_atual=formatar_numero_br(atual_os),
+            rotulo_base="Janela anterior",
+            rotulo_atual="Janela atual",
+            variacao_pct=formatar_variacao_pct_br(
+                pct_os_v, atual=atual_os, base=anterior_os
+            ),
+            direcao="up" if diff_os > 0 else ("down" if diff_os < 0 else "neutral"),
+            icone="📋",
+            detalhe="Linhas válidas da aba Prod",
+            num_base=anterior_os,
+            num_atual=atual_os,
+        )
         st.caption(
             "As variações percentuais usam a janela anterior como base. "
             "Técnicos sem base anterior aparecem como novos, sem percentual calculado."

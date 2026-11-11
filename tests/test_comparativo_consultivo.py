@@ -265,6 +265,18 @@ class ComparativoConsultivoUiTests(unittest.TestCase):
                     app.radio(key="navigation").value, "Consultivo 2025 x 2026"
                 )
 
+                html_cons = "\n".join(
+                    str(getattr(item, "body", getattr(item, "value", "")))
+                    for item in app.get("html")
+                )
+                self.assertIn("totale-delta-card", html_cons)
+                self.assertIn("Δ Total de Consultivos", html_cons)
+                self.assertIn("Δ Total de Produtos", html_cons)
+                self.assertIn("Δ Conversão Prod./Cons.", html_cons)
+                self.assertIn("Δ Mesh", html_cons)
+                self.assertIn("Δ TV Box", html_cons)
+                self.assertIn("Δ Virtua", html_cons)
+
                 # Verifica gráficos Plotly, tabelas e downloads CSV.
                 self.assertGreaterEqual(len(app.get("plotly_chart")), 6)
                 tabelas = [

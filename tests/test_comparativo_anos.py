@@ -12,6 +12,12 @@ from streamlit.testing.v1 import AppTest
 import drive_import
 import production
 from components.comparativo_anos import calcular_comparativo_anos
+from components.componentes import (
+    formatar_delta_decimal_br,
+    formatar_delta_inteiro_br,
+    formatar_variacao_pct_br,
+    render_delta_card,
+)
 from components.sidebar import _CSS_PLACEHOLDERS, _css_tema, render_sidebar_pulse
 
 _APP_PATH = str(Path(__file__).resolve().parent.parent / "streamlit_app.py")
@@ -204,6 +210,19 @@ class ComparativoAnosCalculoTests(unittest.TestCase):
         self.assertAlmostEqual(resumo.os_por_contrato_comp, 1.5)
         self.assertEqual(resumo.sem_contrato_registros, 1)
 
+        # Pontos de Produção em Jan/2025: Prod = 100+80+90 = 270, Gpon = 50 -> Total = 320.
+        # Pontos de Produção em Jan/2026: Prod = 120+60+95+105+130+40 = 550, Gpon = 0 -> Total = 550.
+        self.assertAlmostEqual(resumo.pontos_prod_base, 270.0)
+        self.assertAlmostEqual(resumo.pontos_gpon_base, 50.0)
+        self.assertAlmostEqual(resumo.pontos_totais_base, 320.0)
+        self.assertAlmostEqual(resumo.pontos_prod_comp, 550.0)
+        self.assertAlmostEqual(resumo.pontos_gpon_comp, 0.0)
+        self.assertAlmostEqual(resumo.pontos_totais_comp, 550.0)
+        self.assertAlmostEqual(resumo.delta_pontos_totais, 230.0)
+        self.assertAlmostEqual(resumo.delta_pontos_prod, 280.0)
+        self.assertAlmostEqual(resumo.delta_pontos_gpon, -50.0)
+        self.assertAlmostEqual(resumo.pct_pontos_totais or 0.0, 71.875)
+
     def test_modo_ano_completo_inclui_todos_os_meses_e_calcula_medias_ativas(
         self,
     ) -> None:
@@ -357,7 +376,18 @@ class SidebarVisualAndComparativoUiTests(unittest.TestCase):
         # Abre o Comparativo 2025 x 2026 pela navegação da sidebar.
         app.radio(key="navigation").set_value("Comparativo 2025 x 2026").run(timeout=30)
         self.assertFalse(app.exception)
-        self.assertGreaterEqual(len(app.get("plotly_chart")), 4)
+        self.assertGreaterEqual(len(app.get("plotly_chart")), 5)
+
+        html_comp = "\n".join(
+            str(getattr(item, "body", getattr(item, "value", "")))
+            for item in app.get("html")
+        )
+        self.assertIn("totale-delta-card", html_comp)
+        self.assertIn("Δ Produção Total (Pontos)", html_comp)
+        self.assertIn("Δ Quantidade de O.S. (Prod)", html_comp)
+        self.assertIn("Δ Contratos Distintos", html_comp)
+        self.assertIn("Δ Pontos em Prod", html_comp)
+        self.assertIn("Δ Pontos em Gpon", html_comp)
 
         tabelas = [
             cast("pd.DataFrame", cast("Any", item).value)
@@ -411,6 +441,47 @@ class SidebarVisualAndComparativoUiTests(unittest.TestCase):
         self.assertIn("Drive Conectado", captured[0])
         self.assertIn("12.340", captured[0])
         self.assertIn("Produção", captured[0])
+
+    def test_formatadores_e_render_delta_card_corporativo(self) -> None:
+        self.assertEqual(formatar_delta_inteiro_br(1280, "O.S."), "+1.280 O.S.")
+        self.assertEqual(formatar_delta_inteiro_br(-312, "ct"), "-312 ct")
+        self.assertEqual(formatar_delta_inteiro_br(0, "un."), "0 un.")
+        self.assertEqual(formatar_delta_decimal_br(14520.5, 2, "pts"), "+14.520,50 pts")
+        self.assertEqual(formatar_delta_decimal_br(-0.14, 2, "x"), "-0,14 x")
+        self.assertEqual(formatar_delta_decimal_br(0.0, 2, "pts"), "0,00 pts")
+        self.assertEqual(formatar_variacao_pct_br(18.42), "+18,4%")
+        self.assertEqual(formatar_variacao_pct_br(-6.25), "-6,2%")
+        self.assertEqual(formatar_variacao_pct_br(None, atual=120, base=0), "Novo")
+        self.assertEqual(formatar_variacao_pct_br(None, atual=0, base=0), "—")
+
+        captured: list[str] = []
+
+        class DummyContainer:
+            def html(self, markup: str) -> None:
+                captured.append(markup)
+
+        render_delta_card(
+            DummyContainer(),
+            "Δ Produção Total <Pontos>",
+            "+14.520,50 pts",
+            valor_base="78.900,00",
+            valor_atual="93.420,50",
+            rotulo_base="2025",
+            rotulo_atual="2026",
+            variacao_pct="+18,4%",
+            direcao="up",
+            icone="⚡",
+            detalhe="Prod: +11.200,00 · Gpon: +3.320,50",
+            num_base=78900.0,
+            num_atual=93420.5,
+        )
+        self.assertEqual(len(captured), 1)
+        self.assertIn("totale-delta-card", captured[0])
+        self.assertIn("&lt;Pontos&gt;", captured[0])
+        self.assertIn("+14.520,50 pts", captured[0])
+        self.assertIn("+18,4%", captured[0])
+        self.assertIn("78.900,00", captured[0])
+        self.assertIn("93.420,50", captured[0])
 
 
 if __name__ == "__main__":
