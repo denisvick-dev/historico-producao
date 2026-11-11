@@ -1,0 +1,26 @@
+[project]
+name = "totale-gestao-operacional"
+version = "2.6.0"
+description = "Plataforma corporativa de Inteligência & Gestão Operacional da Totale — monitoramento integrado de Produção Técnica (Prod/Gpon), Ordens de Serviço, Contratos, Performance Consultiva (NetSales) e Quadro Ativo."
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [
+    { name = "Totale · Engenharia & Operações" },
+]
+keywords = [
+    "totale",
+    "gestao-operacional",
+    "business-intelligence",
+    "analytics",
+    "streamlit",
+    "producao",
+    "consultivo",
+    "kpis",
+]
+
+[project.urls]
+Repository = "https://github.com/denisvick-dev/totale-gestao-operacional"
+Issues = "https://github.com/denisvick-dev/totale-gestao-operacional/issues"
+
+[tool.ruff]
+target-version = "py311"

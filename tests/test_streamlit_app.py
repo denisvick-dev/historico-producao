@@ -297,6 +297,28 @@ render_contratos(pd.DataFrame({"contract": ["Sem contrato"], "technician": ["Ana
         )
         self.assertIn("sidebar-brand-banner--clean", html_claro)
 
+    def test_nomenclatura_corporativa_coerente(self) -> None:
+        """Valida identidade corporativa unificada no pyproject, README e UI."""
+        from pathlib import Path
+
+        raiz = Path(_APP_PATH).resolve().parent
+        pyproject_txt = (raiz / "pyproject.toml").read_text(encoding="utf-8")
+        readme_txt = (raiz / "README.md").read_text(encoding="utf-8")
+        self.assertIn('name = "totale-gestao-operacional"', pyproject_txt)
+        self.assertIn("Totale · Inteligência & Gestão Operacional", readme_txt)
+
+        html_main = "\n".join(
+            str(getattr(item, "body", getattr(item, "value", "")))
+            for item in self.at.get("html")
+        )
+        md_main = "\n".join(
+            str(getattr(item, "body", getattr(item, "value", "")))
+            for item in self.at.get("markdown")
+        )
+        dom_combinado = f"{html_main}\n{md_main}"
+        self.assertIn("Inteligência &amp; Gestão Operacional", dom_combinado)
+        self.assertIn("TOTALE · GESTÃO OPERACIONAL", dom_combinado)
+
 
 if __name__ == "__main__":
     unittest.main()

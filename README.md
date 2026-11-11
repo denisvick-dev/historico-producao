@@ -2,39 +2,45 @@
   <img src="assets/novo-logo-totale.png" alt="Logo Totale" width="220">
 </p>
 
-# Histórico de produção — Totale
+# Totale · Inteligência & Gestão Operacional
 
-Painel em Streamlit para acompanhar a produção dos técnicos ao longo do tempo. A regra central do sistema é:
+Plataforma corporativa em Streamlit dedicada ao acompanhamento executivo e analítico das operações de campo e performance comercial da **Totale**, consolidando **Produção Técnica (`Prod + Gpon`)**, **Ordens de Serviço (O.S.)**, **Contratos**, **Performance Consultiva (`NetSales`)**, **Comparativos Interanuais (`2025 × 2026`)** e **Governança Cadastral (`lista_ativos`)**.
 
-> **Pontos Totais = Pontos na aba `Prod` + Pontos na aba `Gpon`**
+> **Regra de Consolidação Operacional:**  
+> **`Pontos Totais = Pontos na aba Prod + Pontos na aba Gpon`**
 
-## Funcionalidades
+---
 
-- Visão geral com Pontos Totais, Prod, Gpon e média por técnico.
-- **Resumo executivo** com comparação contra competências anteriores, distribuição por técnico e variações individuais.
-- **Produção por projeto** com ranking, evolução mensal, participação, O.S. e detalhamento por técnico.
-- **Regularidade da produção** com média e mediana mensal, coeficiente de variação, destaques de oscilação e competências sem registros por técnico.
-- **Sazonalidade** com mapa de calor de Pontos Totais por competência e técnico ou projeto, além de tabela exportável em CSV.
-- Página **Quantidade de O.S.** com evolução por competência e ranking dos 15 técnicos com mais ordens (cada linha válida da aba `Prod` conta como uma O.S.).
-- Página **Contratos** com duas sub-abas: **Quantidade de contratos** (indicadores, evolução mensal, ranking e matriz por técnico com meses com produção, média mensal e exportação CSV) e **Eficiência de contratos** (classificação mensal dos contratos nas Faixas 1 a 5 de pontuação, filtros por técnico e faixa predominante, distribuição e evolução mensal das faixas, matriz de frequência por contrato e detalhamento mensal exportáveis em CSV). A contagem de quantidade considera contratos distintos por técnico e competência em todas as origens filtradas; a média mensal divide o total pelos meses com ao menos um contrato válido (e, na linha Total geral, usa os meses com contratos de qualquer técnico).
-- Página **Produtividade unitária** cruzando volume e complexidade: indicadores de **Pontos por O.S. (`Prod`)** e **Pontos por Contrato**, evolução mensal do ticket médio de pontos, gráfico de dispersão em 4 quadrantes (*Volume × Pontos unitários*), rankings Top 15 e tabela consolidada com exportação CSV.
-- Página **Consultivo** sincronizada com a pasta [`Histórico Consultivo`](https://drive.google.com/drive/folders/1xMwEgPm9udFoGobv9cCUoMmuoxuFiPB2) no Google Drive e interligada a `lista_ativos` por `LOGIN NETSALES` e `VENDEDOR`, com KPIs executivos, mix **Mesh / TV Box / Virtua**, projeção fim do mês (Seg–Sáb), evolução histórica mensal por competência, ranking consolidado por **Monitor** ou **Técnico**, matriz de eficiência, **Equipes sem Consultivos**, meta diária por Monitor e exportação CSV protegida.
-- Página **Quadro de técnicos** interligada à planilha oficial [`lista_ativos`](https://docs.google.com/spreadsheets/d/1LQKDcLshC6XSXLBVWaEYSpxrro6uydyU9pwDLc38pEg) (abas `lista_ativos` e `desligados`), conciliando **RE**, **Login**, **Situação**, **Monitor**, **U.N.** e **Base** com os pontos (`Prod + Gpon`), O.S. e contratos no período.
-- **Saúde dos dados** com cobertura de projetos, dados de demonstração, status de sincronização, histórico de arquivos importados com o contador de contratos distintos de cada arquivo e detalhamento dos registros com a coluna **Qtde_Contrato**, exportável em CSV.
-- Filtros compartilhados por **Situação cadastral** (padrão restrito a `ATIVO`), **Monitor**, **Base**, período, projeto e técnico; a página de técnicos exibe matrícula/RE, login, monitor e base no perfil individual.
-- Evolução mensal e ranking da equipe.
-- Histórico mensal detalhado e exportação em CSV.
-- Perfil individual com melhor competência e comparação com a média da equipe.
-- Persistência local em SQLite.
-- Dados de demonstração identificados.
-- Sincronização automática única ao abrir a sessão e atualização manual pelo botão na barra lateral.
-- Logs estruturados em JSON para observabilidade.
-- Health check para orquestradores (Docker, Kubernetes).
-- CI/CD com GitHub Actions (testes, lint, type check).
+## Módulos Executivos
 
-## Formato das planilhas
+### 1. Produção & Produtividade Técnica
+- **Visão Executiva · Produção**: indicadores consolidados de Pontos Totais, participação percentual `Prod` / `Gpon`, média por técnico ativo, cards de Delta (`Δ`) com destaque percentual contra o período anterior, evolução mensal e ranking da operação.
+- **Gestão por Projeto**: ranking de projetos, evolução mensal, participação percentual, volume de O.S. e detalhamento por técnico.
+- **Ordens de Serviço (O.S.)**: evolução mensal por competência e ranking Top 15 de técnicos (cada registro válido da aba `Prod` corresponde a uma O.S.).
+- **Gestão & Eficiência de Contratos**:
+  - *Quantidade de Contratos*: contratos distintos por técnico e competência, média mensal nos meses ativos e matriz exportável em CSV.
+  - *Eficiência de Contratos*: classificação mensal nas Faixas 1 a 5 de pontuação, filtros por técnico e faixa predominante, evolução das faixas e matriz de frequência por contrato.
+- **Produtividade Unitária**: indicadores de **Pontos por O.S. (`Prod`)** e **Pontos por Contrato**, evolução do ticket médio de pontos e dispersão estratégica em 4 quadrantes (*Volume × Complexidade*).
+- **Regularidade Operacional & Sazonalidade**: média, mediana, coeficiente de variação, lacunas de produção e mapa de calor mensal por técnico ou projeto.
+- **Matriz de Eficiência & Desempenho Individual**: predominância mensal de faixas e dossiê individual do técnico frente à média da operação.
 
-Arquivos Excel devem ter uma aba chamada **Prod** e/ou **Gpon**. Cada aba precisa conter:
+### 2. Performance Consultiva & Mix Comercial
+- **Performance Consultiva (`Consultivo`)**: sincronizado com a pasta oficial [`Histórico Consultivo`](https://drive.google.com/drive/folders/1xMwEgPm9udFoGobv9cCUoMmuoxuFiPB2) no Google Drive e conciliado com `lista_ativos` via `LOGIN NETSALES` e `VENDEDOR`. Apresenta KPIs executivos com participação percentual em destaque, mix comercial (**Mesh**, **TV Box** e **Virtua**), projeção de fechamento mensal (Seg–Sáb), cards de Delta contra a janela anterior, ranking por **Monitor** ou **Técnico**, equipes sem vendas, meta diária por Monitor e exportação CSV protegida.
+
+### 3. Inteligência Comparativa Interanual (`2025 × 2026`)
+- **Produção `2025 × 2026` (`Comparativo Interanual · Produção, Contratos e O.S.`)**: análise lado a lado entre anos (recorte equivalente dos mesmos meses, ano completo ou seleção manual) e escopos de equipe (*Operação completa*, *Apenas ativos atuais* ou *Mesma equipe nos 2 anos*), com **Cards de Delta (`Δ`) e Spotlight Percentual (`VARIAÇÃO %`)**, comparativos mensais com rótulos percentuais, curvas acumuladas YTD, giro `O.S./Contrato` e cruzamento executivo com Consultivo.
+- **Consultivo `2025 × 2026` (`Comparativo Interanual · Performance Consultiva & Mix`)**: evolução interanual de atendimentos consultivos, produtos comercializados, taxa de conversão (`Produtos/Consultivo`) e deslocamento de mix em pontos percentuais (`Δ Mix p.p.`) para Mesh, TV Box e Virtua por Base, Monitor e Técnico.
+
+### 4. Governança Cadastral & Dados
+- **Quadro Cadastral (`lista_ativos`)**: conciliação direta com a planilha oficial [`lista_ativos`](https://docs.google.com/spreadsheets/d/1LQKDcLshC6XSXLBVWaEYSpxrro6uydyU9pwDLc38pEg) (abas `lista_ativos` e `desligados`), unificando **RE**, **Login**, **Situação**, **Monitor**, **U.N.** e **Base** aos indicadores operacionais e comerciais.
+- **Governança & Dados**: rastreabilidade de cobertura de projetos, status de sincronização incremental, auditoria de arquivos importados com contador `Qtde_Contrato` e exportação CSV.
+- **Observabilidade & Infraestrutura**: persistência local em SQLite, logs estruturados em JSON (`structlog`), health check nativo para contêineres e pipeline automatizado de qualidade via GitHub Actions.
+
+---
+
+## Formato das Bases de Entrada
+
+Os arquivos Excel de Produção devem possuir as abas **`Prod`** e/ou **`Gpon`**, contendo:
 
 | Coluna | Obrigatória | Exemplo |
 | --- | --- | --- |
@@ -43,9 +49,9 @@ Arquivos Excel devem ter uma aba chamada **Prod** e/ou **Gpon**. Cada aba precis
 | Projeto | Não | `Rede Metropolitana` |
 | Pontos | Sim | `125,50` |
 
-\* Quando não houver data, a rotina de sincronização pode usar o ano/mês informado no nome do arquivo (por exemplo, `producao_2026-11.xlsx`).
+\* Na ausência de coluna de data, a rotina de importação infere ano/mês a partir do nome do arquivo (ex.: `producao_2026-11.xlsx` ou nomes de competência por extenso).
 
-A rotina de sincronização reconhece variações como `Colaborador`, `Funcionário`, `Nome`, `Projeto`, `Pontuação`, `Mês/Ano` e `Período`. Sem coluna ou valor preenchido, o registro fica classificado como **Sem projeto**. Para arquivos CSV, a origem deve ser indicada como `Prod` ou `Gpon`; são aceitos separadores vírgula ou ponto e vírgula e codificações UTF-8 ou Latin-1.
+A ingestão reconhece automaticamente aliases como `Colaborador`, `Funcionário`, `Nome`, `Nome Equipe`, `Projeto`, `Pontuação`, `Mês/Ano` e `Período`. Registros sem projeto recebem a classificação **Sem projeto**. Arquivos CSV aceitam delimitadores `,` ou `;` e codificações `UTF-8` ou `Latin-1`.
 
 ### Exemplo de arquivo CSV
 
@@ -55,11 +61,13 @@ André Santos;125,50;11/2026;Rede Metropolitana
 Bruno Oliveira;98,30;11/2026;Fibra Norte
 ```
 
-## Como executar
+---
+
+## Execução do Ambiente
 
 ### Localmente
 
-O projeto requer **Python 3.12**. Use o mesmo interpretador para instalar dependências e iniciar o Streamlit.
+O ambiente de produção e CI utiliza **Python 3.12**:
 
 **Windows PowerShell:**
 
@@ -70,7 +78,7 @@ py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -m streamlit run streamlit_app.py
 ```
 
-**Linux/macOS:**
+**Linux / macOS:**
 
 ```bash
 python3.12 -m venv .venv
@@ -79,35 +87,39 @@ python3.12 -m venv .venv
 .venv/bin/python -m streamlit run streamlit_app.py
 ```
 
-### Com Docker
+### Contêiner Docker
 
 ```bash
-docker build -t historico-producao .
+docker build -t totale-gestao-operacional .
 docker run -p 8501:8501 \
   -e PRODUCAO_DB_PATH=/data/producao.db \
   -v $(pwd)/data:/data \
-  historico-producao
+  totale-gestao-operacional
 ```
 
-O painel estará disponível em `http://localhost:8501`.
+Acesse a aplicação em `http://localhost:8501`.
 
-## Variáveis de ambiente
+---
+
+## Variáveis de Ambiente
 
 | Variável | Obrigatória | Padrão | Descrição |
 | --- | --- | --- | --- |
-| `PRODUCAO_DB_PATH` | Não | `data/producao.db` | Caminho do banco SQLite |
-| `DRIVE_FOLDER_ID` | Não | `1P0ComfPrfZiq-bHfOi8fWJeAE4GAEkBq` | ID da pasta de produção no Google Drive |
-| `CONSULTIVO_FOLDER_ID` | Não | `1xMwEgPm9udFoGobv9cCUoMmuoxuFiPB2` | ID ou URL da pasta de Histórico Consultivo no Google Drive |
+| `PRODUCAO_DB_PATH` | Não | `data/producao.db` | Caminho do banco SQLite local |
+| `DRIVE_FOLDER_ID` | Não | `1P0ComfPrfZiq-bHfOi8fWJeAE4GAEkBq` | ID da pasta de Produção no Google Drive |
+| `CONSULTIVO_FOLDER_ID` | Não | `1xMwEgPm9udFoGobv9cCUoMmuoxuFiPB2` | ID ou URL da pasta `Histórico Consultivo` no Google Drive |
 | `ROSTER_SHEET_ID` | Não | `1LQKDcLshC6XSXLBVWaEYSpxrro6uydyU9pwDLc38pEg` | ID ou URL da planilha cadastral (`lista_ativos`) |
-| `ROSTER_PUBLIC_SYNC` | Não | `0` | Define como `1` para sincronizar `lista_ativos` via link público mesmo sem conta de serviço |
-| `SHOW_DEMO_DATA` | Não | `1` | Define como `0` para desativar dados de demonstração |
+| `ROSTER_PUBLIC_SYNC` | Não | `0` | Define como `1` para sincronizar `lista_ativos` via link público sem conta de serviço |
+| `SHOW_DEMO_DATA` | Não | `1` | Define como `0` para iniciar sem registros demonstrativos |
 
-## Sincronização do Google Drive
+---
 
-Habilite a Google Drive API, compartilhe a pasta de produção e a planilha cadastral `lista_ativos` com a conta de serviço e configure suas credenciais em `.streamlit/secrets.toml` (não versione esse arquivo). O app sincroniza automaticamente uma vez ao abrir uma sessão; para buscar novamente durante o uso, clique em **Atualizar dados** na barra lateral:
+## Integração com Google Drive
+
+Habilite a **Google Drive API**, compartilhe as pastas operacionais e a planilha `lista_ativos` com a conta de serviço e configure `.streamlit/secrets.toml` (arquivo ignorado pelo controle de versão):
 
 ```toml
-# Opcional: sobrescreve os IDs padrão das pastas e da planilha cadastral
+# Opcional: sobrescreve os IDs padrão das fontes oficiais
 drive_folder_id = "id_da_pasta"
 consultivo_folder_id = "1xMwEgPm9udFoGobv9cCUoMmuoxuFiPB2"
 roster_sheet_id = "1LQKDcLshC6XSXLBVWaEYSpxrro6uydyU9pwDLc38pEg"
@@ -120,131 +132,100 @@ private_key = "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
 client_email = "conta-de-servico@seu-projeto.iam.gserviceaccount.com"
 client_id = "..."
 token_uri = "https://oauth2.googleapis.com/token"
-
 ```
 
-Os arquivos Excel devem conter as abas `Prod` e/ou `Gpon`; arquivos CSV são lidos como `Prod` por padrão.
-Para reduzir o tempo das sincronizações seguintes, os metadados dos arquivos são comparados e somente arquivos novos ou alterados são baixados e processados. Arquivos sem metadados suficientes são reprocessados; alterações nas opções de importação também invalidam a comparação. Falhas individuais preservam os registros anteriores, e listagens incompletas interrompem a sincronização antes de qualquer exclusão. Erros temporários de conexão, HTTP 429 e erros 5xx recebem até três tentativas; erros permanentes são informados imediatamente. O download e processamento são paralelos (até 8 arquivos), com reutilização da conexão e do token por worker. Os logs incluem a duração da listagem e o tempo total da importação para facilitar o diagnóstico de lentidão.
+A sincronização percorre pastas e subpastas anuais (`2025`, `2026`, etc.), comparando *fingerprints* de metadados para baixar apenas arquivos novos ou modificados em paralelo (até 8 workers com retentativa automática para falhas transitórias HTTP 429/5xx).
 
-## Persistência
+---
 
-Os registros ficam em `data/producao.db`, ignorado pelo Git. Em hospedagens com disco temporário, configure um volume persistente para preservar os dados entre reinicializações.
+## Persistência de Dados
 
-Para iniciar sem dados de demonstração:
+Os registros são armazenados em `data/producao.db` (ignorado pelo Git). Em ambientes em nuvem com sistema de arquivos efêmero, monte um volume persistente em `/data`:
 
 ```bash
-SHOW_DEMO_DATA=0 streamlit run streamlit_app.py
+SHOW_DEMO_DATA=0 PRODUCAO_DB_PATH=/caminho/producao.db streamlit run streamlit_app.py
 ```
 
-Para usar outro local de banco:
+---
 
-```bash
-PRODUCAO_DB_PATH=/caminho/producao.db streamlit run streamlit_app.py
-```
+## Qualidade de Código & Verificações (CI/CD)
 
-## Desenvolvimento e verificações
-
-Após instalar `requirements.txt` no ambiente virtual, instale as ferramentas de desenvolvimento:
+Após instalar `requirements.txt`, instale as ferramentas de verificação estática e execute a suíte completa:
 
 ```bash
 python -m pip install ruff mypy
-python scripts/check.py              # lint, tipos, testes e compilação
+python scripts/check.py              # lint, tipagem estática, testes e compilação
 python scripts/check.py lint         # ou: types, tests, compile
-```
-
-O script usa o mesmo interpretador Python e os mesmos comandos do CI. Os testes
-podem ser executados diretamente com `python -m unittest discover -s tests -v`.
-Para medir as operações de dados com uma amostra sintética, sem acessar o banco:
-
-```bash
 python scripts/benchmark_data.py --rows 200000
 ```
 
-Os tempos dependem do ambiente e da distribuição dos dados; compare execuções
-na mesma máquina e não use o resultado como limite de aprovação do CI.
+O pipeline `.github/workflows/ci.yml` valida automaticamente a cada push ou Pull Request:
+1. **Lint & Formatação** (`ruff check` e `ruff format --check`)
+2. **Tipagem Estática** (`mypy`)
+3. **Suíte de Testes Unitários e de Interface (`AppTest`)** (`unittest discover -s tests -v`)
+4. **Compilação de Bytecode** (`py_compile`)
 
-Os testes cobrem:
-- Fórmula de consolidação (Prod + Gpon)
-- Conversão de pontos (formato brasileiro e internacional)
-- Conversão de datas (completo, mensal, nome do arquivo)
-- Importação de Excel/CSV com aliases de colunas
-- Prevenção de duplicidades na reimportação
-- Sincronização do Drive (substituição e remoção de arquivos)
-- Fonte Inter em dataframes (corpo e cabeçalhos)
+---
 
-## CI/CD
+## Arquitetura do Repositório
 
-O repositório usa GitHub Actions (`.github/workflows/ci.yml`) para executar em cada push/PR:
-
-1. **Lint** com `ruff` (verificação de estilo e formatação)
-2. **Type checking** com `mypy`
-3. **Testes** com `unittest`
-4. **Compilação** com `py_compile`
-
-## Organização e fluxo de dados
-
-- `drive_import.py` lista e processa arquivos do Drive; `production.py` concentra
-  importação, normalização, persistência SQLite e agregações independentes da UI.
-- `streamlit_app.py` monta a navegação e os filtros compartilhados. Os módulos de
-  `components/` renderizam os painéis e consomem os dados filtrados. Os painéis
-  de contratos e O.S. compartilham elementos visuais em `painel_quantidades.py`,
-  sem depender um do outro.
-- A consulta do dashboard usa cache de 60 segundos; os carregamentos de registros
-  e do dashboard compartilham a mesma consulta e preparação dos dados. A contagem
-  por arquivo usa os flags `Qtde_Contrato` quando presentes e contratos distintos
-  como fallback. Não confundir com os totais por técnico e mês da aba Contratos.
-- O Docker usa `.dockerignore` para não incluir banco local, credenciais ou
-  dependências de desenvolvimento no contexto da imagem. Monte o banco em volume
-  e forneça os segredos pelo mecanismo da plataforma, fora do repositório.
-
-## Estrutura do projeto
-
-```
-historico-producao/
-├── .github/workflows/ci.yml      # Pipeline de CI/CD
-├── .dockerignore                 # Exclusões do contexto Docker
-├── Dockerfile                    # Imagem para deploy em contêiner
-├── mypy.ini                      # Configuração de type checking
-├── requirements.txt              # Dependências Python
-├── README.md                     # Este documento
+```text
+totale-gestao-operacional/
+├── .github/workflows/ci.yml           # Pipeline corporativo de Qualidade & CI
+├── .dockerignore                      # Exclusões de contexto de build Docker
+├── Dockerfile                         # Imagem de produção com metadados OCI e healthcheck
+├── pyproject.toml                     # Metadados corporativos do projeto (PEP 621)
+├── mypy.ini                           # Configuração de verificação estática de tipos
+├── requirements.txt                   # Dependências fixadas da aplicação
+├── README.md                          # Documentação institucional e técnica
 ├── assets/
-│   └── novo-logo-totale.png      # Logotipo oficial da Totale
-├── streamlit_app.py              # Ponto de entrada da aplicação
-├── production.py                 # Regras de negócio e persistência (SQLite)
-├── drive_import.py               # Sincronização com Google Drive
-├── scripts/                      # Verificações locais/CI e benchmark sintético
-├── components/                   # Design System e componentes UI
+│   └── novo-logo-totale.png           # Identidade visual oficial da Totale
+├── streamlit_app.py                   # Ponto de entrada, roteamento executivo e filtros globais
+├── production.py                      # Regras de negócio, ETL, conciliação e persistência SQLite
+├── drive_import.py                    # Conector paralelo e resiliente com Google Drive
+├── scripts/
+│   ├── check.py                       # Orquestrador unificado de lint, tipos, testes e compilação
+│   └── benchmark_data.py              # Benchmark sintético de agregações em memória
+├── components/                        # Design System Corporativo Totale e módulos visuais
 │   ├── __init__.py
-│   ├── componentes.py            # Design System base (cores, fontes, KPI, heróis)
-│   ├── contratos.py              # Quantidade de contratos por técnico e competência
-│   ├── css_global.py             # CSS global dos componentes nativos
-│   ├── eficiencia.py             # Eficiência por técnico e por contrato
-│   ├── painel_quantidades.py     # Componentes compartilhados dos painéis O.S. e contratos
-│   ├── prod_os.py                # Página de quantidade de O.S.
-│   ├── produtividade_unitaria.py # Página de produtividade unitária (pontos por O.S. e contrato)
-│   ├── quadro_tecnicos.py        # Página de conciliação do cadastro lista_ativos/desligados
-│   ├── sidebar.py                # Sidebar corporativa e temas
-│   └── visoes_dashboards.py      # Projetos, resumo executivo e saúde da base
-└── tests/
-    ├── test_contratos.py         # Importação e persistência de contratos
-    ├── test_css_global.py        # Testes de fonte em dataframes
-    ├── test_data_optimization.py # Normalização e carregamento compartilhado
-    ├── test_drive_import.py      # Testes de importação do Drive
-    ├── test_eficiencia.py        # Eficiência por técnico e por contrato
-    ├── test_prod_os.py           # Testes da página de O.S.
-    ├── test_production.py        # Testes de regras de negócio
-    ├── test_produtividade_unitaria.py # Testes da página de produtividade unitária
-    ├── test_roster_integration.py # Testes da integração com lista_ativos e Quadro de técnicos
-    ├── test_streamlit_app.py     # Testes de integração da UI
-    └── test_visoes_dashboards.py # Testes das visões e saúde da base
+│   ├── componentes.py                 # Design System base (paleta, KPIs, Cards de Delta, heróis)
+│   ├── sidebar.py                     # Barra lateral executiva, telemetria e seletor de temas
+│   ├── css_global.py                  # Estilização global de tabelas e componentes nativos
+│   ├── comparativo_anos.py            # Inteligência Interanual 2025 × 2026 (Produção, O.S. e Contratos)
+│   ├── comparativo_consultivo.py      # Inteligência Interanual 2025 × 2026 (Consultivos e Mix)
+│   ├── consultivo.py                  # Módulo operacional de Performance Consultiva & Mix Comercial
+│   ├── contratos.py                   # Gestão de quantidade de contratos por competência
+│   ├── eficiencia.py                  # Matriz de eficiência por técnico e por contrato
+│   ├── painel_quantidades.py          # Visuais compartilhados entre O.S. e Contratos
+│   ├── prod_os.py                     # Módulo de Ordens de Serviço (aba Prod)
+│   ├── produtividade_unitaria.py      # Densidade de pontos por O.S., contrato e quadrantes
+│   ├── quadro_tecnicos.py             # Conciliação cadastral (lista_ativos e desligados)
+│   └── visoes_dashboards.py           # Gestão por projeto, regularidade e governança de dados
+└── tests/                             # Suíte automatizada (regras de negócio + integração AppTest)
+    ├── test_comparativo_anos.py
+    ├── test_comparativo_consultivo.py
+    ├── test_consultivo.py
+    ├── test_contratos.py
+    ├── test_css_global.py
+    ├── test_data_optimization.py
+    ├── test_drive_import.py
+    ├── test_eficiencia.py
+    ├── test_prod_os.py
+    ├── test_production.py
+    ├── test_produtividade_unitaria.py
+    ├── test_roster_integration.py
+    ├── test_streamlit_app.py
+    └── test_visoes_dashboards.py
 ```
 
-## Troubleshooting
+---
 
-| Problema | Causa provável | Solução |
+## Solução de Problemas (Troubleshooting)
+
+| Sintoma | Causa Provável | Ação Recomendada |
 | --- | --- | --- |
-| `pip install` falha | Python abaixo de 3.12 ou ambiente virtual usando outro interpretador | Use Python 3.12, recrie `.venv` e execute `python -m pip install -r requirements.txt` com o mesmo Python do Streamlit |
-| Erro ao abrir XLSX: `openpyxl` parcialmente inicializado | Pacote incompleto ou conflito local de importação | Reinstale com `python -m pip install --force-reinstall --no-cache-dir openpyxl==3.1.5` no `.venv` do app e verifique se o projeto não contém `openpyxl.py` nem pasta `openpyxl` |
-| Sem dados no painel | Banco vazio ou sem sincronização | Verifique `PRODUCAO_DB_PATH` e credenciais do Drive |
-| Erro de autenticação Drive | Credenciais inválidas ou pasta não compartilhada | Confirme `.streamlit/secrets.toml` e compartilhamento da pasta |
-| Health check falha | App ainda inicializando | Aguarde o start-period do Docker (40s) |
+| Falha em `pip install -r requirements.txt` | Versão do Python inferior a 3.12 ou conflito de ambiente virtual | Crie o `.venv` com Python 3.12 e instale via `.venv/bin/python -m pip install -r requirements.txt` |
+| Erro `openpyxl` parcialmente inicializado | Instalação corrompida ou sombreamento de nome de módulo | Reinstale com `python -m pip install --force-reinstall --no-cache-dir openpyxl==3.1.5` |
+| Painel sem registros reais | Banco local vazio ou credenciais ausentes | Verifique `PRODUCAO_DB_PATH` e acione **Atualizar dados** na barra lateral |
+| Erro de autenticação no Google Drive | Credenciais inválidas ou pastas não compartilhadas | Revise `.streamlit/secrets.toml` e compartilhe as pastas com o `client_email` da conta de serviço |
+| Healthcheck do contêiner pendente | Aplicação ainda em inicialização | Aguarde a janela de `start-period` configurada no `Dockerfile` (`40s`) |
