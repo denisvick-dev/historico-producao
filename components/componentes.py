@@ -960,10 +960,13 @@ _CSS_HEROS = """
 }
 .totale-badge-pill {
     display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px;
-    border-radius: 999px; font-size: 11px !important; font-weight: 700 !important;
+    border-radius: 999px; font-size: 11px !important; font-weight: 750 !important;
     font-family: var(--font-texto) !important;
-    color: #FFFFFF !important; -webkit-text-fill-color: #FFFFFF !important;
     letter-spacing: 0.04em; text-transform: uppercase;
+}
+.hero-mig .totale-badge-pill,
+.hero-domicilios .totale-badge-pill {
+    color: #FFFFFF !important; -webkit-text-fill-color: #FFFFFF !important;
 }
 """
 
@@ -986,11 +989,18 @@ _CSS_CARDS = """
 .kpi-label-premium { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; line-height: 1.35; }
 .kpi-icon-wrapper { display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 10px; flex-shrink: 0; }
 .kpi-value-premium { font-size: 30px; font-weight: 800; line-height: 1; letter-spacing: -0.04em; font-variant-numeric: tabular-nums; font-family: var(--font-titulo) !important; position: relative; z-index: 2; }
-.kpi-sub-premium { font-size: 12.5px; margin-top: 10px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; position: relative; z-index: 2; opacity: 0.9; }
-.trend-pill { display: inline-flex; align-items: center; gap: 3px; padding: 3px 8px; border-radius: 999px; font-size: 11px; font-weight: 750; line-height: 1; background: rgba(255,255,255,0.16); }
-.trend-up { background: #ECFDF5; color: #047857; }
-.trend-down { background: #FEF2F2; color: #B91C1C; }
-.trend-neutral { background: #F8FAFC; color: #64748B; }
+.kpi-sub-premium { font-size: 12.5px; margin-top: 10px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; position: relative; z-index: 2; opacity: 0.96; }
+.trend-pill {
+    display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px;
+    border-radius: 999px; font-size: 13px; font-weight: 800; line-height: 1.1;
+    font-variant-numeric: tabular-nums; letter-spacing: -0.01em;
+    background: rgba(255,255,255,0.95); color: #012869;
+    border: 1px solid rgba(255,255,255,0.75);
+    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.14);
+}
+.trend-up { background: #ECFDF5 !important; color: #065F46 !important; border-color: #6EE7B7 !important; }
+.trend-down { background: #FEF2F2 !important; color: #991B1B !important; border-color: #FCA5A5 !important; }
+.trend-neutral { background: #F8FAFC !important; color: #1E3A8A !important; border-color: #CBD5E1 !important; }
 """
 
 _CSS_TABELAS = """
@@ -1101,18 +1111,37 @@ _CSS_EXTRAS = """
     color: #475569; line-height: 1.25;
 }
 .totale-delta-pill {
-    display: inline-flex; align-items: center; gap: 3px; padding: 3px 8px;
-    border-radius: 999px; font-size: 11px; font-weight: 800; white-space: nowrap;
+    display: inline-flex; align-items: center; gap: 4px; padding: 4px 9px;
+    border-radius: 999px; font-size: 12px; font-weight: 800; white-space: nowrap;
     font-variant-numeric: tabular-nums; flex-shrink: 0;
 }
-.totale-delta-hero { display: flex; align-items: baseline; gap: 7px; flex-wrap: wrap; margin: 1px 0 2px; }
+.totale-delta-hero {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 10px; flex-wrap: wrap; margin: 2px 0 3px;
+}
+.totale-delta-hero-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .totale-delta-tag {
+    display: inline-block; width: fit-content;
     font-size: 9.5px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase;
     padding: 2px 6px; border-radius: 5px; background: #F1F5F9; color: #64748B;
 }
 .totale-delta-value {
-    font-size: clamp(21px, 2vw, 26px); font-weight: 800; letter-spacing: -0.03em;
-    line-height: 1.1; font-variant-numeric: tabular-nums;
+    font-size: clamp(20px, 1.85vw, 24.5px); font-weight: 800; letter-spacing: -0.03em;
+    line-height: 1.08; font-variant-numeric: tabular-nums;
+}
+.totale-delta-pct-spotlight {
+    display: flex; flex-direction: column; align-items: flex-end; justify-content: center;
+    gap: 1px; padding: 6px 11px; border-radius: 10px; flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
+}
+.totale-delta-pct-lbl {
+    font-size: 8.5px; font-weight: 800; letter-spacing: 0.09em; text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.86); line-height: 1.1;
+}
+.totale-delta-pct-val {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: clamp(15.5px, 1.4vw, 18.5px); font-weight: 850; letter-spacing: -0.025em;
+    color: #FFFFFF; line-height: 1.15; white-space: nowrap;
 }
 .totale-delta-versus {
     background: #F8FAFC; border: 1px solid #E6EDF5; border-radius: 10px;
@@ -1130,8 +1159,16 @@ _CSS_EXTRAS = """
 .totale-delta-bars { display: flex; flex-direction: column; gap: 3px; }
 .totale-delta-track { width: 100%; height: 4px; background: #E2E8F0; border-radius: 999px; overflow: hidden; }
 .totale-delta-fill { height: 100%; border-radius: 999px; transition: width .25s ease; }
+.totale-delta-footer {
+    display: flex; align-items: center; justify-content: space-between; gap: 6px; flex-wrap: wrap;
+}
 .totale-delta-detail {
     font-size: 11px; color: #64748B; line-height: 1.35; font-variant-numeric: tabular-nums;
+}
+.totale-delta-subpct {
+    display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 999px;
+    font-size: 11px; font-weight: 800; line-height: 1.25; white-space: nowrap;
+    font-variant-numeric: tabular-nums;
 }
 """
 
@@ -1693,7 +1730,7 @@ def render_section_header(
         else ""
     )
     badge_html = (
-        f'<span class="totale-badge-pill" style="background:{bg_badge};color:{cor_badge};border:1px solid {borda_badge};">'
+        f'<span class="totale-badge-pill" style="background:{bg_badge};color:{cor_badge} !important;-webkit-text-fill-color:{cor_badge} !important;border:1px solid {borda_badge};">'
         f"{Validadores.html_escape(badge_final)}</span>"
         if badge_final
         else ""
@@ -1925,35 +1962,40 @@ def render_delta_card(
     direcao: TipoTrendType = "neutral",
     icone: str = "",
     detalhe: str = "",
+    detalhe_pct: str = "",
+    detalhe_pct_direcao: TipoTrendType | None = None,
     num_base: float | int | None = None,
     num_atual: float | int | None = None,
 ) -> None:
-    """Renderiza card executivo destacando o Saldo/Delta (Δ) entre dois recortes."""
+    """Renderiza card executivo destacando o Saldo (Δ) e o Percentual (%) lado a lado."""
     dir_norm = normalizar_tipo_trend(direcao)
     if dir_norm == "up":
         grad_topo = "linear-gradient(90deg, #059669 0%, #10B981 100%)"
+        grad_pct = "linear-gradient(135deg, #059669 0%, #047857 100%)"
+        sombra_pct = "0 4px 12px rgba(5, 150, 105, 0.24)"
+        borda_pct = "#10B981"
         cor_delta = "#047857"
         cor_borda = "#D1FAE5"
-        bg_pill = "#ECFDF5"
-        borda_pill = "#A7F3D0"
         seta = "▲"
         cor_barra_atual = "#059669"
         bg_icone = "#ECFDF5"
     elif dir_norm == "down":
         grad_topo = "linear-gradient(90deg, #DC2626 0%, #EF4444 100%)"
+        grad_pct = "linear-gradient(135deg, #DC2626 0%, #B91C1C 100%)"
+        sombra_pct = "0 4px 12px rgba(220, 38, 38, 0.24)"
+        borda_pct = "#F87171"
         cor_delta = "#B91C1C"
         cor_borda = "#FEE2E2"
-        bg_pill = "#FEF2F2"
-        borda_pill = "#FECACA"
         seta = "▼"
         cor_barra_atual = "#DC2626"
         bg_icone = "#FEF2F2"
     else:
         grad_topo = "linear-gradient(90deg, #012869 0%, #3B82F6 100%)"
+        grad_pct = "linear-gradient(135deg, #012869 0%, #1E40AF 100%)"
+        sombra_pct = "0 4px 12px rgba(1, 40, 105, 0.18)"
+        borda_pct = "#3B82F6"
         cor_delta = "#012869"
         cor_borda = "#E2E8F0"
-        bg_pill = "#F1F5F9"
-        borda_pill = "#CBD5E1"
         seta = "•"
         cor_barra_atual = "#012869"
         bg_icone = "#EFF6FF"
@@ -1976,16 +2018,27 @@ def render_delta_card(
                 f"{Validadores.html_escape(icone_seg)}</span>"
             )
 
-    pill_html = ""
+    pct_spotlight_html = ""
     if variacao_pct:
         var_esc = Validadores.html_escape(variacao_pct)
         mostra_seta = variacao_pct not in {"—", "Novo"}
-        seta_html = f'<span aria-hidden="true">{seta}</span>' if mostra_seta else ""
-        pill_html = (
-            f'<span class="totale-delta-pill" style="display:inline-flex;align-items:center;gap:3px;'
-            f"padding:3px 8px;border-radius:999px;font-size:11px;font-weight:800;white-space:nowrap;"
-            f"font-variant-numeric:tabular-nums;background:{bg_pill};color:{cor_delta};"
-            f'border:1px solid {borda_pill};">{seta_html}{var_esc}</span>'
+        seta_html = (
+            f'<span style="font-size:11px;line-height:1;" aria-hidden="true">{seta}</span>'
+            if mostra_seta
+            else ""
+        )
+        pct_spotlight_html = (
+            f'<div class="totale-delta-pct-spotlight" style="display:flex;flex-direction:column;'
+            f"align-items:flex-end;justify-content:center;gap:1px;padding:6px 11px;"
+            f"border-radius:10px;flex-shrink:0;background:{grad_pct};border:1px solid {borda_pct};"
+            f'box-shadow:{sombra_pct};font-variant-numeric:tabular-nums;">'
+            '<span class="totale-delta-pct-lbl" style="font-size:8.5px;font-weight:800;'
+            "letter-spacing:0.09em;text-transform:uppercase;color:rgba(255,255,255,0.86);"
+            'line-height:1.1;">VARIAÇÃO %</span>'
+            '<span class="totale-delta-pct-val" style="display:inline-flex;align-items:center;gap:4px;'
+            "font-size:clamp(15.5px,1.4vw,18.5px);font-weight:850;letter-spacing:-0.025em;"
+            f'color:#FFFFFF;line-height:1.15;white-space:nowrap;">{seta_html}{var_esc}</span>'
+            "</div>"
         )
 
     barras_html = ""
@@ -2004,31 +2057,54 @@ def render_delta_card(
             "</div>"
         )
 
-    detalhe_html = (
-        '<div class="totale-delta-detail" style="font-size:11px;color:#64748B;line-height:1.35;'
-        f'font-variant-numeric:tabular-nums;">{Validadores.html_escape(detalhe)}</div>'
-        if detalhe
-        else ""
-    )
+    subpct_html = ""
+    if detalhe_pct:
+        dir_sub = normalizar_tipo_trend(detalhe_pct_direcao or direcao)
+        if dir_sub == "up":
+            bg_sp, fg_sp, bd_sp = "#ECFDF5", "#065F46", "#A7F3D0"
+        elif dir_sub == "down":
+            bg_sp, fg_sp, bd_sp = "#FEF2F2", "#991B1B", "#FECACA"
+        else:
+            bg_sp, fg_sp, bd_sp = "#EFF6FF", "#1E3A8A", "#BFDBFE"
+        subpct_html = (
+            f'<span class="totale-delta-subpct" style="display:inline-flex;align-items:center;'
+            f"padding:2px 8px;border-radius:999px;font-size:11px;font-weight:800;line-height:1.25;"
+            f"white-space:nowrap;font-variant-numeric:tabular-nums;background:{bg_sp};color:{fg_sp};"
+            f'border:1px solid {bd_sp};">{Validadores.html_escape(detalhe_pct)}</span>'
+        )
 
+    footer_html = ""
+    if detalhe or subpct_html:
+        det_span = (
+            '<span class="totale-delta-detail" style="font-size:11px;color:#64748B;line-height:1.35;'
+            f'font-variant-numeric:tabular-nums;">{Validadores.html_escape(detalhe)}</span>'
+            if detalhe
+            else "<span></span>"
+        )
+        footer_html = (
+            '<div class="totale-delta-footer" style="display:flex;align-items:center;'
+            f'justify-content:space-between;gap:6px;flex-wrap:wrap;">{det_span}{subpct_html}</div>'
+        )
+
+    aria_pct = f" ({Validadores.html_escape(variacao_pct)})" if variacao_pct else ""
     markup = (
         f'<div class="totale-delta-card" style="position:relative;background:#FFFFFF;border:1px solid {cor_borda};'
         "border-radius:14px;padding:15px 16px 13px;overflow:hidden;"
         "box-shadow:0 8px 20px rgba(15,23,42,0.045);display:flex;flex-direction:column;"
-        f'justify-content:space-between;gap:8px;" role="region" aria-label="{titulo_esc}: {delta_esc}">'
+        f'justify-content:space-between;gap:9px;" role="region" aria-label="{titulo_esc}: {delta_esc}{aria_pct}">'
         f'<div class="totale-delta-accent" style="position:absolute;top:0;left:0;right:0;height:3.5px;background:{grad_topo};"></div>'
         '<div class="totale-delta-head" style="display:flex;align-items:center;justify-content:space-between;gap:8px;">'
         '<div class="totale-delta-title-wrap" style="display:flex;align-items:center;gap:7px;min-width:0;">'
         f"{icone_html}"
         '<span class="totale-delta-title" style="font-size:11px;font-weight:800;letter-spacing:0.055em;'
-        f'text-transform:uppercase;color:#475569;line-height:1.25;">{titulo_esc}</span></div>'
-        f"{pill_html}</div>"
-        '<div class="totale-delta-hero" style="display:flex;align-items:baseline;gap:7px;flex-wrap:wrap;margin:1px 0 2px;">'
-        '<span class="totale-delta-tag" style="font-size:9.5px;font-weight:800;letter-spacing:0.08em;'
+        f'text-transform:uppercase;color:#475569;line-height:1.25;">{titulo_esc}</span></div></div>'
+        '<div class="totale-delta-hero" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin:2px 0 3px;">'
+        '<div class="totale-delta-hero-main" style="display:flex;flex-direction:column;gap:3px;min-width:0;">'
+        '<span class="totale-delta-tag" style="display:inline-block;width:fit-content;font-size:9.5px;font-weight:800;letter-spacing:0.08em;'
         'text-transform:uppercase;padding:2px 6px;border-radius:5px;background:#F1F5F9;color:#64748B;">SALDO Δ</span>'
-        '<span class="totale-delta-value" style="font-size:clamp(20px,1.9vw,25px);font-weight:800;'
-        f'letter-spacing:-0.03em;line-height:1.1;font-variant-numeric:tabular-nums;color:{cor_delta};">{delta_esc}</span>'
-        "</div>"
+        '<span class="totale-delta-value" style="font-size:clamp(20px,1.85vw,24.5px);font-weight:800;'
+        f'letter-spacing:-0.03em;line-height:1.08;font-variant-numeric:tabular-nums;color:{cor_delta};">{delta_esc}</span></div>'
+        f"{pct_spotlight_html}</div>"
         '<div class="totale-delta-versus" style="background:#F8FAFC;border:1px solid #E6EDF5;border-radius:10px;'
         'padding:8px 10px;display:flex;flex-direction:column;gap:5px;">'
         '<div class="totale-delta-versus-row" style="display:flex;align-items:center;justify-content:space-between;'
@@ -2041,7 +2117,7 @@ def render_delta_card(
         f'<span class="totale-delta-versus-lbl" style="font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:#64748B;">{r_atual_esc}</span>'
         f'<span class="totale-delta-versus-num" style="font-size:12.5px;font-weight:800;color:#0F172A;">{v_atual_esc}</span></div>'
         f"</div>{barras_html}</div>"
-        f"{detalhe_html}</div>"
+        f"{footer_html}</div>"
     )
     _safe_render_html(markup, container)
 

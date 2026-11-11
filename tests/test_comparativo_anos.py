@@ -383,6 +383,9 @@ class SidebarVisualAndComparativoUiTests(unittest.TestCase):
             for item in app.get("html")
         )
         self.assertIn("totale-delta-card", html_comp)
+        self.assertIn("totale-delta-pct-spotlight", html_comp)
+        self.assertIn("totale-delta-subpct", html_comp)
+        self.assertIn("VARIAÇÃO %", html_comp)
         self.assertIn("Δ Produção Total (Pontos)", html_comp)
         self.assertIn("Δ Quantidade de O.S. (Prod)", html_comp)
         self.assertIn("Δ Contratos Distintos", html_comp)
@@ -472,11 +475,17 @@ class SidebarVisualAndComparativoUiTests(unittest.TestCase):
             direcao="up",
             icone="⚡",
             detalhe="Prod: +11.200,00 · Gpon: +3.320,50",
+            detalhe_pct="Média/mês: +18,4%",
+            detalhe_pct_direcao="up",
             num_base=78900.0,
             num_atual=93420.5,
         )
         self.assertEqual(len(captured), 1)
         self.assertIn("totale-delta-card", captured[0])
+        self.assertIn("totale-delta-pct-spotlight", captured[0])
+        self.assertIn("totale-delta-subpct", captured[0])
+        self.assertIn("VARIAÇÃO %", captured[0])
+        self.assertIn("Média/mês: +18,4%", captured[0])
         self.assertIn("&lt;Pontos&gt;", captured[0])
         self.assertIn("+14.520,50 pts", captured[0])
         self.assertIn("+18,4%", captured[0])
