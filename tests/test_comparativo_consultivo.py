@@ -190,6 +190,58 @@ class ComparativoConsultivoCalculoTests(unittest.TestCase):
         self.assertEqual(tipo, "info")
         self.assertIn("Histórico Consultivo", texto)
 
+    def test_rotacao_login_entre_2025_e_2026_unifica_mesmo_tecnico(self) -> None:
+        roster = pd.DataFrame(
+            [
+                {
+                    "technician": "EDER SALES MONTEIRO",
+                    "login": "Z699964",
+                    "monitor": "EDSON MARCO PINHEIRO",
+                    "base": "NET-ABCDM",
+                    "un": "ABCDM-TOTALE",
+                    "status": "ATIVO",
+                    "source_tab": production.ROSTER_ACTIVE_TAB,
+                }
+            ]
+        )
+        df = pd.DataFrame(
+            [
+                {
+                    "DATA": "10/01/2025",
+                    "LOGIN NETSALES": "Z517209",
+                    "VENDEDOR": "EDER SALES MONTEIRO",
+                    "Qtde. Cons.": 6,
+                    "Qtde. Prod.": 10,
+                    "Qtde. Mesh": 6,
+                    "Qtde. TV": 2,
+                    "Qtde. Virtua": 2,
+                    "TIPO SERVIÇO": "Internet + TV",
+                },
+                {
+                    "DATA": "12/01/2026",
+                    "LOGIN NETSALES": "Z699964",
+                    "VENDEDOR": "EDER SALES MONTEIRO",
+                    "Qtde. Cons.": 9,
+                    "Qtde. Prod.": 15,
+                    "Qtde. Mesh": 9,
+                    "Qtde. TV": 3,
+                    "Qtde. Virtua": 3,
+                    "TIPO SERVIÇO": "Internet + TV",
+                },
+            ]
+        )
+        resumo = calcular_comparativo_consultivo(
+            df,
+            roster=roster,
+            modo_meses="equivalente",
+            escopo_equipe="mesma_equipe",
+        )
+        self.assertEqual(resumo.consultivos_base, 6)
+        self.assertEqual(resumo.consultivos_comp, 9)
+        self.assertEqual(len(resumo.por_vendedor), 1)
+        self.assertEqual(resumo.por_vendedor.iloc[0]["Login"], "Z699964")
+        self.assertEqual(resumo.por_vendedor.iloc[0]["Base"], "NET-ABCDM")
+
 
 class ComparativoConsultivoUiTests(unittest.TestCase):
     """Valida navegação interativa, gráficos, tabelas e atalhos no Streamlit."""
@@ -250,6 +302,106 @@ class ComparativoConsultivoUiTests(unittest.TestCase):
                 self.assertEqual(
                     app.radio(key="navigation").value, "Comparativo 2025 x 2026"
                 )
+
+    def test_auto_sync_carrega_bases_2025_em_sessao_aberta(self) -> None:
+        import drive_import
+
+        with tempfile.TemporaryDirectory() as tmp:
+            db_file = Path(tmp) / "ui_autosync_2025.db"
+            csv_2026 = (
+                "DATA;LOGIN NETSALES;VENDEDOR;CÓDIGO CONTATO;PLANO TV;PLANO INTERNET;OBSERVACAO\n"
+                "10/01/2026;Z641759;ALEX BERNARDES DA SILVA;1120001;-;SERVIÇOS AVANÇADOS;2599990001\n"
+            ).encode("utf-8-sig")
+            csv_2025 = (
+                "DATA;LOGIN NETSALES;VENDEDOR;CÓDIGO CONTATO;PLANO TV;PLANO INTERNET;OBSERVACAO\n"
+                '15/01/2025;Z641759;ALEX BERNARDES DA SILVA;1080001;-;SERVIÇOS AVANÇADOS;"O.S: 2524680364; 2524680353\n'
+            ).encode("cp1252")
+
+            with (
+                mock.patch.object(production, "DB_PATH", db_file),
+                mock.patch.dict(os.environ, {"SHOW_DEMO_DATA": "0"}, clear=False),
+            ):
+                production.init_database()
+                recs_26, _ = production.process_consultivo_upload(
+                    "numeros-tabulacao-2026-02-02 [f2026].csv", csv_2026
+                )
+                production.sync_consultivo_drive_records(
+                    recs_26,
+                    {"f2026"},
+                    {"f2026"},
+                    folder_id=production.DEFAULT_CONSULTIVO_FOLDER_ID,
+                    file_fingerprints={
+                        "f2026": f"numeros-tabulacao-2026-02-02.csv|text/csv|2026-02-02|md5a|100|{drive_import.CONSULTIVO_PARSER_VERSION}"
+                    },
+                )
+
+                # Sessão inicia sem credenciais do Drive (apenas 2026 no SQLite)
+                app = AppTest.from_file(_APP_PATH).run(timeout=30)
+                self.assertFalse(app.exception)
+
+                # Agora a pasta Histórico Consultivo no Drive recebe a base de 2025
+                fake_drive_files = [
+                    {
+                        "id": "f2026",
+                        "name": "numeros-tabulacao-2026-02-02.csv",
+                        "mimeType": "text/csv",
+                        "modifiedTime": "2026-02-02",
+                        "md5Checksum": "md5a",
+                        "size": "100",
+                    },
+                    {
+                        "id": "f2025",
+                        "name": "numeros-tabulacao-2026-11-11-09-20-55.csv",
+                        "mimeType": "text/csv",
+                        "modifiedTime": "2026-11-11T12:20:55Z",
+                        "md5Checksum": "md5b",
+                        "size": str(len(csv_2025)),
+                    },
+                ]
+                fake_sa = {
+                    "type": "service_account",
+                    "client_email": "bot@test.iam.gserviceaccount.com",
+                    "private_key": "dummy",
+                    "token_uri": "https://oauth2.googleapis.com/token",
+                }
+                with (
+                    mock.patch.dict(
+                        os.environ,
+                        {
+                            "GOOGLE_SERVICE_ACCOUNT_JSON": __import__("json").dumps(
+                                fake_sa
+                            )
+                        },
+                        clear=False,
+                    ),
+                    mock.patch.object(
+                        drive_import, "create_drive_session"
+                    ) as mock_sess,
+                    mock.patch.object(
+                        drive_import, "list_folder_files", return_value=fake_drive_files
+                    ),
+                    mock.patch.object(
+                        drive_import,
+                        "download_file",
+                        return_value=(
+                            "numeros-tabulacao-2026-11-11-09-20-55 [f2025].csv",
+                            csv_2025,
+                        ),
+                    ),
+                ):
+                    mock_sess.return_value.credentials = None
+                    app.radio(key="navigation").set_value("Consultivo 2025 x 2026").run(
+                        timeout=30
+                    )
+                    self.assertFalse(app.exception)
+
+                    # Verifica que a base 2025 foi sincronizada e contabilizada automaticamente!
+                    snap_df, _ = production.load_consultivo_snapshot()
+                    anos = set(snap_df["DATA"].dt.year.dropna().astype(int).tolist())
+                    self.assertEqual(anos, {2025, 2026})
+                    self.assertTrue(
+                        any(b.key == "comp_cons_btn_sync_drive" for b in app.button)
+                    )
 
 
 if __name__ == "__main__":

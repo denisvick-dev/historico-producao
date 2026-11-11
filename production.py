@@ -7,6 +7,7 @@ fazem a agregação e calculam sempre Pontos Totais = Prod + Gpon.
 
 from __future__ import annotations
 
+import csv
 import io
 import os
 import re
@@ -30,6 +31,13 @@ ROSTER_METADATA_SCOPE = "__roster_sheet__"
 CONSULTIVO_PRODUCT_REGEX = re.compile(r"\b\d{9,12}\b")
 _CONSULTIVO_EMPTY_RE = re.compile(
     r"^(?:-|nan|none|na|n/a|<na>|nat|null)$", re.IGNORECASE
+)
+_CONSULTIVO_DATE_TOKEN_RE = re.compile(
+    r"^(?:\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{4}-\d{2}-\d{2})(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?$"
+)
+_NETSALES_EXPORT_TS_RE = re.compile(
+    r"numeros[-_ ]tabulacao[-_ ]20\d{2}[-_.]\d{1,2}[-_.]\d{1,2}(?:[-_.]\d{1,2}){2,3}",
+    re.IGNORECASE,
 )
 ROSTER_ACTIVE_TAB = "lista_ativos"
 ROSTER_TERMINATED_TAB = "desligados"
@@ -1160,42 +1168,230 @@ def processar_quantidades_consultivo(df: pd.DataFrame) -> pd.DataFrame:
     return work
 
 
+def _infer_consultivo_filename_date(filename: str) -> pd.Timestamp | None:
+    """Infere competência de arquivo Consultivo ignorando carimbos de download NetSales."""
+    stem = re.sub(r"\s*\[[^\]]+\]\s*$", "", Path(filename).stem).strip()
+    if _NETSALES_EXPORT_TS_RE.search(stem):
+        return None
+    return infer_date_from_filename(filename)
+
+
+def _strip_excel_sep_directive(text: str) -> tuple[str, str | None]:
+    """Remove diretiva opcional ``sep=;`` no topo do CSV e retorna o separador declarado."""
+    normalized = text.replace("\r\n", "\n").replace("\r", "\n")
+    lines = normalized.split("\n")
+    for idx, line in enumerate(lines):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if (
+            len(stripped) == 5
+            and stripped[:4].lower() == "sep="
+            and stripped[4] in {";", ",", "\t", "|"}
+        ):
+            return "\n".join(lines[idx + 1 :]), stripped[4]
+        break
+    return normalized, None
+
+
+def _looks_rfc4180_quoted(text: str, sep: str) -> bool:
+    """Detecta se o CSV usa encapsulamento intencional por aspas duplas (RFC-4180)."""
+    if '"' not in text:
+        return False
+    first_non_empty = next(
+        (ln.strip() for ln in text.split("\n") if ln.strip()),
+        "",
+    )
+    if first_non_empty.startswith('"') and f'"{sep}"' in first_non_empty:
+        return True
+    escaped_sep = re.escape(sep)
+    # Aspas intencionais abrem imediatamente após delimitador/início de linha e fecham antes de delimitador/fim de linha
+    for line in text.split("\n")[1:50]:
+        if re.search(
+            rf'(?:^|{escaped_sep})"[^"\n]*{escaped_sep}[^"\n]*"(?:{escaped_sep}|$)',
+            line,
+        ):
+            return True
+    return False
+
+
+def _parse_delimited_consultivo_text(text: str, sep: str) -> pd.DataFrame:
+    """Parser tolerante para exportações NetSales sem aspas (com ``;``, ``\"`` ou ``\\n`` livres)."""
+    lines = [ln for ln in text.split("\n") if ln.strip()]
+    if not lines:
+        return pd.DataFrame()
+
+    header = [col.strip() for col in lines[0].split(sep)]
+    n_cols = len(header)
+    if n_cols <= 1:
+        return pd.DataFrame(columns=header)
+
+    norm_headers = [normalize_text(col) for col in header]
+    data_idx = next(
+        (
+            idx
+            for idx, name in enumerate(norm_headers)
+            if name in {"data", "datareferencia", "datacadastro", "datatabulacao"}
+        ),
+        None,
+    )
+    obs_idx = next(
+        (
+            idx
+            for idx, name in enumerate(norm_headers)
+            if name in {"observacao", "observacoes", "obs"}
+        ),
+        None,
+    )
+
+    merged_rows: list[list[str]] = []
+    pending: list[str] | None = None
+
+    for raw_line in lines[1:]:
+        parts = raw_line.split(sep)
+        is_new_dated_row = len(parts) >= n_cols or (
+            data_idx is not None
+            and len(parts) > data_idx
+            and bool(_CONSULTIVO_DATE_TOKEN_RE.match(parts[data_idx].strip()))
+        )
+        if pending is not None:
+            if is_new_dated_row:
+                merged_rows.append(pending)
+                pending = None
+            else:
+                combined = (
+                    pending[:-1] + [f"{pending[-1]} {parts[0]}".strip()] + parts[1:]
+                )
+                if len(combined) < n_cols:
+                    pending = combined
+                else:
+                    merged_rows.append(combined)
+                    pending = None
+                continue
+
+        if len(parts) < n_cols:
+            pending = parts
+        else:
+            merged_rows.append(parts)
+
+    if pending is not None:
+        merged_rows.append(pending)
+
+    aligned_rows: list[list[str]] = []
+    for raw_parts in merged_rows:
+        parts = list(raw_parts)
+        if len(parts) > n_cols and data_idx is not None and data_idx < len(parts):
+            extra = len(parts) - n_cols
+            if not _CONSULTIVO_DATE_TOKEN_RE.match(parts[data_idx].strip()):
+                shift_found = next(
+                    (
+                        shift
+                        for shift in range(1, extra + 1)
+                        if data_idx + shift < len(parts)
+                        and _CONSULTIVO_DATE_TOKEN_RE.match(
+                            parts[data_idx + shift].strip()
+                        )
+                    ),
+                    0,
+                )
+                if shift_found > 0:
+                    anchor = min(12, data_idx - 1) if data_idx > 4 else 0
+                    merged_cell = f"{sep} ".join(
+                        p.strip() for p in parts[anchor : anchor + shift_found + 1]
+                    )
+                    parts = (
+                        parts[:anchor]
+                        + [merged_cell]
+                        + parts[anchor + shift_found + 1 :]
+                    )
+
+        if len(parts) > n_cols:
+            if obs_idx is not None and 0 <= obs_idx < n_cols:
+                right_count = n_cols - 1 - obs_idx
+                mid_end = len(parts) - right_count if right_count > 0 else len(parts)
+                obs_cell = f"{sep} ".join(p.strip() for p in parts[obs_idx:mid_end])
+                right_part = parts[mid_end:] if right_count > 0 else []
+                parts = parts[:obs_idx] + [obs_cell] + right_part
+            else:
+                tail_cell = f"{sep} ".join(p.strip() for p in parts[n_cols - 1 :])
+                parts = parts[: n_cols - 1] + [tail_cell]
+        elif len(parts) < n_cols:
+            parts = parts + [""] * (n_cols - len(parts))
+
+        aligned_rows.append(parts)
+
+    return pd.DataFrame(aligned_rows, columns=header, dtype="object").fillna("")
+
+
 def read_consultivo_csv(content: bytes) -> pd.DataFrame:
     """Lê arquivos CSV de tabulação consultiva preservando zeros à esquerda e textos longos."""
-    if not content or not content.strip():
+    clean_bytes = content.replace(b"\x00", b"") if content else b""
+    if not clean_bytes or not clean_bytes.strip():
         raise ValueError("O arquivo CSV de consultivo está vazio.")
     last_error: Exception | None = None
     for encoding in ("utf-8-sig", "utf-8", "cp1252", "latin-1"):
         try:
-            text = content.decode(encoding)
+            raw_text = clean_bytes.decode(encoding)
         except UnicodeDecodeError as error:
             last_error = error
             continue
-        first_line = text.splitlines()[0] if text else ""
-        candidates = (
-            [";", ","] if first_line.count(";") >= first_line.count(",") else [",", ";"]
-        )
+
+        body_text, declared_sep = _strip_excel_sep_directive(raw_text)
+        non_empty_lines = [ln for ln in body_text.split("\n") if ln.strip()]
+        if not non_empty_lines:
+            raise ValueError("O arquivo CSV de consultivo está vazio.")
+
+        first_line = non_empty_lines[0]
+        if declared_sep:
+            candidates = [declared_sep]
+        else:
+            candidates = (
+                [";", ","]
+                if first_line.count(";") >= first_line.count(",")
+                else [",", ";"]
+            )
+
+        expected_data_rows = max(0, len(non_empty_lines) - 1)
         for sep in candidates:
-            try:
-                frame = pd.read_csv(
-                    io.StringIO(text),
-                    sep=sep,
-                    dtype=str,
-                    keep_default_na=False,
-                )
-                if frame.shape[1] > 1:
-                    return frame
-            except pd.errors.ParserError as error:
-                last_error = error
+            header_sep_count = first_line.count(sep)
+            if header_sep_count == 0:
+                continue
+            rfc_quoted = _looks_rfc4180_quoted(body_text, sep)
+            uniform_unquoted = not rfc_quoted and all(
+                ln.count(sep) == header_sep_count for ln in non_empty_lines[1:]
+            )
+            if rfc_quoted or uniform_unquoted:
+                quoting_mode = csv.QUOTE_MINIMAL if rfc_quoted else csv.QUOTE_NONE
+                try:
+                    frame = pd.read_csv(
+                        io.StringIO(body_text),
+                        sep=sep,
+                        dtype=str,
+                        keep_default_na=False,
+                        quoting=quoting_mode,
+                    )
+                    swallowed_rows = expected_data_rows >= 4 and len(frame) < max(
+                        1, expected_data_rows // 2
+                    )
+                    shifted_index = not isinstance(frame.index, pd.RangeIndex)
+                    if frame.shape[1] > 1 and not swallowed_rows and not shifted_index:
+                        return frame
+                except (pd.errors.ParserError, csv.Error) as error:
+                    last_error = error
+
+            tolerant = _parse_delimited_consultivo_text(body_text, sep)
+            if tolerant.shape[1] > 1:
+                return tolerant
+
         try:
             return pd.read_csv(
-                io.StringIO(text),
+                io.StringIO(body_text),
                 sep=None,
                 engine="python",
                 dtype=str,
                 keep_default_na=False,
             )
-        except pd.errors.ParserError as error:
+        except (pd.errors.ParserError, csv.Error) as error:
             last_error = error
     raise ValueError(f"Não foi possível ler o CSV de consultivo: {last_error}")
 
@@ -1263,16 +1459,18 @@ def process_consultivo_dataframe(
 
     work = processar_quantidades_consultivo(work)
 
-    fallback_dt = parse_reference_date(default_date) or infer_date_from_filename(
-        source_file
-    )
+    explicit_fallback_dt = parse_reference_date(default_date)
     if "DATA" in work.columns:
         parsed_dates = converter_data_consultivo_br(work["DATA"])
     else:
         parsed_dates = pd.Series(pd.NaT, index=work.index, dtype="datetime64[ns]")
 
-    if fallback_dt is not None:
-        parsed_dates = parsed_dates.fillna(fallback_dt)
+    if explicit_fallback_dt is not None:
+        parsed_dates = parsed_dates.fillna(explicit_fallback_dt)
+    elif parsed_dates.notna().sum() == 0:
+        inferred_dt = _infer_consultivo_filename_date(source_file)
+        if inferred_dt is not None:
+            parsed_dates = parsed_dates.fillna(inferred_dt)
 
     issues: list[str] = []
     invalid_mask = parsed_dates.isna()
@@ -1541,6 +1739,32 @@ def get_drive_file_fingerprints(folder_id: str) -> dict[str, str]:
             (folder_id,),
         ).fetchall()
     return {row["file_id"]: row["fingerprint"] for row in rows}
+
+
+def get_consultivo_file_fingerprints(folder_id: str) -> dict[str, str]:
+    """Retorna fingerprints de Consultivo somente para arquivos com linhas efetivamente salvas."""
+    init_database()
+    with connect() as connection:
+        meta_rows = connection.execute(
+            "SELECT file_id, fingerprint FROM drive_file_metadata WHERE folder_id = ?",
+            (folder_id,),
+        ).fetchall()
+        if not meta_rows:
+            return {}
+        source_rows = connection.execute(
+            "SELECT DISTINCT source_file FROM consultivo_records WHERE is_demo = 0"
+        ).fetchall()
+    persisted_ids: set[str] = set()
+    for row in source_rows:
+        source_file = str(row["source_file"] or "")
+        match = re.search(r" \[([^\]]+)\]\.[^.]+$", source_file)
+        if match:
+            persisted_ids.add(match.group(1))
+    return {
+        row["file_id"]: row["fingerprint"]
+        for row in meta_rows
+        if row["file_id"] in persisted_ids
+    }
 
 
 def get_roster_fingerprint(sheet_id: str) -> str | None:

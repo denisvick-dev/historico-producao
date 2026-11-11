@@ -257,7 +257,7 @@ class ConsultivoEtlAndRosterTests(unittest.TestCase):
                 file_fingerprints=first.file_fingerprints,
             )
 
-            known = production.get_drive_file_fingerprints(
+            known = production.get_consultivo_file_fingerprints(
                 production.DEFAULT_CONSULTIVO_FOLDER_ID
             )
             second = drive_import.import_consultivo_folder_snapshot(
@@ -268,6 +268,77 @@ class ConsultivoEtlAndRosterTests(unittest.TestCase):
             self.assertEqual(len(second.records), 0)
             self.assertEqual(second.refreshed_file_ids, set())
             self.assertEqual(mock_dl.call_count, 1)
+
+            # Se consultivo_records perder as linhas de um arquivo (ex.: falha anterior),
+            # get_consultivo_file_fingerprints omite esse file_id para forçar reimportação.
+            with production.connect() as conn:
+                conn.execute("DELETE FROM consultivo_records")
+            known_after_clear = production.get_consultivo_file_fingerprints(
+                production.DEFAULT_CONSULTIVO_FOLDER_ID
+            )
+            self.assertEqual(known_after_clear, {})
+
+    def test_netsales_2025_csv_55_colunas_com_aspas_ponto_virgula_e_quebra_linha(
+        self,
+    ) -> None:
+        header_55 = (
+            "HP;AA_CNPJ;AA_RAZAO_SOCIAL;VENDEDOR;VENDEDOR_CPF;CLIENTE;CPF_CNPJ;ESTADO;"
+            "CIDADE;CEP;LOGRADOURO;NUMERO;COMPLEMENTO;BAIRRO;TELEFONE RESIDENCIAL;"
+            "TELEFONE COMERCIAL;TELEFONE CELULAR;TELEFONE CONTATO 1;TELEFONE CONTATO 2;"
+            "TIPO DE TABULAÇÃO;MOTIVO DE TABULAÇÃO;PROPOSTA;CONTRATO;ORIGEM DA VENDA;"
+            "DATA AGENDAMENTO;PERÍODO AGENDAMENTO;DATA;HORA FINALIZAÇÃO DA TABULAÇÃO;"
+            "RETORNO;OPERAÇÃO;LOGIN NETSALES;STATUS NETSALES;MOTIVO PENDENCIA;"
+            "CÓDIGO CONTATO;PONTO DE REFERÊNCIA;OBSERVACAO;FORMA DE PAGAMENTO;BANCO;"
+            "CONTA CORRENTE;POSSUI TV;POSSUI INTERNET;POSSUI FONE;POSSUI CELULAR;"
+            "PLANO TV;PLANO INTERNET;PLANO FONE;PLANO CELULAR;FIDELIDADE TV;"
+            "FIDELIDADE INTERNET;FIDELIDADE FONE;EMAIL DO CLIENTE;DATA DE VENCIMENTO;"
+            "AGENCIA;RECEBER MENSAGENS PUBLICITÁRIAS;TIPOS DE MENSAGENS PUBLICITÁRIAS"
+        )
+        # Linha 1: exportação real 2025 com ponto-e-vírgula extra e aspas soltas na OBSERVACAO
+        row_1 = (
+            "1161057901;6014327000120;TOTALE;NATANAEL QUEIROZ DOS SANTOS;45053555863;"
+            'CLIENTE UM;111;SP;SAO BERNARDO DO CAMPO;09854430;RUA A;10;CASA "B;CENTRO;'
+            "-;-;11999999999;-;-;VENDA;VENDA;-;162086807;OUTROS;-;-;02/01/2025;09:08:05;"
+            "-;OP;Z407899;INSTALADA;-;108479594;-;"
+            '"OFERTA CADASTRADA; O.S: 2524680364; 2524680353;OK;'
+            "BOLETO;-;-;SIM;SIM;NÃO;NÃO;-;SERVIÇOS AVANÇADOS;-;-;-;C/ FIDELIDADE;-;"
+            "cli1@mail.com;10;-;NÃO;-"
+        )
+        # Linha 2: ponto-e-vírgula extra ANTES de DATA (em COMPLEMENTO) + quebra de linha na OBSERVACAO
+        row_2 = (
+            "1161057902;6014327000120;TOTALE;EDER SALES MONTEIRO;37760542886;"
+            "CLIENTE DOIS;222;SP;DIADEMA;09990080;RUA B;20;BLOCO A; APTO 12;CENTRO;"
+            "-;-;11988888888;-;-;VENDA;VENDA;-;221700399;OUTROS;-;-;15/02/2025;10:15:00;"
+            "-;OP;Z517209;INSTALADA;-;108479595;-;"
+            "[OFERTA CADASTRADA\nNÚMERO DA O.S 2549720232 e 2549720243];"
+            "BOLETO;-;-;SIM;SIM;NÃO;NÃO;BOX CLARO TV+;SERVIÇOS AVANÇADOS;-;-;C/ FIDELIDADE;"
+            "C/ FIDELIDADE;-;cli2@mail.com;15;-;NÃO;-"
+        )
+        # Linha 3: linha sem DATA em arquivo com timestamp de download 2026-11-11 no nome
+        # NÃO deve herdar 2026-11-01 como data de competência!
+        row_sem_data = (
+            "1161057903;6014327000120;TOTALE;EDER SALES MONTEIRO;37760542886;"
+            "CLIENTE TRES;333;SP;DIADEMA;09990080;RUA C;30;-;CENTRO;"
+            "-;-;11977777777;-;-;VENDA;VENDA;-;221700400;OUTROS;-;-;-;11:00:00;"
+            "-;OP;Z517209;INSTALADA;-;108479596;-;O.S 2549720999;"
+            "BOLETO;-;-;SIM;SIM;NÃO;NÃO;-;SERVIÇOS AVANÇADOS;-;-;-;C/ FIDELIDADE;-;"
+            "cli3@mail.com;15;-;NÃO;-"
+        )
+        raw_bytes = "\n".join([header_55, row_1, row_2, row_sem_data]).encode("cp1252")
+        fname = "numeros-tabulacao-2026-11-11-09-20-55 [1aBiXEs0pLrm0YMYPAdOldy1XOFI9e_w-].csv"
+
+        recs, issues = production.process_consultivo_upload(fname, raw_bytes)
+        self.assertEqual(len(recs), 2)
+        self.assertEqual(len(issues), 1)
+        self.assertEqual(recs[0]["reference_date"], "2025-01-02")
+        self.assertEqual(recs[0]["login_netsales"], "Z407899")
+        self.assertEqual(recs[0]["qtde_consultivo"], 1)
+        self.assertEqual(recs[0]["qtde_produtos"], 2)
+
+        self.assertEqual(recs[1]["reference_date"], "2025-02-15")
+        self.assertEqual(recs[1]["login_netsales"], "Z517209")
+        self.assertEqual(recs[1]["qtde_consultivo"], 2)
+        self.assertEqual(recs[1]["qtde_produtos"], 2)
 
 
 class ConsultivoMetricsAndUiTests(unittest.TestCase):
@@ -426,7 +497,12 @@ class ConsultivoMetricsAndUiTests(unittest.TestCase):
                 app.toggle(key="cons_toggle_vendedor").set_value(True).run(timeout=30)
                 self.assertFalse(app.exception)
 
-                # Seleciona Todo período e aciona botão Dia vigente
+                # Seleciona Ano 2025 e Todo período e aciona botão Dia vigente
+                app.selectbox(key="cons_periodo_preset").set_value("Ano 2025").run(
+                    timeout=30
+                )
+                self.assertFalse(app.exception)
+
                 app.selectbox(key="cons_periodo_preset").set_value("Todo período").run(
                     timeout=30
                 )
