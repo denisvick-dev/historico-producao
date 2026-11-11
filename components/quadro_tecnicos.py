@@ -7,7 +7,7 @@ import plotly.graph_objects as go
 import streamlit as st
 from pandas.io.formats.style import Styler
 
-from components.componentes import render_kpi_card, render_ticker
+from components.componentes import converter_data_br, render_kpi_card, render_ticker
 from components.painel_quantidades import (
     AZUL_TOTALE,
     CHART_CONFIG,
@@ -162,8 +162,16 @@ def conciliar_quadro_tecnicos(
         merged["Monitor"] = merged["monitor"].fillna("Sem monitor")
         merged["U.N."] = merged["un"].fillna("Sem U.N.")
         merged["Base"] = merged["base"].fillna("Sem base")
-        merged["Última modificação"] = merged["last_modified"].fillna("")
-        merged["Data desligamento"] = merged["termination_date"].fillna("")
+        merged["Última modificação"] = (
+            converter_data_br(merged["last_modified"])
+            .dt.strftime("%d/%m/%Y")
+            .fillna(merged["last_modified"].fillna(""))
+        )
+        merged["Data desligamento"] = (
+            converter_data_br(merged["termination_date"])
+            .dt.strftime("%d/%m/%Y")
+            .fillna(merged["termination_date"].fillna(""))
+        )
         merged["Motivo"] = merged["termination_reason"].fillna("")
         base_df = merged
 

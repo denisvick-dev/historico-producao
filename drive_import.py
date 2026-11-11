@@ -36,8 +36,8 @@ GOOGLE_SHEET_MIME_TYPE = "application/vnd.google-apps.spreadsheet"
 SUPPORTED_SUFFIXES = {".csv", ".xls", ".xlsx"}
 MAX_PARALLEL_DOWNLOADS = 8
 IMPORT_PARSER_VERSION = "contracts-v2"
-ROSTER_PARSER_VERSION = "roster-v1"
-CONSULTIVO_PARSER_VERSION = "consultivo-v1"
+ROSTER_PARSER_VERSION = "roster-v2"
+CONSULTIVO_PARSER_VERSION = "consultivo-v2"
 
 logger = structlog.get_logger(__name__)
 

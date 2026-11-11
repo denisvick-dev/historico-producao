@@ -16,8 +16,10 @@ from components.consultivo import (
     CONFIG_CONSULTIVO,
     CalculosConsultivo,
     calcular_meta_acumulada_monitor,
+    formatar_data_br_consultivo,
     gerar_html_tabela_cons,
     injetar_ativos_sem_movimentacao,
+    normalizar_coluna_data_consultivo,
     preparar_evolucao_mensal_consultivo,
     preparar_ranking,
     preparar_resumo_diario_monitor,
@@ -334,6 +336,72 @@ class ConsultivoMetricsAndUiTests(unittest.TestCase):
 
         csv_txt = sanitizar_csv_exportacao(df).decode("utf-8-sig")
         self.assertIn("'=Malicioso", csv_txt)
+        self.assertIn("10/09/2026", csv_txt)
+        self.assertIn("10/10/2026", csv_txt)
+        self.assertNotIn("2026-09-10", csv_txt)
+
+    def test_datas_sempre_dd_mm_yyyy_sem_inversao_mm_dd_yyyy(self) -> None:
+        # 1) ETL process_consultivo_upload: BR (DD/MM/YYYY, DD/MM/YY, com hora) e ISO (YYYY-MM-DD)
+        csv_misto = (
+            "DATA;LOGIN NETSALES;VENDEDOR;CÓDIGO CONTATO;PLANO TV;PLANO INTERNET;OBSERVAÇÃO\n"
+            "02/10/2026;Z640001;Tecnico Um;50001;-;SERVIÇOS AVANÇADOS;111111111\n"
+            "05/10/26;Z640001;Tecnico Um;50002;-;1 GIGA (FIBRA);222222222\n"
+            "2026-10-08;Z640001;Tecnico Um;50003;-;1 GIGA (FIBRA);333333333\n"
+            "2026-10-12 08:30:00;Z640001;Tecnico Um;50004;-;1 GIGA (FIBRA);444444444\n"
+            "25/10/2026 14:20:00;Z640001;Tecnico Um;50005;-;1 GIGA (FIBRA);555555555\n"
+        ).encode("utf-8-sig")
+        recs, issues = production.process_consultivo_upload("misto.csv", csv_misto)
+        self.assertEqual(issues, [])
+        self.assertEqual(
+            [r["reference_date"] for r in recs],
+            [
+                "2026-10-02",
+                "2026-10-05",
+                "2026-10-08",
+                "2026-10-12",
+                "2026-10-25",
+            ],
+        )
+
+        # 2) Componentes Consultivo recebendo strings DD/MM/YYYY ambíguas (dia <= 12)
+        df_str = pd.DataFrame(
+            [
+                {
+                    "DATA": "02/10/2026",
+                    "LOGIN NETSALES": "Z640001",
+                    "VENDEDOR": "Tecnico Um",
+                    "Monitor": "Monitor A",
+                    "Base": "NET-ABCDM",
+                    "Qtde. Cons.": 8,
+                    "Qtde. Prod.": 12,
+                    "Qtde. Mesh": 8,
+                    "Qtde. TV": 2,
+                    "Qtde. Virtua": 2,
+                    "imported_at": "2026-11-02 08:49:11",
+                }
+            ]
+        )
+        df_norm = normalizar_coluna_data_consultivo(df_str)
+        self.assertEqual(df_norm.iloc[0]["DATA"], pd.Timestamp("2026-10-02"))
+        self.assertEqual(formatar_data_br_consultivo("02/10/2026"), "02/10/2026")
+        self.assertEqual(formatar_data_br_consultivo("2026-10-02"), "02/10/2026")
+
+        diario = preparar_resumo_diario_monitor(df_str)
+        self.assertEqual(diario.iloc[0]["Data"], "02/10/2026")
+
+        evol = preparar_evolucao_mensal_consultivo(df_str)
+        self.assertEqual(evol.iloc[0]["Competência"], "out/26")
+
+        html_dt = gerar_html_tabela_cons(
+            pd.DataFrame([{"Data": pd.Timestamp("2026-10-02"), "Monitor": "Monitor A"}])
+        )
+        self.assertIn("02/10/2026", html_dt)
+        self.assertNotIn("2026-10-02", html_dt)
+
+        csv_out = sanitizar_csv_exportacao(df_str).decode("utf-8-sig")
+        self.assertIn("02/10/2026", csv_out)
+        self.assertIn("02/11/2026 08:49:11", csv_out)
+        self.assertNotIn("10/02/2026", csv_out)
 
     def test_aba_consultivo_interativa_no_streamlit(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -343,8 +411,16 @@ class ConsultivoMetricsAndUiTests(unittest.TestCase):
                 mock.patch.dict(os.environ, {"SHOW_DEMO_DATA": "1"}, clear=False),
             ):
                 app = AppTest.from_file(_APP_PATH).run(timeout=30)
+                app.selectbox(key="period_filter").set_value("Personalizado").run(
+                    timeout=30
+                )
+                for di in app.date_input:
+                    self.assertEqual(di.proto.format, "DD/MM/YYYY")
+
                 app.radio(key="navigation").set_value("Consultivo").run(timeout=30)
                 self.assertFalse(app.exception)
+                for di in app.date_input:
+                    self.assertEqual(di.proto.format, "DD/MM/YYYY")
 
                 # Alterna para Detalhar por Técnico
                 app.toggle(key="cons_toggle_vendedor").set_value(True).run(timeout=30)
