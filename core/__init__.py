@@ -8,12 +8,3 @@ com carregamento sob demanda (``core.page_registry``).
 """
 
 from __future__ import annotations
-
-__all__ = [
-    "db",
-    "metrics",
-    "normalization",
-    "page_registry",
-    "presets",
-    "summaries",
-]

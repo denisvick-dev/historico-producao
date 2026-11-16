@@ -1946,6 +1946,7 @@ def _run_background_sync_thread(
     service_account: Mapping[str, Any],
 ) -> None:
     """Executa a sincronização paralela do Drive fora do caminho crítico de render."""
+    status: dict[str, Any] | None = None
     try:
         with ThreadPoolExecutor(max_workers=3) as executor:
             fut_roster = executor.submit(
@@ -1967,7 +1968,7 @@ def _run_background_sync_thread(
             _invalidate_all_data_caches()
 
         if not prod_ok:
-            status: dict[str, Any] = {
+            status = {
                 "type": "warning",
                 "message": (
                     f"Falha ao atualizar os dados do Drive: {prod_err} · "
@@ -2165,25 +2166,32 @@ def _render_sidebar_presets_panel(current_page: str) -> None:
             )
             p_col1, p_col2 = st.columns(2)
             with p_col1:
-                if st.button(
-                    "Aplicar",
-                    key="sidebar_preset_apply_btn",
-                    use_container_width=True,
+                if (
+                    st.button(
+                        "Aplicar",
+                        key="sidebar_preset_apply_btn",
+                        use_container_width=True,
+                    )
+                    and selected_preset is not None
                 ):
-                    row = presets_df.loc[presets_df["name"].eq(selected_preset)].iloc[0]
-                    payload = (
-                        dict(row["payload"])
-                        if isinstance(row["payload"], Mapping)
-                        else {}
-                    )
-                    st.session_state["_pending_preset_payload"] = payload
-                    target_page = resolve_page_key(
-                        str(payload.get("navigation") or row.get("page") or "")
-                    )
-                    if target_page in PAGE_SPEC_BY_KEY:
-                        st.session_state["_pending_sidebar_group"] = "Todos"
-                        st.session_state["_pending_navigation"] = target_page
-                    st.rerun()
+                    matched_rows = presets_df.loc[
+                        presets_df["name"].eq(str(selected_preset))
+                    ]
+                    if not matched_rows.empty:
+                        row = matched_rows.iloc[0]
+                        payload = (
+                            dict(row["payload"])
+                            if isinstance(row["payload"], Mapping)
+                            else {}
+                        )
+                        st.session_state["_pending_preset_payload"] = payload
+                        target_page = resolve_page_key(
+                            str(payload.get("navigation") or row.get("page") or "")
+                        )
+                        if target_page in PAGE_SPEC_BY_KEY:
+                            st.session_state["_pending_sidebar_group"] = "Todos"
+                            st.session_state["_pending_navigation"] = target_page
+                        st.rerun()
             with p_col2:
                 if st.button(
                     "Excluir",

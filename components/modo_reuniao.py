@@ -574,9 +574,10 @@ def gerar_briefing_html(briefing: BriefingReuniao) -> bytes:
     dest_df = briefing.top_destaques.copy()
     if not dest_df.empty:
         dest_df["Pontos Totais"] = dest_df["Pontos Totais"].map(format_points)
-        dest_df["Score 360°"] = dest_df["Score 360°"].map(
-            lambda v: f"{float(v):.1f}".replace(".", ",")
-        )
+        scores_num = pd.to_numeric(dest_df["Score 360°"], errors="coerce").fillna(0.0)
+        dest_df["Score 360°"] = [
+            f"{float(v):.1f}".replace(".", ",") for v in scores_num
+        ]
     dest_cols = [
         "Técnico",
         "Base",
