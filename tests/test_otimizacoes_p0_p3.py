@@ -334,14 +334,14 @@ class OtimizacoesP0P3Tests(unittest.TestCase):
         app.run()
         self.assertFalse(app.exception)
 
-        # Grupo padrão "Todos" expõe os 18 módulos na navegação
+        # Grupo padrão "Todos" expõe os 19 módulos na navegação (inclui Modo Reunião)
         nav_radio = app.radio(key="navigation")
-        self.assertEqual(len(nav_radio.options), 18)
+        self.assertEqual(len(nav_radio.options), 19)
 
         # Filtra grupo Executivo e valida redução limpa das opções
         app.selectbox(key="sidebar_nav_group").set_value("Executivo").run()
         self.assertFalse(app.exception)
-        self.assertEqual(len(app.radio(key="navigation").options), 5)
+        self.assertEqual(len(app.radio(key="navigation").options), 6)
 
         # Retorna para Todos e abre Saúde dos dados (com De-Para e Backup)
         app.selectbox(key="sidebar_nav_group").set_value("Todos").run()

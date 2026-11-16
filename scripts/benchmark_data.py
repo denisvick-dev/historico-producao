@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import tempfile
 from pathlib import Path
 from time import perf_counter
 
@@ -11,6 +12,7 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import production
+from components.modo_reuniao import gerar_briefing_html, montar_briefing_reuniao
 from components.pacote_executivo import gerar_pacote_executivo_xlsx
 from components.qualidade_ritmo import (
     calcular_reincidencia_contratos,
@@ -18,6 +20,7 @@ from components.qualidade_ritmo import (
 )
 from components.radar_alertas import calcular_radar_alertas
 from components.scorecard_supervisao import calcular_scorecard_supervisao
+from components.tecnicos_comparacao import calcular_comparacao_tecnicos
 from components.turnover_rampup import calcular_curva_rampup, calcular_turnover
 from components.visao_360 import calcular_visao_360
 
@@ -104,6 +107,9 @@ def main() -> None:
         parser.error("--rows deve ser positivo")
 
     prod, cons, roster = _gerar_bases_sinteticas(args.rows)
+    briefing_ref = montar_briefing_reuniao(
+        prod, cons, roster, periodo_label="Benchmark"
+    )
 
     etapas = [
         (
@@ -143,6 +149,23 @@ def main() -> None:
             lambda: calcular_curva_rampup(prod, roster),
         ),
         (
+            "montar_briefing_reuniao (Modo Reunião)",
+            lambda: montar_briefing_reuniao(prod, cons, roster),
+        ),
+        (
+            "gerar_briefing_html (HTML5/PDF)",
+            lambda: gerar_briefing_html(briefing_ref),
+        ),
+        (
+            "calcular_comparacao_tecnicos (1:1)",
+            lambda: calcular_comparacao_tecnicos(
+                prod,
+                "Tecnico 000",
+                modo="media_base",
+                consultivo_frame=cons,
+            ),
+        ),
+        (
             "gerar_pacote_executivo_xlsx (5 abas)",
             lambda: gerar_pacote_executivo_xlsx(prod, cons, roster),
         ),
@@ -152,7 +175,68 @@ def main() -> None:
         inicio = perf_counter()
         fn()
         dur_ms = (perf_counter() - inicio) * 1000.0
-        print(f"{nome:<42} {dur_ms:8.1f} ms")
+        print(f"{nome:<44} {dur_ms:8.1f} ms")
+
+    # Benchmark SQLite: resumo materializado + pushdown SQL vs carga completa
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        orig_db = production.DB_PATH
+        try:
+            production.DB_PATH = Path(tmp_dir) / "bench_materialized.db"
+            production._INITIALIZED_DBS.clear()
+            production.init_database()
+            rows_sql = [
+                {
+                    "technician": str(tech),
+                    "reference_date": str(ref_dt),
+                    "source_sheet": str(sheet),
+                    "project": str(proj),
+                    "contract": str(ct),
+                    "wo": f"WO-{idx}",
+                    "points": float(pts),
+                    "source_file": str(sf),
+                    "source_row": idx + 2,
+                }
+                for idx, (tech, ref_dt, sheet, proj, ct, pts, sf) in enumerate(
+                    zip(
+                        prod["technician"].tolist(),
+                        prod["reference_date"].dt.strftime("%Y-%m-%d").tolist(),
+                        prod["source_sheet"].tolist(),
+                        prod["project"].tolist(),
+                        prod["contract"].tolist(),
+                        prod["points"].tolist(),
+                        prod["source_file"].tolist(),
+                        strict=False,
+                    )
+                )
+            ]
+            production.save_records(rows_sql, is_demo=False)
+
+            for nome_sql, fn_sql in (
+                (
+                    "SQLite load_sidebar_pulse_summary",
+                    production.load_sidebar_pulse_summary,
+                ),
+                (
+                    "SQLite load_monthly_production_summary",
+                    production.load_monthly_production_summary,
+                ),
+                (
+                    "SQLite load_records_window (30d pushdown)",
+                    lambda: production.load_records_window(
+                        date_start="2025-11-01", date_end="2025-11-30"
+                    ),
+                ),
+                (
+                    "SQLite load_records (full scan)",
+                    production.load_records,
+                ),
+            ):
+                t0 = perf_counter()
+                fn_sql()
+                print(f"{nome_sql:<44} {(perf_counter() - t0) * 1000.0:8.1f} ms")
+        finally:
+            production.DB_PATH = orig_db
+            production._INITIALIZED_DBS.clear()
 
 
 if __name__ == "__main__":

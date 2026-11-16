@@ -4,8 +4,6 @@ from concurrent.futures import ThreadPoolExecutor
 import html
 import json
 import os
-from pathlib import Path
-import tempfile
 import threading
 import time
 from collections.abc import Mapping
@@ -50,26 +48,13 @@ from components.componentes import (
     render_ticker,
 )
 from components.sidebar import render_sidebar_pulse
-from components.comparativo_anos import render_comparativo_anos
-from components.comparativo_consultivo import render_comparativo_consultivo
-from components.consultivo import render_consultivo
-from components.contratos import render_contratos
-from components.eficiencia import render_eficiencia
-from components.pacote_executivo import gerar_pacote_executivo_xlsx
-from components.prod_os import render_prod_orders
-from components.produtividade_unitaria import render_produtividade_unitaria
-from components.quadro_tecnicos import render_quadro_tecnicos
-from components.qualidade_ritmo import render_qualidade_ritmo
-from components.radar_alertas import render_radar_alertas
-from components.scorecard_supervisao import render_scorecard_supervisao
-from components.turnover_rampup import render_turnover_rampup
-from components.visao_360 import render_visao_360, resumo_consultivo_tecnico
-from components.visoes_dashboards import (
-    render_projetos,
-    render_regularidade_producao,
-    render_saude_dados,
-    render_sazonalidade,
-    selecionar_periodo_anterior,
+from core.page_registry import (
+    PAGE_SPEC_BY_KEY,
+    PAGE_SPECS,
+    build_nav_groups,
+    build_nav_labels,
+    load_page_callable,
+    resolve_page_key,
 )
 from drive_import import (
     CONSULTIVO_PARSER_VERSION,
@@ -85,13 +70,11 @@ from production import (
     DEFAULT_CONSULTIVO_FOLDER_ID,
     DEFAULT_ROSTER_SHEET_ID,
     ROSTER_STATUS_ORDER,
-    backup_database,
     best_month_by_technician as _production_best_month_by_technician,
     consultivo_import_batches,
     count_active_months_by_technician,
     create_demonstration,
-    database_stats,
-    delete_technician_alias,
+    delete_filter_preset,
     extract_drive_folder_id,
     extract_spreadsheet_id,
     format_points,
@@ -102,11 +85,14 @@ from production import (
     init_database,
     load_consultivo_snapshot,
     load_dashboard_snapshot,
+    load_filter_presets,
+    load_monthly_consultivo_summary,
+    load_monthly_production_summary,
     load_roster,
-    load_technician_aliases,
+    load_sidebar_pulse_summary,
     month_label,
+    save_filter_preset,
     save_roster_records,
-    save_technician_alias,
     summarize,
     sync_consultivo_drive_records,
     sync_drive_records,
@@ -767,6 +753,37 @@ def apply_filters(
         un_options=un_options,
         project_options=all_projects,
     )
+    pending_preset = st.session_state.pop("_pending_preset_payload", None)
+    if isinstance(pending_preset, Mapping):
+        valid_periods = {
+            "Todo o período",
+            "Últimos 3 meses",
+            "Últimos 6 meses",
+            "Últimos 12 meses",
+            "Personalizado",
+        }
+        p_val = str(pending_preset.get("period_filter", "") or "").strip()
+        if p_val in valid_periods:
+            st.session_state["period_filter"] = p_val
+        for f_key, valid_opts in (
+            ("monitor_filter", monitor_options),
+            ("base_filter", base_options),
+            ("un_filter", un_options),
+            ("project_filter", all_projects),
+        ):
+            raw_list = pending_preset.get(f_key)
+            if isinstance(raw_list, list):
+                valid_set = set(valid_opts)
+                st.session_state[f_key] = [v for v in raw_list if v in valid_set]
+        if isinstance(pending_preset.get("technician_filter"), list):
+            st.session_state["technician_filter"] = list(
+                pending_preset["technician_filter"]
+            )
+        if has_roster and isinstance(pending_preset.get("roster_status_filter"), list):
+            present_s = set(records["roster_status"].dropna().unique())
+            st.session_state["roster_status_filter"] = [
+                v for v in pending_preset["roster_status_filter"] if v in present_s
+            ]
 
     with st.container(border=True):
         if has_roster:
@@ -964,6 +981,8 @@ def render_metrics(
     active = filtered["technician"].nunique()
     average = current_total / active if active else 0
 
+    from components.visoes_dashboards import selecionar_periodo_anterior
+
     previous = selecionar_periodo_anterior(
         records, filtered, technicians, months, projects, period_start, period_end
     )
@@ -1116,6 +1135,8 @@ def render_overview(
     projects: list[str],
     period_start: pd.Timestamp,
     period_end: pd.Timestamp,
+    *,
+    monthly_prod_summary: pd.DataFrame | None = None,
 ) -> None:
     render_metrics(
         filtered,
@@ -1167,7 +1188,38 @@ def render_overview(
         "Produção da equipe", "Pontos consolidados por competência e por técnico"
     )
     chart_col, ranking_col = st.columns([1.65, 1])
-    monthly = summarize(filtered, "period").sort_values("period")
+    # Usa a tabela materializada mensal quando o recorte abrange toda a operação (Item 2.1).
+    sem_filtro_granular = (
+        not projects
+        and not technicians
+        and not st.session_state.get("monitor_filter")
+        and not st.session_state.get("base_filter")
+        and not st.session_state.get("un_filter")
+        and len(filtered)
+        == len(records[records["reference_date"].between(period_start, period_end)])
+    )
+    if (
+        sem_filtro_granular
+        and monthly_prod_summary is not None
+        and not monthly_prod_summary.empty
+    ):
+        p_ini = pd.Timestamp(period_start).to_period("M").to_timestamp()
+        p_fim = pd.Timestamp(period_end).to_period("M").to_timestamp()
+        mat_win = monthly_prod_summary[
+            monthly_prod_summary["period"].between(p_ini, p_fim)
+        ]
+        if not mat_win.empty:
+            monthly = (
+                mat_win.groupby("period", as_index=False)[
+                    ["points_prod", "points_gpon", "points_total"]
+                ]
+                .sum()
+                .sort_values("period")
+            )
+        else:
+            monthly = summarize(filtered, "period").sort_values("period")
+    else:
+        monthly = summarize(filtered, "period").sort_values("period")
     ranking = summarize(filtered, "technician").sort_values(
         "points_total", ascending=False
     )
@@ -1407,220 +1459,174 @@ def render_technicians(
         """,
         unsafe_allow_html=True,
     )
-    monthly = summarize(technician_data, "period").sort_values("period")
-    best = monthly.sort_values("points_total").iloc[-1]
-    average = monthly["points_total"].mean()
-    columns = st.columns(4)
-    with columns[0]:
-        metric_card(
-            "PONTOS TOTAIS",
-            format_points(totals["points_total"]),
-            "Prod + Gpon no período",
-            "Σ",
+    tab_dossie, tab_comparacao = st.tabs(
+        ["Dossiê Individual", "Comparação Lado a Lado (1:1)"]
+    )
+    with tab_dossie:
+        monthly = summarize(technician_data, "period").sort_values("period")
+        best = monthly.sort_values("points_total").iloc[-1]
+        average = monthly["points_total"].mean()
+        columns = st.columns(4)
+        with columns[0]:
+            metric_card(
+                "PONTOS TOTAIS",
+                format_points(totals["points_total"]),
+                "Prod + Gpon no período",
+                "Σ",
+            )
+        with columns[1]:
+            metric_card(
+                "PROD", format_points(totals["points_prod"]), "Pontos acumulados", "P"
+            )
+        with columns[2]:
+            metric_card(
+                "GPON", format_points(totals["points_gpon"]), "Pontos acumulados", "G"
+            )
+        with columns[3]:
+            metric_card(
+                "MELHOR COMPETÊNCIA",
+                month_label(best["period"]),
+                f"{format_points(best['points_total'])} pontos · média {format_points(average)}",
+                "↑",
+            )
+
+        # Dossiê 360° — Performance Consultiva do técnico no mesmo recorte temporal
+        if consultivo_frame is not None and not consultivo_frame.empty:
+            from components.visao_360 import resumo_consultivo_tecnico
+
+            cons_res = resumo_consultivo_tecnico(
+                consultivo_frame,
+                selected,
+                login=login_val,
+                period_start=period_start,
+                period_end=period_end,
+            )
+            section_heading(
+                "Performance Consultiva (Visão 360° Individual)",
+                "Resultados comerciais do técnico no NetSales dentro da mesma janela",
+            )
+            c360 = st.columns(4)
+            with c360[0]:
+                metric_card(
+                    "CONSULTIVOS",
+                    formatar_numero_br(cons_res["consultivos"]),
+                    "Atendimentos consultivos no período",
+                    "🎯",
+                    "",
+                    "kpi-card--laranja",
+                )
+            with c360[1]:
+                metric_card(
+                    "PRODUTOS VENDIDOS",
+                    formatar_numero_br(cons_res["produtos"]),
+                    f"Conversão: {cons_res['conversao_pct']:.1f}%".replace(".", ","),
+                    "📦",
+                    "",
+                    "kpi-card--verde",
+                )
+            with c360[2]:
+                metric_card(
+                    "MIX · MESH / TV / VIRTUA",
+                    f"{cons_res['mesh']} / {cons_res['tv']} / {cons_res['virtua']}",
+                    "Distribuição por produto comercializado",
+                    "🧩",
+                    "",
+                    "kpi-card--azul",
+                )
+            with c360[3]:
+                contratos_tec = (
+                    int(
+                        technician_data.loc[
+                            technician_data["contract"].ne("Sem contrato"), "contract"
+                        ].nunique()
+                    )
+                    if "contract" in technician_data.columns
+                    else 0
+                )
+                pen_tec = (
+                    cons_res["consultivos"] / contratos_tec * 100.0
+                    if contratos_tec > 0
+                    else 0.0
+                )
+                metric_card(
+                    "PENETRAÇÃO CONSULTIVA",
+                    f"{pen_tec:.1f}%".replace(".", ","),
+                    f"{cons_res['consultivos']} cons. ÷ {contratos_tec} contratos",
+                    "🔗",
+                    "",
+                    "kpi-card--roxo",
+                )
+
+        team_monthly = summarize(filtered, "period").sort_values("period")
+        active_by_month = filtered.groupby("period")["technician"].nunique()
+        team_monthly["team_average"] = team_monthly["points_total"].div(
+            team_monthly["period"].map(active_by_month).fillna(1).replace(0, 1)
         )
-    with columns[1]:
-        metric_card(
-            "PROD", format_points(totals["points_prod"]), "Pontos acumulados", "P"
+        monthly["label"] = monthly["period"].map(month_label)
+        team_monthly["label"] = team_monthly["period"].map(month_label)
+        fig = go.Figure()
+        fig.add_bar(
+            x=monthly["label"],
+            y=monthly["points_total"],
+            name=selected,
+            marker_color=COLORS["green"],
+            text=[format_points(value) for value in monthly["points_total"]],
+            textposition="outside",
+            textfont=dict(size=10, color="#012869"),
+            cliponaxis=False,
+            hovertemplate="<b>%{x}</b><br>%{y:,.2f} pontos<extra></extra>",
         )
-    with columns[2]:
-        metric_card(
-            "GPON", format_points(totals["points_gpon"]), "Pontos acumulados", "G"
+        fig.add_scatter(
+            x=team_monthly["label"],
+            y=team_monthly["team_average"],
+            name="Média da equipe",
+            mode="lines+markers",
+            line=dict(color="#F37C04", width=2, dash="dot"),
+            marker=dict(size=6),
+            hovertemplate="<b>%{x}</b><br>Média: %{y:,.2f}<extra></extra>",
         )
-    with columns[3]:
-        metric_card(
-            "MELHOR COMPETÊNCIA",
-            month_label(best["period"]),
-            f"{format_points(best['points_total'])} pontos · média {format_points(average)}",
-            "↑",
+        maximum = max(monthly["points_total"].max(), team_monthly["team_average"].max())
+        fig.update_yaxes(range=[0, maximum * 1.25 if maximum else 1])
+        chart_layout(fig)
+        with st.container(border=True):
+            st.markdown("**Evolução individual**")
+            st.plotly_chart(fig, width="stretch", config=CHART_CONFIG)
+
+        detail = monthly.sort_values("period", ascending=False).copy()
+        detail["Competência"] = detail["period"].map(month_label)
+        detail = detail.rename(
+            columns={
+                "points_prod": "Prod",
+                "points_gpon": "Gpon",
+                "points_total": "Pontos Totais",
+            }
+        )
+        st.caption("Pontos Totais = Prod + Gpon; os valores são exibidos em cinza.")
+        st.dataframe(
+            detail[["Competência", "Prod", "Gpon", "Pontos Totais"]].style.map(
+                _total_points_style, subset=["Pontos Totais"]
+            ),
+            width="stretch",
+            hide_index=True,
+            alt="Produção e pontos GPON por competência no período selecionado",
+            column_config={
+                "Prod": st.column_config.NumberColumn(format="%.2f"),
+                "Gpon": st.column_config.NumberColumn(format="%.2f"),
+                "Pontos Totais": st.column_config.NumberColumn(format="%.2f"),
+            },
         )
 
-    # Dossiê 360° — Performance Consultiva do técnico no mesmo recorte temporal
-    if consultivo_frame is not None and not consultivo_frame.empty:
-        cons_res = resumo_consultivo_tecnico(
-            consultivo_frame,
+    with tab_comparacao:
+        from components.tecnicos_comparacao import render_comparacao_lado_a_lado
+
+        render_comparacao_lado_a_lado(
+            filtered,
             selected,
-            login=login_val,
+            names,
+            consultivo_frame=consultivo_frame,
             period_start=period_start,
             period_end=period_end,
         )
-        section_heading(
-            "Performance Consultiva (Visão 360° Individual)",
-            "Resultados comerciais do técnico no NetSales dentro da mesma janela",
-        )
-        c360 = st.columns(4)
-        with c360[0]:
-            metric_card(
-                "CONSULTIVOS",
-                formatar_numero_br(cons_res["consultivos"]),
-                "Atendimentos consultivos no período",
-                "🎯",
-                "",
-                "kpi-card--laranja",
-            )
-        with c360[1]:
-            metric_card(
-                "PRODUTOS VENDIDOS",
-                formatar_numero_br(cons_res["produtos"]),
-                f"Conversão: {cons_res['conversao_pct']:.1f}%".replace(".", ","),
-                "📦",
-                "",
-                "kpi-card--verde",
-            )
-        with c360[2]:
-            metric_card(
-                "MIX · MESH / TV / VIRTUA",
-                f"{cons_res['mesh']} / {cons_res['tv']} / {cons_res['virtua']}",
-                "Distribuição por produto comercializado",
-                "🧩",
-                "",
-                "kpi-card--azul",
-            )
-        with c360[3]:
-            contratos_tec = (
-                int(
-                    technician_data.loc[
-                        technician_data["contract"].ne("Sem contrato"), "contract"
-                    ].nunique()
-                )
-                if "contract" in technician_data.columns
-                else 0
-            )
-            pen_tec = (
-                cons_res["consultivos"] / contratos_tec * 100.0
-                if contratos_tec > 0
-                else 0.0
-            )
-            metric_card(
-                "PENETRAÇÃO CONSULTIVA",
-                f"{pen_tec:.1f}%".replace(".", ","),
-                f"{cons_res['consultivos']} cons. ÷ {contratos_tec} contratos",
-                "🔗",
-                "",
-                "kpi-card--roxo",
-            )
-
-    team_monthly = summarize(filtered, "period").sort_values("period")
-    active_by_month = filtered.groupby("period")["technician"].nunique()
-    team_monthly["team_average"] = team_monthly["points_total"].div(
-        team_monthly["period"].map(active_by_month).fillna(1).replace(0, 1)
-    )
-    monthly["label"] = monthly["period"].map(month_label)
-    team_monthly["label"] = team_monthly["period"].map(month_label)
-    fig = go.Figure()
-    fig.add_bar(
-        x=monthly["label"],
-        y=monthly["points_total"],
-        name=selected,
-        marker_color=COLORS["green"],
-        text=[format_points(value) for value in monthly["points_total"]],
-        textposition="outside",
-        textfont=dict(size=10, color="#012869"),
-        cliponaxis=False,
-        hovertemplate="<b>%{x}</b><br>%{y:,.2f} pontos<extra></extra>",
-    )
-    fig.add_scatter(
-        x=team_monthly["label"],
-        y=team_monthly["team_average"],
-        name="Média da equipe",
-        mode="lines+markers",
-        line=dict(color="#F37C04", width=2, dash="dot"),
-        marker=dict(size=6),
-        hovertemplate="<b>%{x}</b><br>Média: %{y:,.2f}<extra></extra>",
-    )
-    maximum = max(monthly["points_total"].max(), team_monthly["team_average"].max())
-    fig.update_yaxes(range=[0, maximum * 1.25 if maximum else 1])
-    chart_layout(fig)
-    with st.container(border=True):
-        st.markdown("**Evolução individual**")
-        st.plotly_chart(fig, width="stretch", config=CHART_CONFIG)
-
-    detail = monthly.sort_values("period", ascending=False).copy()
-    detail["Competência"] = detail["period"].map(month_label)
-    detail = detail.rename(
-        columns={
-            "points_prod": "Prod",
-            "points_gpon": "Gpon",
-            "points_total": "Pontos Totais",
-        }
-    )
-    st.caption("Pontos Totais = Prod + Gpon; os valores são exibidos em cinza.")
-    st.dataframe(
-        detail[["Competência", "Prod", "Gpon", "Pontos Totais"]].style.map(
-            _total_points_style, subset=["Pontos Totais"]
-        ),
-        width="stretch",
-        hide_index=True,
-        alt="Produção e pontos GPON por competência no período selecionado",
-        column_config={
-            "Prod": st.column_config.NumberColumn(format="%.2f"),
-            "Gpon": st.column_config.NumberColumn(format="%.2f"),
-            "Pontos Totais": st.column_config.NumberColumn(format="%.2f"),
-        },
-    )
-
-    # Comparação direta (Lado a Lado) com outro técnico do recorte
-    outros = [n for n in names if n != selected]
-    if outros:
-        section_heading(
-            "Comparação Direta (Lado a Lado)",
-            "Compare a curva mensal e o acumulado do técnico selecionado frente a outro colaborador",
-        )
-        comparado = st.selectbox(
-            "Comparar com",
-            options=["Nenhum", *outros],
-            index=0,
-            key="technician_compare_peer",
-        )
-        if comparado and comparado != "Nenhum":
-            peer_data = filtered[filtered["technician"].eq(comparado)]
-            peer_monthly = summarize(peer_data, "period").sort_values("period")
-            peer_totals = ranking[ranking["technician"].eq(comparado)].iloc[0]
-            comp_df = (
-                monthly[["period", "points_total"]]
-                .rename(columns={"points_total": selected})
-                .merge(
-                    peer_monthly[["period", "points_total"]].rename(
-                        columns={"points_total": comparado}
-                    ),
-                    on="period",
-                    how="outer",
-                )
-                .fillna(0.0)
-                .sort_values("period")
-            )
-            comp_df["Competência"] = comp_df["period"].map(month_label)
-
-            fig_h2h = go.Figure()
-            fig_h2h.add_bar(
-                x=comp_df["Competência"],
-                y=comp_df[selected],
-                name=selected,
-                marker_color=COLORS["green"],
-            )
-            fig_h2h.add_bar(
-                x=comp_df["Competência"],
-                y=comp_df[comparado],
-                name=comparado,
-                marker_color="#F37C04",
-            )
-            fig_h2h.update_layout(barmode="group")
-            chart_layout(fig_h2h, height=330)
-            with st.container(border=True):
-                st.plotly_chart(
-                    fig_h2h,
-                    width="stretch",
-                    config=CHART_CONFIG,
-                    key="technician_h2h_chart",
-                )
-            diff_pts = float(totals["points_total"]) - float(
-                peer_totals["points_total"]
-            )
-            st.caption(
-                f"Diferença acumulada no período: **{selected}** "
-                f"({format_points(totals['points_total'])} pts) vs **{comparado}** "
-                f"({format_points(peer_totals['points_total'])} pts) · "
-                f"Δ {formatar_delta_decimal_br(diff_pts, 2, 'pts')}."
-            )
 
 
 @st.cache_resource(show_spinner=False)
@@ -1632,9 +1638,18 @@ def _initialize_demo_once(db_path_key: str) -> None:
 
 @st.cache_data(ttl=1800, max_entries=16, show_spinner=False)
 def _load_sidebar_stats(db_path_key: str) -> dict[str, Any]:
-    """Lê apenas metadados agregados no SQLite para a sidebar (sem carregar DataFrames)."""
+    """Lê estatísticas instantâneas do Pulse a partir das tabelas materializadas."""
     del db_path_key
-    return database_stats()
+    return load_sidebar_pulse_summary()
+
+
+@st.cache_data(ttl=1800, max_entries=16, show_spinner=False)
+def _load_monthly_summaries_cached(
+    db_path_key: str,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Lê as tabelas materializadas mensais de Produção e Consultivo (Item 2.1)."""
+    del db_path_key
+    return load_monthly_production_summary(), load_monthly_consultivo_summary()
 
 
 @st.cache_data(ttl=1800, max_entries=16, show_spinner=False)
@@ -1658,12 +1673,23 @@ def _load_consultivo_cached(db_path_key: str) -> tuple[pd.DataFrame, dict[str, A
     return load_consultivo_snapshot()
 
 
+def _invalidate_all_data_caches() -> None:
+    """Limpa todos os caches de leitura após sincronização ou manutenção."""
+    _load_sidebar_stats.clear()
+    _load_monthly_summaries_cached.clear()
+    _load_dashboard_snapshot.clear()
+    _load_roster_cached.clear()
+    _load_consultivo_cached.clear()
+
+
 @st.cache_data(ttl=1800, max_entries=8, show_spinner=False)
 def _gerar_pacote_geral_xlsx_cached(
     filtered_prod: pd.DataFrame,
     db_path_key: str,
 ) -> bytes:
     """Gera o Pacote Executivo multi-aba (.xlsx) a partir do recorte filtrado."""
+    from components.pacote_executivo import gerar_pacote_executivo_xlsx
+
     cons_df, _ = _load_consultivo_cached(db_path_key)
     roster_df = _load_roster_cached(db_path_key)
     return gerar_pacote_executivo_xlsx(
@@ -1743,10 +1769,7 @@ def _sync_roster_sheet(*, force: bool = False) -> tuple[bool, str]:
         _drive_service_account(), force=force
     )
     if refreshed:
-        _load_sidebar_stats.clear()
-        _load_dashboard_snapshot.clear()
-        _load_roster_cached.clear()
-        _load_consultivo_cached.clear()
+        _invalidate_all_data_caches()
     return ok, msg
 
 
@@ -1795,6 +1818,8 @@ def _sync_consultivo_folder(*, force: bool = False) -> tuple[bool, str, list[str
     )
     if ok:
         _load_consultivo_cached.clear()
+        _load_monthly_summaries_cached.clear()
+        _load_sidebar_stats.clear()
     if ok or issues_top:
         st.session_state["consultivo_sync_issues"] = issues_top
         st.session_state["_last_consultivo_sync_ts"] = time.time()
@@ -1874,10 +1899,7 @@ def _sync_external_data(*, force: bool = False) -> dict[str, Any]:
     st.session_state["_last_consultivo_sync_ts"] = time.time()
 
     if roster_refreshed or cons_ok or prod_ok:
-        _load_sidebar_stats.clear()
-        _load_dashboard_snapshot.clear()
-        _load_roster_cached.clear()
-        _load_consultivo_cached.clear()
+        _invalidate_all_data_caches()
 
     if not prod_ok:
         return {
@@ -1924,6 +1946,7 @@ def _run_background_sync_thread(
     service_account: Mapping[str, Any],
 ) -> None:
     """Executa a sincronização paralela do Drive fora do caminho crítico de render."""
+    status: dict[str, Any] | None = None
     try:
         with ThreadPoolExecutor(max_workers=3) as executor:
             fut_roster = executor.submit(
@@ -1942,13 +1965,10 @@ def _run_background_sync_thread(
             )
 
         if roster_refreshed or cons_ok or prod_ok:
-            _load_sidebar_stats.clear()
-            _load_dashboard_snapshot.clear()
-            _load_roster_cached.clear()
-            _load_consultivo_cached.clear()
+            _invalidate_all_data_caches()
 
         if not prod_ok:
-            status: dict[str, Any] = {
+            status = {
                 "type": "warning",
                 "message": (
                     f"Falha ao atualizar os dados do Drive: {prod_err} · "
@@ -1989,7 +2009,7 @@ def _trigger_cache_first_auto_sync() -> dict[str, Any]:
     drive_sa = _drive_service_account()
     in_pytest = os.getenv("PYTEST_CURRENT_TEST") is not None
     if drive_sa is not None and not in_pytest:
-        pre_stats = database_stats()
+        pre_stats = load_sidebar_pulse_summary()
         has_real_local_data = bool(
             pre_stats.get("records", 0) > 0
             and pre_stats.get("demo_rows", 0) < pre_stats.get("records", 0)
@@ -2053,15 +2073,51 @@ logger.info(
 )
 
 
+_SHARED_WIDGET_KEYS: tuple[str, ...] = (
+    "roster_status_filter",
+    "monitor_filter",
+    "base_filter",
+    "un_filter",
+    "period_filter",
+    "project_filter",
+    "technician_filter",
+    "custom_start",
+    "custom_end",
+    "_totale_sidebar_theme_select",
+)
+
+
+def _restore_preserved_shared_state() -> None:
+    preserved = st.session_state.pop("_preserved_shared_state", None)
+    if isinstance(preserved, Mapping):
+        for k, v in preserved.items():
+            if k not in st.session_state:
+                st.session_state[k] = v
+
+
+def _snapshot_shared_state_for_switch() -> None:
+    snap: dict[str, Any] = {}
+    for k in _SHARED_WIDGET_KEYS:
+        if k in st.session_state:
+            snap[k] = st.session_state[k]
+    st.session_state["_preserved_shared_state"] = snap
+
+
 def _abrir_comparativo_anos() -> None:
+    st.session_state["_pending_sidebar_group"] = "Todos"
+    st.session_state["_pending_navigation"] = "Comparativo 2025 x 2026"
     st.session_state["navigation"] = "Comparativo 2025 x 2026"
 
 
 def _abrir_comparativo_consultivo() -> None:
+    st.session_state["_pending_sidebar_group"] = "Todos"
+    st.session_state["_pending_navigation"] = "Consultivo 2025 x 2026"
     st.session_state["navigation"] = "Consultivo 2025 x 2026"
 
 
 def _abrir_painel_consultivo() -> None:
+    st.session_state["_pending_sidebar_group"] = "Todos"
+    st.session_state["_pending_navigation"] = "Consultivo"
     st.session_state["navigation"] = "Consultivo"
 
 
@@ -2076,6 +2132,127 @@ def _resumo_janela_sidebar_stats(db_stats: Mapping[str, Any]) -> tuple[str, int]
     janela = inicio if inicio == fim else f"{inicio} – {fim}"
     return janela, qtd
 
+
+def _collect_current_filter_preset_payload(current_page: str) -> dict[str, Any]:
+    payload: dict[str, Any] = {"navigation": current_page}
+    for key in (
+        "period_filter",
+        "monitor_filter",
+        "base_filter",
+        "un_filter",
+        "project_filter",
+        "technician_filter",
+        "roster_status_filter",
+        "sidebar_nav_group",
+    ):
+        if key in st.session_state:
+            payload[key] = st.session_state[key]
+    return payload
+
+
+def _render_sidebar_presets_panel(current_page: str) -> None:
+    """Seção compacta na sidebar para salvar, aplicar e excluir Presets de Filtro (Item 2.5)."""
+    with st.expander(
+        "Filtros salvos (Presets)", expanded=False, icon=":material/bookmark:"
+    ):
+        presets_df = load_filter_presets()
+        if not presets_df.empty:
+            preset_names = presets_df["name"].tolist()
+            selected_preset = st.selectbox(
+                "Preset salvo",
+                options=preset_names,
+                key="sidebar_preset_select",
+                label_visibility="collapsed",
+            )
+            p_col1, p_col2 = st.columns(2)
+            with p_col1:
+                if (
+                    st.button(
+                        "Aplicar",
+                        key="sidebar_preset_apply_btn",
+                        use_container_width=True,
+                    )
+                    and selected_preset is not None
+                ):
+                    matched_rows = presets_df.loc[
+                        presets_df["name"].eq(str(selected_preset))
+                    ]
+                    if not matched_rows.empty:
+                        row = matched_rows.iloc[0]
+                        payload = (
+                            dict(row["payload"])
+                            if isinstance(row["payload"], Mapping)
+                            else {}
+                        )
+                        st.session_state["_pending_preset_payload"] = payload
+                        target_page = resolve_page_key(
+                            str(payload.get("navigation") or row.get("page") or "")
+                        )
+                        if target_page in PAGE_SPEC_BY_KEY:
+                            st.session_state["_pending_sidebar_group"] = "Todos"
+                            st.session_state["_pending_navigation"] = target_page
+                        st.rerun()
+            with p_col2:
+                if st.button(
+                    "Excluir",
+                    key="sidebar_preset_delete_btn",
+                    use_container_width=True,
+                ):
+                    delete_filter_preset(str(selected_preset))
+                    st.rerun()
+        else:
+            st.caption("Nenhum recorte salvo ainda.")
+
+        preset_name_new = st.text_input(
+            "Nome do recorte",
+            placeholder="Ex.: Base Leste · 30d",
+            key="sidebar_preset_name_input",
+            label_visibility="collapsed",
+        )
+        if st.button(
+            "Salvar recorte atual",
+            key="sidebar_preset_save_btn",
+            icon=":material/bookmark_add:",
+            use_container_width=True,
+        ):
+            if preset_name_new.strip():
+                saved = save_filter_preset(
+                    preset_name_new.strip(),
+                    _collect_current_filter_preset_payload(current_page),
+                    page=current_page,
+                )
+                if saved:
+                    st.success(f"Preset '{preset_name_new.strip()}' salvo.")
+                    st.rerun()
+            else:
+                st.warning("Digite um nome para salvar o preset.")
+
+
+def _make_st_page_entry(page_key: str) -> Any:
+    """Cria callable de página dedicado para ``st.Page`` + ``st.navigation``."""
+
+    def _entry() -> None:
+        render_dashboard(page_key)
+
+    _entry.__name__ = f"page_{PAGE_SPEC_BY_KEY[page_key].slug.replace('-', '_')}"
+    return _entry
+
+
+_restore_preserved_shared_state()
+
+_st_pages: dict[str, Any] = {
+    spec.key: st.Page(
+        _make_st_page_entry(spec.key),
+        title=spec.key,
+        url_path=spec.slug,
+        default=(spec.key == "Visão geral"),
+    )
+    for spec in PAGE_SPECS
+}
+_active_st_page = st.navigation(list(_st_pages.values()), position="hidden")
+
+nav_labels = build_nav_labels()
+nav_groups = build_nav_groups()
 
 with st.sidebar:
     render_sidebar_brand(
@@ -2106,72 +2283,27 @@ with st.sidebar:
         fontes=("Produção", "lista_ativos", "Consultivo"),
     )
     render_sidebar_section("Módulos Executivos", icone="🧭")
-    nav_labels = {
-        "Visão geral": ":material/dashboard:  Visão Executiva · Produção",
-        "Visão 360°": ":material/hub:  Visão 360° · Prod × Consultivo",
-        "Radar de Alertas": ":material/notifications_active:  Radar de Alertas",
-        "Scorecard Supervisão": ":material/leaderboard:  Scorecard · Monitor & Base",
-        "Comparativo 2025 x 2026": ":material/compare_arrows:  Produção 2025 × 2026",
-        "Consultivo 2025 x 2026": ":material/trending_up:  Consultivo 2025 × 2026",
-        "Consultivo": ":material/support_agent:  Performance Consultiva",
-        "Projetos": ":material/account_tree:  Gestão por Projeto",
-        "Quantidade de O.S.": ":material/assignment:  Ordens de Serviço (O.S.)",
-        "Contratos": ":material/description:  Gestão de Contratos",
-        "Produtividade unitária": ":material/speed:  Produtividade Unitária",
-        "Qualidade & Ritmo": ":material/verified:  Qualidade, Reincidência & Ritmo",
-        "Regularidade": ":material/calendar_month:  Regularidade & Sazonalidade",
-        "Eficiência": ":material/bolt:  Matriz de Eficiência",
-        "Técnicos": ":material/person:  Desempenho Individual",
-        "Turnover & Ramp-up": ":material/group_remove:  Turnover & Curva de Ramp-up",
-        "Quadro de técnicos": ":material/groups:  Quadro Cadastral (Ativos)",
-        "Saúde dos dados": ":material/monitor_heart:  Governança & Dados",
-    }
-    nav_groups: dict[str, list[str]] = {
-        "Todos": list(nav_labels),
-        "Executivo": [
-            "Visão geral",
-            "Visão 360°",
-            "Radar de Alertas",
-            "Scorecard Supervisão",
-            "Comparativo 2025 x 2026",
-        ],
-        "Operação": [
-            "Projetos",
-            "Quantidade de O.S.",
-            "Contratos",
-            "Produtividade unitária",
-            "Qualidade & Ritmo",
-            "Regularidade",
-            "Eficiência",
-        ],
-        "Comercial": [
-            "Consultivo",
-            "Consultivo 2025 x 2026",
-            "Visão 360°",
-        ],
-        "Pessoas & Dados": [
-            "Técnicos",
-            "Turnover & Ramp-up",
-            "Quadro de técnicos",
-            "Saúde dos dados",
-        ],
-    }
 
-    # Aplica navegação pendente (drill-down 1-clique ou query param ?page=).
+    # Sincroniza URL direta do st.navigation, drill-down 1-clique ou ?page=<nome|slug>.
+    _prev_st_title = st.session_state.get("_active_st_page_title")
     pending_group = st.session_state.pop("_pending_sidebar_group", None)
     if isinstance(pending_group, str) and pending_group in nav_groups:
         st.session_state["sidebar_nav_group"] = pending_group
     pending_nav = st.session_state.pop("_pending_navigation", None)
     if isinstance(pending_nav, str) and pending_nav in nav_labels:
         st.session_state["navigation"] = pending_nav
+    elif _prev_st_title is not None and _prev_st_title != _active_st_page.title:
+        st.session_state["navigation"] = _active_st_page.title
     elif not st.session_state.get("_totale_qp_page_hydrated"):
         st.session_state["_totale_qp_page_hydrated"] = True
         try:
             qp_page = str(st.query_params.get("page", "") or "").strip()
         except Exception:
             qp_page = ""
-        if qp_page in nav_labels and "navigation" not in st.session_state:
-            st.session_state["navigation"] = qp_page
+        resolved_qp = resolve_page_key(qp_page, default="")
+        if resolved_qp in nav_labels and "navigation" not in st.session_state:
+            st.session_state["navigation"] = resolved_qp
+    st.session_state["_active_st_page_title"] = _active_st_page.title
 
     selected_group = st.selectbox(
         "Categoria de módulos",
@@ -2179,12 +2311,15 @@ with st.sidebar:
         index=0,
         key="sidebar_nav_group",
         label_visibility="collapsed",
-        help="Filtre os módulos por área ou mantenha 'Todos' para exibir os 18 painéis.",
+        help="Filtre os módulos por área ou mantenha 'Todos' para exibir os 19 painéis.",
     )
     visible_nav_options = nav_groups.get(str(selected_group), list(nav_labels))
-    # Evita seleções de navegação fora das opções visíveis.
-    if st.session_state.get("navigation") not in (None, *visible_nav_options):
-        st.session_state["navigation"] = visible_nav_options[0]
+    if st.session_state.get("navigation") not in visible_nav_options:
+        st.session_state["navigation"] = (
+            _active_st_page.title
+            if _active_st_page.title in visible_nav_options
+            else visible_nav_options[0]
+        )
     navigation = st.radio(
         "Navegação",
         visible_nav_options,
@@ -2192,6 +2327,7 @@ with st.sidebar:
         label_visibility="collapsed",
         key="navigation",
     )
+    _render_sidebar_presets_panel(str(navigation or "Visão geral"))
     render_sidebar_divider(label="Sincronização", estilo="gradiente")
     if st.button(
         "Atualizar dados",
@@ -2202,10 +2338,7 @@ with st.sidebar:
     ):
         with st.spinner("Atualizando os dados da base..."):
             sync_status = _sync_external_data(force=True)
-            _load_sidebar_stats.clear()
-            _load_dashboard_snapshot.clear()
-            _load_roster_cached.clear()
-            _load_consultivo_cached.clear()
+            _invalidate_all_data_caches()
             st.session_state["drive_auto_sync_status"] = sync_status
             stats = _load_sidebar_stats(_active_db_key)
         status_renderer = {
@@ -2232,195 +2365,22 @@ with st.sidebar:
     )
 
 
-def _render_governanca_avancada(
-    records: pd.DataFrame,
-    roster: pd.DataFrame,
-) -> None:
-    """Renderiza ferramentas de governança: De-Para de técnicos/logins e Backup SQLite."""
-    section_heading(
-        "De-Para de Técnicos & Logins NetSales",
-        "Corrija nomes divergentes ou logins antigos sem alterar as planilhas de origem.",
-    )
-    with st.container(border=True):
-        aliases_df = load_technician_aliases()
-        nomes_canonicos: set[str] = set()
-        if not roster.empty and "technician" in roster.columns:
-            nomes_canonicos.update(
-                str(n).strip()
-                for n in roster["technician"].dropna().unique()
-                if str(n).strip()
-            )
-        if not records.empty and "technician" in records.columns:
-            nomes_canonicos.update(
-                str(n).strip()
-                for n in records["technician"].dropna().unique()
-                if str(n).strip()
-            )
-        opcoes_canonicas = sorted(nomes_canonicos)
-
-        c1, c2, c3, c4 = st.columns([0.9, 1.3, 1.5, 1.1])
-        with c1:
-            alias_tipo = st.selectbox(
-                "Tipo de de-para",
-                options=["name", "login"],
-                format_func=lambda v: (
-                    "Nome divergente" if v == "name" else "Login NetSales"
-                ),
-                key="gov_alias_type",
-            )
-        with c2:
-            alias_origem = st.text_input(
-                "Valor na planilha (origem)",
-                placeholder="Ex.: JOAO SILVA ou Z649999",
-                key="gov_alias_source",
-            )
-        with c3:
-            if opcoes_canonicas:
-                alias_destino = st.selectbox(
-                    "Técnico canônico (destino)",
-                    options=opcoes_canonicas,
-                    key="gov_alias_target_sel",
-                )
-            else:
-                alias_destino = st.text_input(
-                    "Técnico canônico (destino)",
-                    placeholder="Nome oficial no cadastro",
-                    key="gov_alias_target_txt",
-                )
-        with c4:
-            alias_nota = st.text_input(
-                "Observação",
-                placeholder="Opcional",
-                key="gov_alias_notes",
-            )
-
-        if st.button(
-            "Salvar regra De-Para",
-            key="gov_alias_save_btn",
-            type="primary",
-            icon=":material/link:",
-        ):
-            if alias_origem.strip() and str(alias_destino or "").strip():
-                saved_ok = save_technician_alias(
-                    cast(Any, alias_tipo),
-                    alias_origem.strip(),
-                    str(alias_destino).strip(),
-                    notes=alias_nota.strip(),
-                )
-                if saved_ok:
-                    _load_dashboard_snapshot.clear()
-                    _load_consultivo_cached.clear()
-                    st.success("Regra De-Para salva e caches recarregados.")
-                    st.rerun()
-            else:
-                st.warning("Informe o valor de origem e o técnico canônico de destino.")
-
-        if aliases_df.empty:
-            st.caption("Nenhuma regra De-Para cadastrada até o momento.")
-        else:
-            st.dataframe(aliases_df, width="stretch", hide_index=True)
-            rem_c1, rem_c2 = st.columns([2.5, 1.0], vertical_alignment="bottom")
-            with rem_c1:
-                id_opcoes = aliases_df["id"].astype(int).tolist()
-                rotulos_id = {
-                    int(r_id): f"#{int(r_id)} · [{r_tipo}] {r_src} → {r_dst}"
-                    for r_id, r_tipo, r_src, r_dst in zip(
-                        aliases_df["id"].tolist(),
-                        aliases_df["alias_type"].tolist(),
-                        aliases_df["source_value"].tolist(),
-                        aliases_df["canonical_technician"].tolist(),
-                        strict=False,
-                    )
-                }
-                alias_rem = st.selectbox(
-                    "Remover regra existente",
-                    options=id_opcoes,
-                    format_func=lambda i: rotulos_id.get(int(i), str(i)),
-                    key="gov_alias_delete_select",
-                )
-            with rem_c2:
-                if st.button(
-                    "Remover regra",
-                    key="gov_alias_delete_btn",
-                    use_container_width=True,
-                ):
-                    delete_technician_alias(int(alias_rem))
-                    _load_dashboard_snapshot.clear()
-                    _load_consultivo_cached.clear()
-                    st.success("Regra removida com sucesso.")
-                    st.rerun()
-
-    section_heading(
-        "Backup Seguro do Banco SQLite (WAL-Safe)",
-        "Gera uma cópia consistente via API nativa sqlite3.backup() com PRAGMA optimize.",
-    )
-    with st.container(border=True):
-        b_col1, b_col2 = st.columns([1.4, 2.6], vertical_alignment="center")
-        with b_col1:
-            if st.button(
-                "Gerar snapshot de backup (.db)",
-                key="gov_generate_backup_btn",
-                icon=":material/backup:",
-                use_container_width=True,
-            ):
-                with tempfile.TemporaryDirectory() as tmp_dir:
-                    snap_path = backup_database(Path(tmp_dir) / "totale_backup.db")
-                    if snap_path and snap_path.exists():
-                        st.session_state["_gov_backup_bytes"] = snap_path.read_bytes()
-                        st.session_state["_gov_backup_name"] = (
-                            f"totale_producao_backup_{pd.Timestamp.now().strftime('%Y%m%d_%H%M')}.db"
-                        )
-        with b_col2:
-            if st.session_state.get("_gov_backup_bytes"):
-                st.download_button(
-                    "⬇️ Baixar backup SQLite (.db)",
-                    data=st.session_state["_gov_backup_bytes"],
-                    file_name=str(
-                        st.session_state.get("_gov_backup_name", "totale_backup.db")
-                    ),
-                    mime="application/x-sqlite3",
-                    key="gov_download_backup_btn",
-                )
-            else:
-                st.caption(
-                    "Clique em 'Gerar snapshot de backup (.db)' para criar uma cópia íntegra pronta para download."
-                )
-
-
-def render_dashboard() -> None:
-    """Renderiza o painel com lazy loading por módulo (carrega apenas o necessário)."""
+def render_dashboard(active_page_key: str | None = None) -> None:
+    """Renderiza o painel com lazy loading por módulo e tabelas materializadas."""
     render_t0 = time.perf_counter()
+    current_page = str(active_page_key or navigation or "Visão geral")
+    spec = PAGE_SPEC_BY_KEY.get(current_page) or PAGE_SPEC_BY_KEY["Visão geral"]
+    current_page = spec.key
     db_key = str(production_mod.DB_PATH)
-    _paginas_somente_consultivo = ("Consultivo", "Consultivo 2025 x 2026")
-    _paginas_com_consultivo = (
-        "Visão 360°",
-        "Radar de Alertas",
-        "Scorecard Supervisão",
-        "Consultivo",
-        "Consultivo 2025 x 2026",
-        "Comparativo 2025 x 2026",
-        "Técnicos",
-        "Saúde dos dados",
-    )
-    _paginas_com_roster = (
-        "Visão 360°",
-        "Radar de Alertas",
-        "Scorecard Supervisão",
-        "Consultivo",
-        "Consultivo 2025 x 2026",
-        "Comparativo 2025 x 2026",
-        "Turnover & Ramp-up",
-        "Quadro de técnicos",
-        "Saúde dos dados",
-    )
+    somente_consultivo = not spec.needs_production
 
     try:
-        if navigation and st.query_params.get("page") != navigation:
-            st.query_params["page"] = str(navigation)
+        if st.query_params.get("page") != current_page:
+            st.query_params["page"] = current_page
     except Exception:
         logger.debug("falha_sync_query_param_page", exc_info=True)
 
-    if navigation in _paginas_somente_consultivo:
+    if somente_consultivo:
         current_records = pd.DataFrame()
         current_stats = _load_sidebar_stats(db_key)
     else:
@@ -2429,125 +2389,35 @@ def render_dashboard() -> None:
             current_records, current_stats
         )
 
+    monthly_prod_summary: pd.DataFrame | None = None
+    monthly_cons_summary: pd.DataFrame | None = None
+    if spec.uses_materialized_monthly:
+        monthly_prod_summary, monthly_cons_summary = _load_monthly_summaries_cached(
+            db_key
+        )
+
     is_demo = bool(
         current_stats["records"]
         and current_stats["demo_rows"] == current_stats["records"]
     )
-    page_titles = {
-        "Visão geral": (
-            "Visão Executiva · Produção Operacional",
-            "Monitoramento consolidado de pontuação técnica (Prod + Gpon), produtividade e evolução das equipes.",
-        ),
-        "Visão 360°": (
-            "Visão 360° Operacional × Comercial",
-            "Cruzamento integrado entre Produção Técnica (Prod + Gpon, O.S. e Contratos) e Performance Consultiva (NetSales) por Técnico, Monitor, Base e U.N.",
-        ),
-        "Radar de Alertas": (
-            "Radar de Alertas & Gestão à Vista",
-            "Sinalizações priorizadas de oportunidades de virada de faixa, quedas MoM, ativos sem apontamento, lacunas consultivas e governança.",
-        ),
-        "Scorecard Supervisão": (
-            "Scorecard de Supervisão · Monitor, Base e U.N.",
-            "Avaliação consolidada de span of control, cobertura produtiva, dispersão interna, participação em Faixas 4–5 e conversão comercial.",
-        ),
-        "Comparativo 2025 x 2026": (
-            "Comparativo Interanual 2025 × 2026 · Produção, Contratos e O.S.",
-            "Análise interanual de pontuação, contratos distintos, ordens de serviço (Prod), giro O.S./contrato e evolução por equipe.",
-        ),
-        "Consultivo 2025 x 2026": (
-            "Comparativo Interanual 2025 × 2026 · Performance Consultiva",
-            "Análise interanual de consultivos realizados, mix comercial (Mesh, TV Box, Virtua), conversão e metas por equipe.",
-        ),
-        "Projetos": (
-            "Gestão Operacional por Projeto",
-            "Comparativo executivo de pontuação, ordens de serviço e participação percentual por frente de projeto.",
-        ),
-        "Quantidade de O.S.": (
-            "Gestão de Ordens de Serviço (O.S.)",
-            "Acompanhamento de ordens de serviço produtivas (aba Prod) por competência, projeto e técnico.",
-        ),
-        "Contratos": (
-            "Gestão & Eficiência de Contratos",
-            "Monitoramento de contratos distintos atendidos por competência, técnico e faixa de eficiência operacional.",
-        ),
-        "Produtividade unitária": (
-            "Produtividade Unitária & Densidade Técnica",
-            "Relação entre pontos por O.S., pontos por contrato e posicionamento volume × complexidade da equipe.",
-        ),
-        "Qualidade & Ritmo": (
-            "Qualidade, Reincidência & Ritmo Diário",
-            "Auditoria de reincidência por contrato/O.S., cadência por dia da semana (Seg–Sáb) e projeção de fechamento mensal.",
-        ),
-        "Consultivo": (
-            "Performance Consultiva & Mix Comercial",
-            "Indicadores consolidados de consultivos realizados, funil NetSales, mix de planos e vínculo com o quadro ativo.",
-        ),
-        "Regularidade": (
-            "Regularidade Operacional & Sazonalidade",
-            "Análise estatística de médias, medianas, coeficiente de variação, lacunas e mapa de calor mensal por técnico ou projeto.",
-        ),
-        "Eficiência": (
-            "Matriz de Eficiência Mensal por Técnico",
-            "Classificação mensal de faixas de entrega e predominância histórica de performance da equipe.",
-        ),
-        "Técnicos": (
-            "Desempenho Individual de Técnicos",
-            "Dossiê individual técnico + consultivo, melhor competência e comparação direta lado a lado.",
-        ),
-        "Turnover & Ramp-up": (
-            "Turnover, Capacidade Perdida & Curva de Ramp-up",
-            "Análise de desligamentos, motivos, perda de capacidade produtiva mensal e curva de maturação de novos técnicos.",
-        ),
-        "Quadro de técnicos": (
-            "Quadro Cadastral & Conciliação de Ativos",
-            "Conciliação executiva entre o cadastro oficial (lista_ativos / desligados) e entregas por Monitor, U.N. e Base.",
-        ),
-        "Saúde dos dados": (
-            "Governança de Dados & Auditoria de Importações",
-            "Rastreabilidade de cobertura, lotes sincronizados no Google Drive, auditoria de contratos por arquivo e exportação CSV.",
-        ),
-    }
-    page_badges = {
-        "Visão 360°": "TOTALE · VISÃO 360°",
-        "Radar de Alertas": "TOTALE · GESTÃO À VISTA",
-        "Scorecard Supervisão": "TOTALE · SCORECARD DE SUPERVISÃO",
-        "Projetos": "TOTALE · GESTÃO POR PROJETO",
-        "Quantidade de O.S.": "TOTALE · ORDENS DE SERVIÇO",
-        "Contratos": "TOTALE · GESTÃO DE CONTRATOS",
-        "Produtividade unitária": "TOTALE · PERFORMANCE & PRODUTIVIDADE",
-        "Qualidade & Ritmo": "TOTALE · QUALIDADE & RITMO DIÁRIO",
-        "Regularidade": "TOTALE · REGULARIDADE & SAZONALIDADE",
-        "Eficiência": "TOTALE · MATRIZ DE EFICIÊNCIA",
-        "Técnicos": "TOTALE · DESEMPENHO INDIVIDUAL",
-        "Turnover & Ramp-up": "TOTALE · RETENÇÃO & MATURAÇÃO",
-        "Quadro de técnicos": "TOTALE · GOVERNANÇA CADASTRAL",
-        "Saúde dos dados": "TOTALE · GOVERNANÇA DE DADOS",
-    }
-    title, subtitle = page_titles[navigation]
-    hero_badge = page_badges.get(navigation, "TOTALE · GESTÃO OPERACIONAL")
     updated = "Aguardando dados da operação"
-    if current_stats["last_import"]:
+    if current_stats.get("last_import"):
         updated = pd.Timestamp(current_stats["last_import"]).strftime(
             "Atualizado em %d/%m/%Y às %H:%M"
         )
-    if navigation not in (
-        "Consultivo",
-        "Comparativo 2025 x 2026",
-        "Consultivo 2025 x 2026",
-    ):
+    if not spec.custom_hero:
         render_hero_totale_1(
-            titulo=title,
-            subtitulo=subtitle,
-            badge=hero_badge,
+            titulo=spec.title,
+            subtitulo=spec.subtitle,
+            badge=spec.badge,
             icone="monitoring",
             meta_info=updated,
         )
 
-    if navigation in _paginas_com_roster:
-        current_roster = _load_roster_cached(db_key)
-    else:
-        current_roster = pd.DataFrame()
-    if navigation in _paginas_com_consultivo:
+    current_roster = (
+        _load_roster_cached(db_key) if spec.needs_roster else pd.DataFrame()
+    )
+    if spec.needs_consultivo:
         current_consultivo, current_consultivo_stats = _load_consultivo_cached(db_key)
     else:
         current_consultivo = pd.DataFrame()
@@ -2555,7 +2425,7 @@ def render_dashboard() -> None:
 
     _drive_consultivo_disponivel = _drive_service_account() is not None
 
-    if navigation in _paginas_somente_consultivo and _drive_consultivo_disponivel:
+    if somente_consultivo and _drive_consultivo_disponivel:
         _first_cons_dt = str(current_consultivo_stats.get("first_date") or "")
         _sem_base_2025 = not _first_cons_dt or _first_cons_dt > "2025-12-31"
         _decorrido_cons = time.time() - float(
@@ -2565,6 +2435,7 @@ def render_dashboard() -> None:
         if _decorrido_cons >= _cooldown_cons:
             _ok_auto_cons, _, _ = _sync_consultivo_folder(force=False)
             if _ok_auto_cons:
+                _load_monthly_summaries_cached.clear()
                 current_consultivo, current_consultivo_stats = _load_consultivo_cached(
                     db_key
                 )
@@ -2572,6 +2443,7 @@ def render_dashboard() -> None:
     def _acao_sincronizar_consultivo_manual() -> None:
         with st.spinner("Sincronizando pasta Histórico Consultivo no Google Drive..."):
             ok_sync, msg_sync, issues_sync = _sync_consultivo_folder(force=True)
+        _load_monthly_summaries_cached.clear()
         st.session_state["consultivo_manual_sync_feedback"] = (
             "warning" if (not ok_sync or issues_sync) else "success",
             msg_sync,
@@ -2585,9 +2457,9 @@ def render_dashboard() -> None:
     )
 
     if (
-        (navigation not in _paginas_somente_consultivo and is_demo)
-        or (navigation in _paginas_somente_consultivo and is_demo_consultivo)
-    ) and navigation != "Saúde dos dados":
+        (not somente_consultivo and is_demo)
+        or (somente_consultivo and is_demo_consultivo)
+    ) and current_page != "Saúde dos dados":
         st.markdown(
             """
             <div class="demo-banner">
@@ -2598,7 +2470,7 @@ def render_dashboard() -> None:
             unsafe_allow_html=True,
         )
 
-    if navigation in _paginas_somente_consultivo:
+    if somente_consultivo:
         _feedback_cons = st.session_state.pop("consultivo_manual_sync_feedback", None)
         if isinstance(_feedback_cons, tuple) and len(_feedback_cons) == 2:
             _tipo_fb, _msg_fb = _feedback_cons
@@ -2607,14 +2479,14 @@ def render_dashboard() -> None:
             else:
                 st.warning(_msg_fb)
 
-    if navigation == "Consultivo":
+    if current_page == "Consultivo":
         st.button(
             "Abrir Comparativo 2025 x 2026 de Consultivos",
             key="atalho_comp_consultivo",
             icon=":material/trending_up:",
             on_click=_abrir_comparativo_consultivo,
         )
-        render_consultivo(
+        load_page_callable("Consultivo")(
             current_consultivo,
             current_roster,
             consultivo_stats=current_consultivo_stats,
@@ -2623,8 +2495,8 @@ def render_dashboard() -> None:
             on_sync_consultivo=_acao_sincronizar_consultivo_manual,
             sync_issues=st.session_state.get("consultivo_sync_issues"),
         )
-    elif navigation == "Consultivo 2025 x 2026":
-        render_comparativo_consultivo(
+    elif current_page == "Consultivo 2025 x 2026":
+        load_page_callable("Consultivo 2025 x 2026")(
             current_consultivo,
             roster=current_roster,
             consultivo_folder_id=CONSULTIVO_FOLDER_ID,
@@ -2633,33 +2505,33 @@ def render_dashboard() -> None:
             sync_issues=st.session_state.get("consultivo_sync_issues"),
             on_abrir_painel_consultivo=_abrir_painel_consultivo,
             on_abrir_comparativo_contratos=_abrir_comparativo_anos,
-            on_dados_importados=_load_consultivo_cached.clear,
+            on_dados_importados=_invalidate_all_data_caches,
         )
-    elif navigation == "Visão 360°":
-        render_visao_360(
+    elif current_page == "Visão 360°":
+        load_page_callable("Visão 360°")(
             current_records,
             current_consultivo,
             roster_frame=current_roster,
         )
-    elif navigation == "Turnover & Ramp-up":
-        render_turnover_rampup(
+    elif current_page == "Turnover & Ramp-up":
+        load_page_callable("Turnover & Ramp-up")(
             current_records,
             roster_frame=current_roster,
         )
-    elif navigation == "Comparativo 2025 x 2026":
+    elif current_page == "Comparativo 2025 x 2026":
         st.button(
             "Ver Comparativo 2025 x 2026 de Consultivos",
             key="atalho_ir_comp_consultivo",
             icon=":material/trending_up:",
             on_click=_abrir_comparativo_consultivo,
         )
-        render_comparativo_anos(
+        load_page_callable("Comparativo 2025 x 2026")(
             current_records,
             roster=current_roster,
             consultivo_frame=current_consultivo,
         )
-    elif navigation == "Saúde dos dados":
-        render_saude_dados(
+    elif current_page == "Saúde dos dados":
+        load_page_callable("Saúde dos dados")(
             current_records,
             current_stats,
             import_batches(),
@@ -2667,10 +2539,17 @@ def render_dashboard() -> None:
             consultivo_stats=current_consultivo_stats,
             lotes_consultivo=consultivo_import_batches(),
         )
-        _render_governanca_avancada(current_records, current_roster)
-    elif navigation == "Quadro de técnicos":
+        from components.governanca_avancada import render_governanca_avancada
+
+        render_governanca_avancada(
+            current_records,
+            current_roster,
+            on_invalidate_caches=_invalidate_all_data_caches,
+        )
+    elif current_page == "Quadro de técnicos":
+        render_quadro_fn = load_page_callable("Quadro de técnicos")
         if current_records.empty:
-            render_quadro_tecnicos(
+            render_quadro_fn(
                 current_records,
                 current_roster,
                 sheet_id=ROSTER_SHEET_ID,
@@ -2681,7 +2560,7 @@ def render_dashboard() -> None:
                 show_technicians=False,
                 apply_roster_filters=False,
             )
-            render_quadro_tecnicos(
+            render_quadro_fn(
                 filtered_quadro,
                 current_roster,
                 sheet_id=ROSTER_SHEET_ID,
@@ -2707,7 +2586,7 @@ def render_dashboard() -> None:
             period_end,
         ) = apply_filters(
             current_records,
-            show_technicians=navigation != "Técnicos",
+            show_technicians=current_page != "Técnicos",
             roster=current_roster,
         )
         if filtered.empty:
@@ -2715,7 +2594,7 @@ def render_dashboard() -> None:
                 "Não há produção para os filtros selecionados. "
                 "Ajuste o período, projeto ou técnico."
             )
-        elif navigation == "Visão geral":
+        elif current_page == "Visão geral":
             render_overview(
                 filtered,
                 current_records,
@@ -2724,29 +2603,44 @@ def render_dashboard() -> None:
                 projects,
                 period_start,
                 period_end,
+                monthly_prod_summary=monthly_prod_summary,
             )
-        elif navigation == "Radar de Alertas":
-            render_radar_alertas(
+        elif current_page == "Modo Reunião":
+            periodo_lbl = (
+                f"{period_start.strftime('%d/%m/%Y')} a {period_end.strftime('%d/%m/%Y')}"
+                if pd.notna(period_start) and pd.notna(period_end)
+                else str(st.session_state.get("period_filter", "Período selecionado"))
+            )
+            load_page_callable("Modo Reunião")(
+                filtered,
+                consultivo_frame=current_consultivo,
+                roster_frame=current_roster,
+                periodo_label=periodo_lbl,
+                monthly_prod_summary=monthly_prod_summary,
+                monthly_cons_summary=monthly_cons_summary,
+            )
+        elif current_page == "Radar de Alertas":
+            load_page_callable("Radar de Alertas")(
                 filtered,
                 consultivo_frame=current_consultivo,
                 roster_frame=current_roster,
             )
-        elif navigation == "Scorecard Supervisão":
-            render_scorecard_supervisao(
+        elif current_page == "Scorecard Supervisão":
+            load_page_callable("Scorecard Supervisão")(
                 filtered,
                 consultivo_frame=current_consultivo,
                 roster_frame=current_roster,
             )
-        elif navigation == "Projetos":
-            render_projetos(filtered)
-        elif navigation == "Quantidade de O.S.":
+        elif current_page == "Projetos":
+            load_page_callable("Projetos")(filtered)
+        elif current_page == "Quantidade de O.S.":
             st.button(
                 "Abrir Comparativo 2025 x 2026 de Contratos e O.S.",
                 key="atalho_comp_os",
                 icon=":material/compare_arrows:",
                 on_click=_abrir_comparativo_anos,
             )
-            render_prod_orders(
+            load_page_callable("Quantidade de O.S.")(
                 filtered,
                 records=current_records,
                 technicians=technicians,
@@ -2755,25 +2649,30 @@ def render_dashboard() -> None:
                 period_start=period_start,
                 period_end=period_end,
             )
-        elif navigation == "Contratos":
+        elif current_page == "Contratos":
             st.button(
                 "Abrir Comparativo 2025 x 2026 de Contratos e O.S.",
                 key="atalho_comp_contratos",
                 icon=":material/compare_arrows:",
                 on_click=_abrir_comparativo_anos,
             )
-            render_contratos(filtered)
-        elif navigation == "Produtividade unitária":
-            render_produtividade_unitaria(filtered)
-        elif navigation == "Qualidade & Ritmo":
-            render_qualidade_ritmo(filtered)
-        elif navigation == "Regularidade":
+            load_page_callable("Contratos")(filtered)
+        elif current_page == "Produtividade unitária":
+            load_page_callable("Produtividade unitária")(filtered)
+        elif current_page == "Qualidade & Ritmo":
+            load_page_callable("Qualidade & Ritmo")(filtered)
+        elif current_page == "Regularidade":
+            from components.visoes_dashboards import (
+                render_regularidade_producao,
+                render_sazonalidade,
+            )
+
             render_regularidade_producao(filtered, period_start, period_end)
             st.markdown("<div style='height:1rem'></div>", unsafe_allow_html=True)
             render_sazonalidade(filtered, period_start, period_end)
-        elif navigation == "Eficiência":
-            render_eficiencia(filtered)
-        elif navigation == "Técnicos":
+        elif current_page == "Eficiência":
+            load_page_callable("Eficiência")(filtered)
+        elif current_page == "Técnicos":
             render_technicians(
                 filtered,
                 consultivo_frame=current_consultivo,
@@ -2788,10 +2687,17 @@ def render_dashboard() -> None:
     )
     logger.info(
         "pagina_renderizada",
-        pagina=navigation,
+        pagina=current_page,
         duracao_ms=round((time.perf_counter() - render_t0) * 1000.0, 2),
         registros_base=int(len(current_records)),
     )
 
 
-render_dashboard()
+if navigation and navigation != _active_st_page.title and navigation in _st_pages:
+    _snapshot_shared_state_for_switch()
+    st.session_state["_pending_navigation"] = navigation
+    st.session_state["_pending_sidebar_group"] = str(selected_group)
+    st.session_state["_active_st_page_title"] = navigation
+    st.switch_page(_st_pages[navigation])
+
+_active_st_page.run()
