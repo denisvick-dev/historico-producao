@@ -22,6 +22,30 @@ CORES_FAIXAS = {
 }
 
 
+def _faixas_mais_frequentes(contagem: pd.DataFrame) -> pd.Series:
+    """Calcula a(s) faixa(s) mais frequente(s) por linha de forma vetorizada."""
+    if contagem.empty:
+        return pd.Series(dtype="object", index=contagem.index)
+    colunas = [str(col) for col in contagem.columns]
+    valores = contagem.to_numpy(dtype=float, copy=False)
+    maximos = valores.max(axis=1, keepdims=True)
+    mascara = valores == maximos
+    rotulos = [
+        " / ".join(col for col, is_max in zip(colunas, linha, strict=False) if is_max)
+        for linha in mascara
+    ]
+    return pd.Series(rotulos, index=contagem.index, dtype="object")
+
+
+def _garantir_competencia(serie: pd.Series) -> pd.Series:
+    """Converte coluna temporal para início do mês sem re-parsear datetime64."""
+    if pd.api.types.is_datetime64_any_dtype(serie):
+        dt = serie
+    else:
+        dt = pd.to_datetime(serie, errors="coerce", format="mixed")
+    return pd.Series(dt.dt.to_period("M").dt.to_timestamp(), index=serie.index)
+
+
 def calcular_eficiencia(frame: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Soma os pontos por técnico e mês e encontra a(s) faixa(s) mais frequente(s).
 
@@ -38,21 +62,20 @@ def calcular_eficiencia(frame: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame
         return pd.DataFrame(columns=detalhes_colunas), pd.DataFrame(
             columns=resumo_colunas
         )
-    work = frame.copy()
-    work["Competência"] = (
-        pd.to_datetime(work[coluna_data], errors="coerce")
-        .dt.to_period("M")
-        .dt.to_timestamp()
-    )
-    work["Técnico"] = (
-        work["technician"]
-        .fillna("Sem técnico")
-        .astype(str)
-        .str.strip()
-        .replace("", "Sem técnico")
-    )
-    work["Pontos"] = pd.to_numeric(work["points"], errors="coerce")
-    work = work.dropna(subset=["Competência", "Pontos"])
+    work = pd.DataFrame(
+        {
+            "Competência": _garantir_competencia(frame[coluna_data]),
+            "Técnico": (
+                frame["technician"]
+                .fillna("Sem técnico")
+                .astype(str)
+                .str.strip()
+                .replace("", "Sem técnico")
+            ),
+            "Pontos": pd.to_numeric(frame["points"], errors="coerce"),
+        },
+        index=frame.index,
+    ).dropna(subset=["Competência", "Pontos"])
     if work.empty:
         return pd.DataFrame(columns=detalhes_colunas), pd.DataFrame(
             columns=resumo_colunas
@@ -73,9 +96,7 @@ def calcular_eficiencia(frame: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame
     )
     resumo = contagem.copy()
     resumo.insert(0, "Meses com registros", contagem.sum(axis=1))
-    resumo["Faixa mais frequente"] = contagem.apply(
-        lambda linha: " / ".join(linha.index[linha.eq(linha.max())]), axis=1
-    )
+    resumo["Faixa mais frequente"] = _faixas_mais_frequentes(contagem)
     resumo = resumo.reset_index()[resumo_colunas]
     return detalhes[detalhes_colunas], resumo
 
@@ -234,13 +255,7 @@ def resumir_eficiencia_contrato(
     work = pd.DataFrame(
         {
             "Contrato": contratos_limpos.loc[validos].astype(str),
-            "Competência": (
-                pd.to_datetime(
-                    frame.loc[validos, fonte], errors="coerce", format="mixed"
-                )
-                .dt.to_period("M")
-                .dt.to_timestamp()
-            ),
+            "Competência": _garantir_competencia(frame.loc[validos, fonte]),
             "Pontos": pd.to_numeric(frame.loc[validos, "points"], errors="coerce"),
         },
         index=frame.index[validos],
@@ -267,9 +282,7 @@ def resumir_eficiencia_contrato(
     contagem = pd.crosstab(detalhes["Contrato"], detalhes["Faixa"]).reindex(
         columns=FAIXAS, fill_value=0
     )
-    faixa_frequente = contagem.apply(
-        lambda linha: " / ".join(linha.index[linha.eq(linha.max())]), axis=1
-    )
+    faixa_frequente = _faixas_mais_frequentes(contagem)
 
     # Os stubs do pandas não descrevem todas as formas de agregação nomeada.
     resumo = cast(Any, detalhes.groupby("Contrato", as_index=False)).agg(
@@ -312,9 +325,7 @@ def calcular_matriz_eficiencia_contrato(
     pontos = detalhes.groupby("Contrato")["Pontos"].sum()
     meses = contagem.sum(axis=1).astype(int)
     media = pontos.div(meses.where(meses.gt(0))).fillna(0.0)
-    frequente = contagem.apply(
-        lambda linha: " / ".join(linha.index[linha.eq(linha.max())]), axis=1
-    )
+    frequente = _faixas_mais_frequentes(contagem)
 
     matriz = contagem.copy()
     matriz.insert(0, "Média mensal", media)

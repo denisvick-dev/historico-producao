@@ -305,14 +305,13 @@ def injetar_ativos_sem_movimentacao(
                 if normalize_text(v)
             }
 
-    def _is_absent(row: pd.Series) -> bool:
-        lg = str(row["_login_norm"])
-        tk = str(row["_tech_key"])
-        if lg:
-            return lg not in present_logins
-        return bool(tk) and tk not in present_names
-
-    faltantes = ativos[ativos.apply(_is_absent, axis=1)]
+    login_norm = ativos["_login_norm"].astype(str)
+    tech_key = ativos["_tech_key"].astype(str)
+    has_login = login_norm.ne("")
+    absent_mask = (has_login & ~login_norm.isin(present_logins)) | (
+        ~has_login & tech_key.ne("") & ~tech_key.isin(present_names)
+    )
+    faltantes = ativos.loc[absent_mask]
     if faltantes.empty:
         return df_periodo.copy()
 
@@ -709,6 +708,180 @@ def sanitizar_csv_exportacao(df: pd.DataFrame) -> bytes:
         if mask_formula.any():
             df_safe.loc[mask_formula, col] = "'" + s.loc[mask_formula]
     return df_safe.to_csv(index=False, sep=";").encode("utf-8-sig")
+
+
+def preparar_funil_netsales(df_f: pd.DataFrame) -> dict[str, pd.DataFrame]:
+    """Extrai métricas de funil NetSales: status, tabulação, mix de planos e tipo de serviço."""
+    vazio_status = pd.DataFrame(
+        columns=[
+            "Status NetSales",
+            "Registros",
+            "Consultivos",
+            "Produtos",
+            "Participação (%)",
+            "Conversão (%)",
+        ]
+    )
+    vazio_tab = pd.DataFrame(
+        columns=[
+            "Tipo de Tabulação",
+            "Registros",
+            "Consultivos",
+            "Produtos",
+            "Participação (%)",
+        ]
+    )
+    vazio_plano = pd.DataFrame(columns=["Plano", "Categoria", "Registros", "Produtos"])
+    vazio_serv = pd.DataFrame(
+        columns=[
+            "Tipo de Serviço",
+            "Registros",
+            "Consultivos",
+            "Produtos",
+            "Conversão (%)",
+        ]
+    )
+
+    if df_f.empty:
+        return {
+            "status": vazio_status,
+            "tabulacao": vazio_tab,
+            "planos": vazio_plano,
+            "servicos": vazio_serv,
+        }
+
+    work = df_f.copy()
+    if "TIPO DE TABULAÇÃO" in work.columns:
+        work = work[
+            work["TIPO DE TABULAÇÃO"]
+            .astype(str)
+            .str.strip()
+            .str.upper()
+            .ne("SEM MOVIMENTAÇÃO")
+        ]
+    if work.empty:
+        return {
+            "status": vazio_status,
+            "tabulacao": vazio_tab,
+            "planos": vazio_plano,
+            "servicos": vazio_serv,
+        }
+
+    q_cons_raw = (
+        work["Qtde. Cons."]
+        if "Qtde. Cons." in work.columns
+        else pd.Series(0, index=work.index)
+    )
+    q_prod_raw = (
+        work["Qtde. Prod."]
+        if "Qtde. Prod." in work.columns
+        else pd.Series(0, index=work.index)
+    )
+    q_cons = pd.to_numeric(q_cons_raw, errors="coerce").fillna(0).astype(int)
+    q_prod = pd.to_numeric(q_prod_raw, errors="coerce").fillna(0).astype(int)
+    work["_cons"] = q_cons
+    work["_prod"] = q_prod
+    total_regs = max(len(work), 1)
+
+    def _clean_cat(col_name: str, fallback: str) -> pd.Series:
+        if col_name not in work.columns:
+            return pd.Series(fallback, index=work.index)
+        s = work[col_name].fillna("").astype(str).str.strip()
+        return s.where(
+            s.ne("") & ~s.isin({"-", "NAN", "NONE", "nan", "None"}), fallback
+        )
+
+    # 1) Status NetSales
+    work["_status_ns"] = _clean_cat("STATUS NETSALES", "Sem Status")
+    st_df = (
+        work.groupby("_status_ns", as_index=False)
+        .agg(
+            Registros=("_cons", "size"),
+            Consultivos=("_cons", "sum"),
+            Produtos=("_prod", "sum"),
+        )
+        .rename(columns={"_status_ns": "Status NetSales"})
+        .sort_values(["Registros", "Consultivos"], ascending=[False, False])
+        .reset_index(drop=True)
+    )
+    st_df["Participação (%)"] = st_df["Registros"] / total_regs * 100.0
+    st_df["Conversão (%)"] = np.where(
+        st_df["Consultivos"] > 0, st_df["Produtos"] / st_df["Consultivos"] * 100.0, 0.0
+    )
+
+    # 2) Tipo de Tabulação
+    work["_tab_ns"] = _clean_cat("TIPO DE TABULAÇÃO", "Não Informado")
+    tab_df = (
+        work.groupby("_tab_ns", as_index=False)
+        .agg(
+            Registros=("_cons", "size"),
+            Consultivos=("_cons", "sum"),
+            Produtos=("_prod", "sum"),
+        )
+        .rename(columns={"_tab_ns": "Tipo de Tabulação"})
+        .sort_values(["Registros", "Consultivos"], ascending=[False, False])
+        .reset_index(drop=True)
+    )
+    tab_df["Participação (%)"] = tab_df["Registros"] / total_regs * 100.0
+
+    # 3) Mix de Planos (Internet + TV)
+    partes_planos: list[pd.DataFrame] = []
+    for col_p, cat_lbl in (
+        ("PLANO INTERNET", "Internet / Avançados"),
+        ("PLANO TV", "TV / Entretenimento"),
+    ):
+        if col_p not in work.columns:
+            continue
+        p_ser = work[col_p].fillna("").astype(str).str.strip()
+        p_upper = p_ser.str.upper()
+        valid_p = work[
+            p_ser.ne("")
+            & ~p_upper.isin({"-", "0", "NA", "N/A", "NAN", "NONE", "SEM PLANO"})
+        ].copy()
+        if valid_p.empty:
+            continue
+        valid_p["_plano"] = p_ser.loc[valid_p.index]
+        grp_p = (
+            valid_p.groupby("_plano", as_index=False)
+            .agg(Registros=("_prod", "size"), Produtos=("_prod", "sum"))
+            .rename(columns={"_plano": "Plano"})
+        )
+        grp_p["Categoria"] = cat_lbl
+        partes_planos.append(grp_p[["Plano", "Categoria", "Registros", "Produtos"]])
+
+    planos_df = (
+        pd.concat(partes_planos, ignore_index=True)
+        .sort_values(["Produtos", "Registros"], ascending=[False, False])
+        .reset_index(drop=True)
+        if partes_planos
+        else vazio_plano
+    )
+
+    # 4) Tipo de Serviço
+    work["_serv_ns"] = _clean_cat("TIPO SERVIÇO", "Sem Tipo")
+    serv_df = (
+        work.groupby("_serv_ns", as_index=False)
+        .agg(
+            Registros=("_cons", "size"),
+            Consultivos=("_cons", "sum"),
+            Produtos=("_prod", "sum"),
+        )
+        .rename(columns={"_serv_ns": "Tipo de Serviço"})
+        .sort_values(["Produtos", "Consultivos"], ascending=[False, False])
+        .reset_index(drop=True)
+    )
+    serv_df["Conversão (%)"] = np.where(
+        serv_df["Consultivos"] > 0,
+        serv_df["Produtos"] / serv_df["Consultivos"] * 100.0,
+        0.0,
+    )
+
+    return {
+        "status": st_df,
+        "tabulacao": tab_df,
+        "planos": planos_df,
+        "servicos": serv_df,
+    }
 
 
 def _resolver_janela_datas(
@@ -1536,11 +1709,12 @@ def render_consultivo(
     st.markdown("<div style='height: 20px'></div>", unsafe_allow_html=True)
 
     # ── Abas Analíticas Inferiores ──
-    aba_graf, aba_zeros, aba_meta_diaria = st.tabs(
+    aba_graf, aba_zeros, aba_meta_diaria, aba_funil = st.tabs(
         [
             "📈 Desempenho e Matriz",
             "🚫 Equipes sem Consultivos",
             "📅 Meta Diária por Monitor",
+            "🔎 Funil NetSales & Mix de Planos",
         ]
     )
 
@@ -1715,6 +1889,153 @@ def render_consultivo(
                 st.markdown(
                     gerar_html_tabela_cons(diario_exib, usar_vendedor=True),
                     unsafe_allow_html=True,
+                )
+
+    with aba_funil:
+        funil = preparar_funil_netsales(df_f)
+        df_status = funil["status"]
+        df_tab = funil["tabulacao"]
+        df_planos = funil["planos"]
+        df_serv = funil["servicos"]
+
+        if df_status.empty and df_planos.empty:
+            render_insight(
+                "Não há colunas de status, tabulação ou planos preenchidas neste recorte para montar o Funil NetSales.",
+                tipo="info",
+            )
+        else:
+            f_col1, f_col2 = st.columns(2)
+            with f_col1:
+                st.markdown("##### Funil por Status NetSales")
+                if not df_status.empty:
+                    st_plot = df_status.head(10).sort_values(
+                        "Registros", ascending=True
+                    )
+                    fig_st = go.Figure(
+                        go.Bar(
+                            y=st_plot["Status NetSales"],
+                            x=st_plot["Registros"],
+                            orientation="h",
+                            marker_color=Cores.PRIMARIA,
+                            text=[
+                                f"{int(r)} ({p:.1f}%)"
+                                for r, p in zip(
+                                    st_plot["Registros"],
+                                    st_plot["Participação (%)"],
+                                    strict=False,
+                                )
+                            ],
+                            textposition="outside",
+                            hovertemplate="<b>%{y}</b><br>Registros: %{x}<extra></extra>",
+                        )
+                    )
+                    max_st = int(st_plot["Registros"].max()) if not st_plot.empty else 1
+                    fig_st.update_xaxes(range=[0, max_st * 1.32])
+                    _aplicar_layout_grafico_consultivo(
+                        fig_st, dark_mode=dark_mode, height=340
+                    )
+                    st.plotly_chart(
+                        fig_st, width="stretch", key="cons_funil_status_chart"
+                    )
+
+            with f_col2:
+                st.markdown("##### Pareto por Tipo de Tabulação")
+                if not df_tab.empty:
+                    tab_plot = df_tab.head(10).sort_values("Registros", ascending=True)
+                    fig_tab = go.Figure(
+                        go.Bar(
+                            y=tab_plot["Tipo de Tabulação"],
+                            x=tab_plot["Registros"],
+                            orientation="h",
+                            marker_color=Cores.SECUNDARIA,
+                            text=[
+                                f"{int(r)} ({p:.1f}%)"
+                                for r, p in zip(
+                                    tab_plot["Registros"],
+                                    tab_plot["Participação (%)"],
+                                    strict=False,
+                                )
+                            ],
+                            textposition="outside",
+                            hovertemplate="<b>%{y}</b><br>Registros: %{x}<extra></extra>",
+                        )
+                    )
+                    max_tb = (
+                        int(tab_plot["Registros"].max()) if not tab_plot.empty else 1
+                    )
+                    fig_tab.update_xaxes(range=[0, max_tb * 1.32])
+                    _aplicar_layout_grafico_consultivo(
+                        fig_tab, dark_mode=dark_mode, height=340
+                    )
+                    st.plotly_chart(
+                        fig_tab, width="stretch", key="cons_funil_tab_chart"
+                    )
+
+            p_col1, p_col2 = st.columns(2)
+            with p_col1:
+                st.markdown("##### Mix Real de Planos (Internet & TV)")
+                if not df_planos.empty:
+                    pl_plot = df_planos.head(12).sort_values("Produtos", ascending=True)
+                    fig_pl = go.Figure(
+                        go.Bar(
+                            y=pl_plot["Plano"],
+                            x=pl_plot["Produtos"],
+                            orientation="h",
+                            marker_color=[
+                                Cores.PRIMARIA
+                                if c.startswith("Internet")
+                                else "#047857"
+                                for c in pl_plot["Categoria"]
+                            ],
+                            text=pl_plot["Produtos"],
+                            textposition="outside",
+                            hovertemplate="<b>%{y}</b><br>Produtos: %{x}<extra></extra>",
+                        )
+                    )
+                    max_pl = int(pl_plot["Produtos"].max()) if not pl_plot.empty else 1
+                    fig_pl.update_xaxes(range=[0, max_pl * 1.25])
+                    _aplicar_layout_grafico_consultivo(
+                        fig_pl, dark_mode=dark_mode, height=350
+                    )
+                    st.plotly_chart(
+                        fig_pl, width="stretch", key="cons_funil_planos_chart"
+                    )
+                else:
+                    render_insight(
+                        "Sem planos de TV/Internet preenchidos no recorte.", tipo="info"
+                    )
+
+            with p_col2:
+                st.markdown("##### Conversão por Tipo de Serviço")
+                if not df_serv.empty:
+                    st.dataframe(
+                        df_serv,
+                        width="stretch",
+                        hide_index=True,
+                        column_config={
+                            "Conversão (%)": st.column_config.NumberColumn(
+                                format="%.1f%%"
+                            ),
+                        },
+                    )
+                else:
+                    render_insight(
+                        "Sem tipos de serviço preenchidos no recorte.", tipo="info"
+                    )
+
+            with st.expander(
+                "📋 Detalhamento de Status NetSales & Tabulações", expanded=False
+            ):
+                st.dataframe(
+                    df_status,
+                    width="stretch",
+                    hide_index=True,
+                    column_config={
+                        "Participação (%)": st.column_config.NumberColumn(
+                            format="%.1f%%"
+                        ),
+                        "Conversão (%)": st.column_config.NumberColumn(format="%.1f%%"),
+                    },
                 )
 
     st.markdown("<div style='height: 16px'></div>", unsafe_allow_html=True)

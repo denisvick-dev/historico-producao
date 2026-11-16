@@ -12,6 +12,7 @@ import io
 import os
 import re
 import sqlite3
+import threading
 import unicodedata
 from collections.abc import Callable, Generator, Iterable, Mapping
 from contextlib import contextmanager
@@ -20,6 +21,8 @@ from pathlib import Path
 from typing import Any, Literal
 
 import pandas as pd
+
+_DB_WRITE_LOCK = threading.RLock()
 
 PROD = "Prod"
 GPON = "Gpon"
@@ -889,53 +892,75 @@ def process_roster_dataframe(
         if normalize_text(source_tab) == normalize_text(ROSTER_TERMINATED_TAB)
         else "ATIVO"
     )
+    n_rows = len(frame)
+
+    def _col_list(col_name: str | None) -> list[Any]:
+        if col_name is None or col_name not in frame.columns:
+            return [None] * n_rows
+        return frame[col_name].tolist()
+
     rows: list[dict[str, Any]] = []
     issues: list[str] = []
-    for _, series in frame.iterrows():
-        technician = clean_technician(series.get(tech_col))
+    for (
+        tech_raw,
+        monitor_raw,
+        re_raw,
+        login_raw,
+        un_raw,
+        base_raw,
+        status_raw,
+        mod_raw,
+        term_date_raw,
+        term_reason_raw,
+    ) in zip(
+        _col_list(tech_col),
+        _col_list(monitor_col),
+        _col_list(re_col),
+        _col_list(login_col),
+        _col_list(un_col),
+        _col_list(base_col),
+        _col_list(status_col),
+        _col_list(modified_col),
+        _col_list(term_date_col),
+        _col_list(term_reason_col),
+        strict=False,
+    ):
+        technician = clean_technician(tech_raw)
         tech_key = normalize_text(technician)
         if not technician or not tech_key:
             continue
-        monitor_raw = series.get(monitor_col) if monitor_col is not None else None
         monitor = clean_technician(monitor_raw) or "Sem monitor"
         rows.append(
             {
                 "technician_key": tech_key,
                 "technician": technician,
-                "re_code": clean_code(series.get(re_col)) if re_col is not None else "",
-                "login": (
-                    clean_code(series.get(login_col)).upper()
-                    if login_col is not None
-                    else ""
-                ),
+                "re_code": clean_code(re_raw) if re_col is not None else "",
+                "login": clean_code(login_raw).upper() if login_col is not None else "",
                 "monitor": monitor,
                 "un": (
-                    _clean_optional_label(series.get(un_col), "Sem U.N.", upper=True)
+                    _clean_optional_label(un_raw, "Sem U.N.", upper=True)
                     if un_col is not None
                     else "Sem U.N."
                 ),
                 "base": (
-                    _clean_optional_label(series.get(base_col), "Sem base", upper=True)
+                    _clean_optional_label(base_raw, "Sem base", upper=True)
                     if base_col is not None
                     else "Sem base"
                 ),
-                "status": clean_roster_status(
-                    series.get(status_col) if status_col is not None else None,
-                    default=default_status,
-                ),
+                "status": clean_roster_status(status_raw, default=default_status),
                 "source_tab": source_tab,
                 "last_modified": (
-                    _clean_optional_date_str(series.get(modified_col))
+                    _clean_optional_date_str(mod_raw)
                     if modified_col is not None
                     else ""
                 ),
                 "termination_date": (
-                    _clean_optional_date_str(series.get(term_date_col))
+                    _clean_optional_date_str(term_date_raw)
                     if term_date_col is not None
                     else ""
                 ),
                 "termination_reason": (
-                    _clean_optional_label(series.get(term_reason_col), "")
+                    _clean_optional_label(term_reason_raw, "")
                     if term_reason_col is not None
                     else ""
                 ),
@@ -1588,11 +1613,27 @@ def process_consultivo_upload(
     return process_consultivo_dataframe(frame, filename, default_date)
 
 
+_INITIALIZED_DBS: set[tuple[str, int]] = set()
+
+
+def _db_identity(path: Path) -> tuple[str, int] | None:
+    try:
+        resolved = path.resolve()
+        return (str(resolved), resolved.stat().st_ino)
+    except OSError:
+        return None
+
+
 @contextmanager
 def connect() -> Generator[sqlite3.Connection, None, None]:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(DB_PATH, timeout=30)
     connection.row_factory = sqlite3.Row
+    connection.execute("PRAGMA busy_timeout=15000")
+    connection.execute("PRAGMA journal_mode=WAL")
+    connection.execute("PRAGMA synchronous=NORMAL")
+    connection.execute("PRAGMA cache_size=-64000")
+    connection.execute("PRAGMA temp_store=MEMORY")
     try:
         with connection:
             yield connection
@@ -1600,8 +1641,12 @@ def connect() -> Generator[sqlite3.Connection, None, None]:
         connection.close()
 
 
-def init_database() -> None:
-    with connect() as connection:
+def init_database(*, force: bool = False) -> None:
+    if not force:
+        identity = _db_identity(DB_PATH)
+        if identity is not None and identity in _INITIALIZED_DBS:
+            return
+    with _DB_WRITE_LOCK, connect() as connection:
         connection.executescript(
             """
             CREATE TABLE IF NOT EXISTS production_records (
@@ -1656,6 +1701,40 @@ def init_database() -> None:
                 ON technician_roster(monitor);
             CREATE INDEX IF NOT EXISTS idx_roster_base
                 ON technician_roster(base);
+            CREATE TABLE IF NOT EXISTS technician_aliases (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                alias_type TEXT NOT NULL CHECK(alias_type IN ('name', 'login')),
+                source_value TEXT NOT NULL,
+                canonical_technician TEXT NOT NULL,
+                notes TEXT NOT NULL DEFAULT '',
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(alias_type, source_value)
+            );
+            CREATE TABLE IF NOT EXISTS summary_production_monthly (
+                period TEXT NOT NULL,
+                technician TEXT NOT NULL,
+                points_prod REAL NOT NULL DEFAULT 0,
+                points_gpon REAL NOT NULL DEFAULT 0,
+                points_total REAL NOT NULL DEFAULT 0,
+                os_count INTEGER NOT NULL DEFAULT 0,
+                contracts_count INTEGER NOT NULL DEFAULT 0,
+                rows_count INTEGER NOT NULL DEFAULT 0,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY(period, technician)
+            );
+            CREATE TABLE IF NOT EXISTS summary_consultivo_monthly (
+                period TEXT NOT NULL,
+                login_netsales TEXT NOT NULL,
+                seller TEXT NOT NULL,
+                qtde_consultivo INTEGER NOT NULL DEFAULT 0,
+                qtde_produtos INTEGER NOT NULL DEFAULT 0,
+                qtde_mesh INTEGER NOT NULL DEFAULT 0,
+                qtde_tv INTEGER NOT NULL DEFAULT 0,
+                qtde_virtua INTEGER NOT NULL DEFAULT 0,
+                rows_count INTEGER NOT NULL DEFAULT 0,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY(period, login_netsales, seller)
+            );
             CREATE TABLE IF NOT EXISTS consultivo_records (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 reference_date TEXT NOT NULL,
@@ -1732,6 +1811,28 @@ def init_database() -> None:
         connection.execute(
             "CREATE INDEX IF NOT EXISTS idx_production_wo ON production_records(wo)"
         )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_production_date_sheet "
+            "ON production_records(reference_date, source_sheet)"
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_production_file_contract "
+            "ON production_records(source_file, contract)"
+        )
+        consultivo_cols = {
+            row["name"]
+            for row in connection.execute(
+                "PRAGMA table_info(consultivo_records)"
+            ).fetchall()
+        }
+        if "status_netsales" in consultivo_cols:
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_consultivo_date_status "
+                "ON consultivo_records(reference_date, status_netsales)"
+            )
+    identity_after = _db_identity(DB_PATH)
+    if identity_after is not None:
+        _INITIALIZED_DBS.add(identity_after)
 
 
 def get_setting(key: str) -> str | None:
@@ -1745,12 +1846,255 @@ def get_setting(key: str) -> str | None:
 
 def set_setting(key: str, value: str) -> None:
     init_database()
-    with connect() as connection:
+    with _DB_WRITE_LOCK, connect() as connection:
         connection.execute(
             "INSERT INTO app_settings(key, value) VALUES (?, ?) "
             "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
             (key, value),
         )
+
+
+def backup_database(destination: Path | None = None) -> Path | None:
+    """Cria cópia consistente do SQLite via API nativa ``backup()`` (segura em modo WAL)."""
+    init_database()
+    if not DB_PATH.exists():
+        return None
+    target = destination
+    if target is None:
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        target = DB_PATH.parent / "backups" / f"{DB_PATH.stem}_{stamp}.db"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with _DB_WRITE_LOCK, connect() as source_conn:
+        source_conn.execute("PRAGMA optimize")
+        dest_conn = sqlite3.connect(target, timeout=30)
+        try:
+            source_conn.backup(dest_conn)
+        finally:
+            dest_conn.close()
+    return target
+
+
+def _read_aliases_rows(connection: sqlite3.Connection) -> pd.DataFrame:
+    return pd.read_sql_query(
+        """
+        SELECT id, alias_type, source_value, canonical_technician, notes, updated_at
+        FROM technician_aliases
+        ORDER BY alias_type, source_value
+        """,
+        connection,
+    )
+
+
+def _aliases_to_maps(
+    aliases: pd.DataFrame | None,
+) -> tuple[dict[str, str], dict[str, str]]:
+    """Converte tabela de aliases em mapas ``(name_aliases, login_aliases)``."""
+    name_map: dict[str, str] = {}
+    login_map: dict[str, str] = {}
+    if aliases is None or aliases.empty:
+        return name_map, login_map
+    for alias_type, source_val, canonical in zip(
+        aliases["alias_type"].tolist(),
+        aliases["source_value"].tolist(),
+        aliases["canonical_technician"].tolist(),
+        strict=False,
+    ):
+        a_type = str(alias_type or "").strip().lower()
+        canon_clean = clean_technician(canonical)
+        if not canon_clean:
+            continue
+        if a_type == "name":
+            src_key = normalize_text(source_val)
+            if src_key:
+                name_map[src_key] = canon_clean
+        elif a_type == "login":
+            src_login = clean_code(source_val).upper()
+            if src_login:
+                login_map[src_login] = canon_clean
+    return name_map, login_map
+
+
+def load_technician_aliases() -> pd.DataFrame:
+    """Retorna todos os aliases cadastrados (de-para de nomes e logins NetSales)."""
+    init_database()
+    with connect() as connection:
+        return _read_aliases_rows(connection)
+
+
+def save_technician_alias(
+    alias_type: Literal["name", "login"],
+    source_value: str,
+    canonical_technician: str,
+    notes: str = "",
+) -> bool:
+    """Cria ou atualiza um alias de nome ou login NetSales para um técnico canônico."""
+    a_type = str(alias_type).strip().lower()
+    if a_type not in {"name", "login"}:
+        raise ValueError("alias_type deve ser 'name' ou 'login'.")
+    src = (
+        normalize_text(source_value)
+        if a_type == "name"
+        else clean_code(source_value).upper()
+    )
+    canon = clean_technician(canonical_technician)
+    if not src or not canon:
+        return False
+    init_database()
+    with _DB_WRITE_LOCK, connect() as connection:
+        connection.execute(
+            """
+            INSERT INTO technician_aliases (
+                alias_type, source_value, canonical_technician, notes, updated_at
+            ) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(alias_type, source_value) DO UPDATE SET
+                canonical_technician = excluded.canonical_technician,
+                notes = excluded.notes,
+                updated_at = CURRENT_TIMESTAMP
+            """,
+            (a_type, src, canon, str(notes or "").strip()),
+        )
+    return True
+
+
+def delete_technician_alias(alias_id: int) -> None:
+    """Remove um alias de técnico pelo seu ID."""
+    init_database()
+    with _DB_WRITE_LOCK, connect() as connection:
+        connection.execute(
+            "DELETE FROM technician_aliases WHERE id = ?", (int(alias_id),)
+        )
+
+
+def _refresh_monthly_summaries_in_conn(connection: sqlite3.Connection) -> None:
+    """Atualiza as tabelas materializadas mensais dentro de uma conexão já aberta."""
+    prod_cols = {
+        row[1]
+        for row in connection.execute(
+            "PRAGMA table_info(production_records)"
+        ).fetchall()
+    }
+    connection.execute("DELETE FROM summary_production_monthly")
+    if {"reference_date", "technician", "source_sheet", "points"}.issubset(prod_cols):
+        contract_expr = (
+            """
+            COUNT(DISTINCT CASE
+                WHEN contract IS NOT NULL AND TRIM(contract) <> ''
+                     AND LOWER(TRIM(contract)) <> 'sem contrato'
+                THEN TRIM(contract)
+                ELSE NULL
+            END)
+            """
+            if "contract" in prod_cols
+            else "0"
+        )
+        connection.execute(
+            f"""
+            INSERT INTO summary_production_monthly (
+                period, technician, points_prod, points_gpon, points_total,
+                os_count, contracts_count, rows_count, updated_at
+            )
+            SELECT substr(reference_date, 1, 7) || '-01' AS period,
+                   technician,
+                   ROUND(SUM(CASE WHEN source_sheet = 'Prod' THEN points ELSE 0 END), 4) AS points_prod,
+                   ROUND(SUM(CASE WHEN source_sheet = 'Gpon' THEN points ELSE 0 END), 4) AS points_gpon,
+                   ROUND(SUM(points), 4) AS points_total,
+                   SUM(CASE WHEN source_sheet = 'Prod' THEN 1 ELSE 0 END) AS os_count,
+                   {contract_expr} AS contracts_count,
+                   COUNT(*) AS rows_count,
+                   CURRENT_TIMESTAMP
+            FROM production_records
+            WHERE reference_date IS NOT NULL AND LENGTH(reference_date) >= 7
+            GROUP BY substr(reference_date, 1, 7), technician
+            """
+        )
+
+    cons_cols = {
+        row[1]
+        for row in connection.execute(
+            "PRAGMA table_info(consultivo_records)"
+        ).fetchall()
+    }
+    connection.execute("DELETE FROM summary_consultivo_monthly")
+    if {"reference_date", "login_netsales"}.issubset(cons_cols):
+        seller_expr = "seller" if "seller" in cons_cols else "''"
+        seller_group = ", seller" if "seller" in cons_cols else ""
+        q_cons_expr = (
+            "COALESCE(SUM(qtde_consultivo), 0)"
+            if "qtde_consultivo" in cons_cols
+            else "0"
+        )
+        q_prod_expr = (
+            "COALESCE(SUM(qtde_produtos), 0)" if "qtde_produtos" in cons_cols else "0"
+        )
+        q_mesh_expr = "COALESCE(SUM(qtde_mesh), 0)" if "qtde_mesh" in cons_cols else "0"
+        q_tv_expr = "COALESCE(SUM(qtde_tv), 0)" if "qtde_tv" in cons_cols else "0"
+        q_vir_expr = (
+            "COALESCE(SUM(qtde_virtua), 0)" if "qtde_virtua" in cons_cols else "0"
+        )
+        connection.execute(
+            f"""
+            INSERT INTO summary_consultivo_monthly (
+                period, login_netsales, seller, qtde_consultivo, qtde_produtos,
+                qtde_mesh, qtde_tv, qtde_virtua, rows_count, updated_at
+            )
+            SELECT substr(reference_date, 1, 7) || '-01' AS period,
+                   login_netsales,
+                   {seller_expr} AS seller,
+                   {q_cons_expr},
+                   {q_prod_expr},
+                   {q_mesh_expr},
+                   {q_tv_expr},
+                   {q_vir_expr},
+                   COUNT(*),
+                   CURRENT_TIMESTAMP
+            FROM consultivo_records
+            WHERE reference_date IS NOT NULL AND LENGTH(reference_date) >= 7
+            GROUP BY substr(reference_date, 1, 7), login_netsales{seller_group}
+            """
+        )
+
+
+def refresh_monthly_summaries() -> None:
+    """Recalcula as tabelas materializadas mensais de Produção e Consultivo."""
+    init_database()
+    with _DB_WRITE_LOCK, connect() as connection:
+        _refresh_monthly_summaries_in_conn(connection)
+
+
+def load_monthly_production_summary() -> pd.DataFrame:
+    """Lê a tabela materializada mensal de Produção (ultrarrápida para visões agregadas)."""
+    init_database()
+    with connect() as connection:
+        df = pd.read_sql_query(
+            """
+            SELECT period, technician, points_prod, points_gpon, points_total,
+                   os_count, contracts_count, rows_count
+            FROM summary_production_monthly
+            ORDER BY period, technician
+            """,
+            connection,
+        )
+    if not df.empty:
+        df["period"] = pd.to_datetime(df["period"], errors="coerce")
+    return df
+
+
+def load_monthly_consultivo_summary() -> pd.DataFrame:
+    """Lê a tabela materializada mensal de Consultivo."""
+    init_database()
+    with connect() as connection:
+        df = pd.read_sql_query(
+            """
+            SELECT period, login_netsales, seller, qtde_consultivo, qtde_produtos,
+                   qtde_mesh, qtde_tv, qtde_virtua, rows_count
+            FROM summary_consultivo_monthly
+            ORDER BY period, login_netsales, seller
+            """,
+            connection,
+        )
+    if not df.empty:
+        df["period"] = pd.to_datetime(df["period"], errors="coerce")
+    return df
 
 
 def get_drive_file_fingerprints(folder_id: str) -> dict[str, str]:
@@ -1809,7 +2153,7 @@ def save_roster_records(
         return 0
     init_database()
     clean_id = extract_spreadsheet_id(sheet_id)
-    with connect() as connection:
+    with _DB_WRITE_LOCK, connect() as connection:
         if is_demo:
             existing = connection.execute(
                 "SELECT COUNT(*) AS total FROM technician_roster WHERE is_demo = 0"
@@ -1897,13 +2241,20 @@ def load_roster() -> pd.DataFrame:
 def enrich_records_with_roster(
     frame: pd.DataFrame,
     roster: pd.DataFrame | None = None,
+    aliases: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
-    """Cruza registros de produção com ``lista_ativos``/``desligados`` por nome normalizado."""
+    """Cruza registros de produção com ``lista_ativos``/``desligados`` e aliases por nome."""
     work = frame.copy()
     if work.empty:
         for col in ("re_code", "login", "monitor", "un", "base", "roster_status"):
             work[col] = pd.Series(dtype="object")
         return work
+
+    name_aliases, _ = _aliases_to_maps(aliases)
+    if name_aliases:
+        raw_keys = _map_repeated_text(work["technician"], normalize_text, null_value="")
+        remapped = raw_keys.map(name_aliases)
+        work["technician"] = remapped.fillna(work["technician"])
 
     if roster is None or roster.empty:
         work["re_code"] = ""
@@ -1933,7 +2284,7 @@ def save_records(records: Iterable[dict[str, Any]], is_demo: bool = False) -> in
         return 0
     init_database()
     sources = {(row["source_file"], row["source_sheet"]) for row in rows}
-    with connect() as connection:
+    with _DB_WRITE_LOCK, connect() as connection:
         if not is_demo:
             connection.execute("DELETE FROM production_records WHERE is_demo = 1")
             connection.execute("DELETE FROM technician_roster WHERE is_demo = 1")
@@ -1970,6 +2321,7 @@ def save_records(records: Iterable[dict[str, Any]], is_demo: bool = False) -> in
                 for row in rows
             ],
         )
+        _refresh_monthly_summaries_in_conn(connection)
     return len(rows)
 
 
@@ -1983,7 +2335,7 @@ def sync_drive_records(
 ) -> int:
     rows = list(records)
     init_database()
-    with connect() as connection:
+    with _DB_WRITE_LOCK, connect() as connection:
         connection.execute("DELETE FROM production_records WHERE is_demo = 1")
         connection.execute("DELETE FROM technician_roster WHERE is_demo = 1")
         connection.execute(
@@ -2063,6 +2415,7 @@ def sync_drive_records(
                 for row in rows
             ],
         )
+        _refresh_monthly_summaries_in_conn(connection)
     return len(rows)
 
 
@@ -2103,11 +2456,13 @@ def _read_record_rows(connection: sqlite3.Connection) -> pd.DataFrame:
 
 
 def _prepare_loaded_records(
-    frame: pd.DataFrame, roster: pd.DataFrame | None = None
+    frame: pd.DataFrame,
+    roster: pd.DataFrame | None = None,
+    aliases: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Normaliza o frame carregado, sem consultar ou alterar o banco."""
     if frame.empty:
-        return enrich_records_with_roster(frame, roster)
+        return enrich_records_with_roster(frame, roster, aliases)
     if "contract" not in frame.columns:
         frame["contract"] = "Sem contrato"
     else:
@@ -2123,7 +2478,12 @@ def _prepare_loaded_records(
     frame = add_contracts_qty(frame)
     frame["reference_date"] = pd.to_datetime(frame["reference_date"])
     frame["period"] = frame["reference_date"].dt.to_period("M").dt.to_timestamp()
-    return enrich_records_with_roster(frame, roster)
+    for int_col in ("source_row", "is_demo"):
+        if int_col in frame.columns:
+            frame[int_col] = (
+                pd.to_numeric(frame[int_col], errors="coerce").fillna(0).astype("int32")
+            )
+    return enrich_records_with_roster(frame, roster, aliases)
 
 
 def load_records() -> pd.DataFrame:
@@ -2131,9 +2491,10 @@ def load_records() -> pd.DataFrame:
     with connect() as connection:
         frame = _read_record_rows(connection)
         roster = _read_roster_rows(connection)
+        aliases = _read_aliases_rows(connection)
     if frame.empty:
-        return enrich_records_with_roster(add_contracts_qty(frame), roster)
-    return _prepare_loaded_records(frame, roster)
+        return enrich_records_with_roster(add_contracts_qty(frame), roster, aliases)
+    return _prepare_loaded_records(frame, roster, aliases)
 
 
 def database_stats() -> dict[str, Any]:
@@ -2141,13 +2502,28 @@ def database_stats() -> dict[str, Any]:
     with connect() as connection:
         row = connection.execute(
             """
-            SELECT COUNT(*) AS records, COUNT(DISTINCT technician) AS technicians,
-                   MIN(reference_date) AS first_date, MAX(reference_date) AS last_date,
-                   MAX(imported_at) AS last_import, COALESCE(SUM(is_demo), 0) AS demo_rows
+            SELECT COUNT(*) AS records,
+                   COUNT(DISTINCT technician) AS technicians,
+                   COUNT(DISTINCT source_file) AS files,
+                   COUNT(DISTINCT substr(reference_date, 1, 7)) AS months_count,
+                   MIN(reference_date) AS first_date,
+                   MAX(reference_date) AS last_date,
+                   MAX(imported_at) AS last_import,
+                   COALESCE(SUM(is_demo), 0) AS demo_rows
             FROM production_records
             """
         ).fetchone()
-    return dict(row)
+        roster_row = connection.execute(
+            """
+            SELECT COUNT(*) AS roster_total,
+                   COALESCE(SUM(CASE WHEN status = 'ATIVO' THEN 1 ELSE 0 END), 0) AS roster_active
+            FROM technician_roster
+            """
+        ).fetchone()
+    stats = dict(row)
+    stats["roster_total"] = int(roster_row["roster_total"]) if roster_row else 0
+    stats["roster_active"] = int(roster_row["roster_active"]) if roster_row else 0
+    return stats
 
 
 def load_dashboard_snapshot() -> tuple[pd.DataFrame, dict[str, Any]]:
@@ -2156,11 +2532,16 @@ def load_dashboard_snapshot() -> tuple[pd.DataFrame, dict[str, Any]]:
     with connect() as connection:
         frame = _read_record_rows(connection)
         roster = _read_roster_rows(connection)
+        aliases = _read_aliases_rows(connection)
         stats = dict(
             connection.execute(
                 """
-                SELECT COUNT(*) AS records, COUNT(DISTINCT technician) AS technicians,
-                       MIN(reference_date) AS first_date, MAX(reference_date) AS last_date,
+                SELECT COUNT(*) AS records,
+                       COUNT(DISTINCT technician) AS technicians,
+                       COUNT(DISTINCT source_file) AS files,
+                       COUNT(DISTINCT substr(reference_date, 1, 7)) AS months_count,
+                       MIN(reference_date) AS first_date,
+                       MAX(reference_date) AS last_date,
                        MAX(imported_at) AS last_import,
                        COALESCE(SUM(is_demo), 0) AS demo_rows
                 FROM production_records
@@ -2172,8 +2553,10 @@ def load_dashboard_snapshot() -> tuple[pd.DataFrame, dict[str, Any]]:
         int(roster["status"].eq("ATIVO").sum()) if not roster.empty else 0
     )
     if frame.empty:
-        return enrich_records_with_roster(add_contracts_qty(frame), roster), stats
-    return _prepare_loaded_records(frame, roster), stats
+        return enrich_records_with_roster(
+            add_contracts_qty(frame), roster, aliases
+        ), stats
+    return _prepare_loaded_records(frame, roster, aliases), stats
 
 
 def import_batches() -> pd.DataFrame:
@@ -2230,7 +2613,7 @@ def save_consultivo_records(
         return 0
     init_database()
     sources = {str(row["source_file"]) for row in rows}
-    with connect() as connection:
+    with _DB_WRITE_LOCK, connect() as connection:
         if not is_demo:
             connection.execute("DELETE FROM consultivo_records WHERE is_demo = 1")
             connection.execute(
@@ -2276,6 +2659,7 @@ def save_consultivo_records(
                 for row in rows
             ],
         )
+        _refresh_monthly_summaries_in_conn(connection)
     return len(rows)
 
 
@@ -2290,7 +2674,7 @@ def sync_consultivo_drive_records(
     """Sincroniza incrementalmente os arquivos da pasta Histórico Consultivo no SQLite."""
     rows = list(records)
     init_database()
-    with connect() as connection:
+    with _DB_WRITE_LOCK, connect() as connection:
         connection.execute("DELETE FROM consultivo_records WHERE is_demo = 1")
         connection.execute(
             "INSERT INTO app_settings(key, value) VALUES ('consultivo_demo_disabled', '1') "
@@ -2377,6 +2761,7 @@ def sync_consultivo_drive_records(
                 for row in rows
             ],
         )
+        _refresh_monthly_summaries_in_conn(connection)
     return len(rows)
 
 
@@ -2421,8 +2806,9 @@ def _empty_consultivo_frame() -> pd.DataFrame:
 def enrich_consultivo_with_roster(
     frame: pd.DataFrame,
     roster: pd.DataFrame | None = None,
+    aliases: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
-    """Enriquece os registros de consultivo com ``lista_ativos``/``desligados`` por Login e Técnico."""
+    """Enriquece os registros de consultivo com ``lista_ativos``/``desligados`` e aliases."""
     if frame.empty:
         return _empty_consultivo_frame()
 
@@ -2448,6 +2834,18 @@ def enrich_consultivo_with_roster(
         if "seller" in work.columns
         else pd.Series("", index=work.index, dtype="object")
     )
+
+    name_aliases, login_aliases = _aliases_to_maps(aliases)
+    if name_aliases:
+        seller_keys_alias = _map_repeated_text(
+            seller_raw, normalize_text, null_value=""
+        )
+        seller_raw = seller_keys_alias.map(name_aliases).fillna(seller_raw)
+    has_login_alias = pd.Series(False, index=work.index, dtype=bool)
+    if login_aliases:
+        aliased_by_login = login_raw.map(login_aliases)
+        has_login_alias = aliased_by_login.notna()
+        seller_raw = aliased_by_login.fillna(seller_raw)
 
     tech_matched = pd.Series("", index=work.index, dtype="object")
     monitor_matched = pd.Series("", index=work.index, dtype="object")
@@ -2475,11 +2873,22 @@ def enrich_consultivo_with_roster(
         ).set_index("technician_key")
 
         if not by_login.empty:
-            tech_matched = login_raw.map(by_login["technician"]).fillna("")
-            monitor_matched = login_raw.map(by_login["monitor"]).fillna("")
-            un_matched = login_raw.map(by_login["un"]).fillna("")
-            base_matched = login_raw.map(by_login["base"]).fillna("")
-            status_matched = login_raw.map(by_login["status"]).fillna("")
+            non_aliased_login = ~has_login_alias
+            if non_aliased_login.any():
+                lr = login_raw.loc[non_aliased_login]
+                tech_matched.loc[non_aliased_login] = lr.map(
+                    by_login["technician"]
+                ).fillna("")
+                monitor_matched.loc[non_aliased_login] = lr.map(
+                    by_login["monitor"]
+                ).fillna("")
+                un_matched.loc[non_aliased_login] = lr.map(by_login["un"]).fillna("")
+                base_matched.loc[non_aliased_login] = lr.map(by_login["base"]).fillna(
+                    ""
+                )
+                status_matched.loc[non_aliased_login] = lr.map(
+                    by_login["status"]
+                ).fillna("")
 
         unmatched = tech_matched.eq("") & seller_raw.ne("")
         if unmatched.any() and not by_name.empty:
@@ -2527,12 +2936,18 @@ def enrich_consultivo_with_roster(
 
     dt_series = converter_data_consultivo_br(work["reference_date"])
     q_cons = (
-        pd.to_numeric(work["qtde_consultivo"], errors="coerce").fillna(0).astype(int)
+        pd.to_numeric(work["qtde_consultivo"], errors="coerce")
+        .fillna(0)
+        .astype("int32")
     )
-    q_prod = pd.to_numeric(work["qtde_produtos"], errors="coerce").fillna(0).astype(int)
-    q_mesh = pd.to_numeric(work["qtde_mesh"], errors="coerce").fillna(0).astype(int)
-    q_tv = pd.to_numeric(work["qtde_tv"], errors="coerce").fillna(0).astype(int)
-    q_virtua = pd.to_numeric(work["qtde_virtua"], errors="coerce").fillna(0).astype(int)
+    q_prod = (
+        pd.to_numeric(work["qtde_produtos"], errors="coerce").fillna(0).astype("int32")
+    )
+    q_mesh = pd.to_numeric(work["qtde_mesh"], errors="coerce").fillna(0).astype("int32")
+    q_tv = pd.to_numeric(work["qtde_tv"], errors="coerce").fillna(0).astype("int32")
+    q_virtua = (
+        pd.to_numeric(work["qtde_virtua"], errors="coerce").fillna(0).astype("int32")
+    )
 
     return pd.DataFrame(
         {
@@ -2620,7 +3035,8 @@ def load_consultivo_records() -> pd.DataFrame:
     with connect() as connection:
         raw = _read_consultivo_rows(connection)
         roster = _read_roster_rows(connection)
-    return enrich_consultivo_with_roster(raw, roster)
+        aliases = _read_aliases_rows(connection)
+    return enrich_consultivo_with_roster(raw, roster, aliases)
 
 
 def load_consultivo_snapshot() -> tuple[pd.DataFrame, dict[str, Any]]:
@@ -2629,6 +3045,7 @@ def load_consultivo_snapshot() -> tuple[pd.DataFrame, dict[str, Any]]:
     with connect() as connection:
         raw = _read_consultivo_rows(connection)
         roster = _read_roster_rows(connection)
+        aliases = _read_aliases_rows(connection)
         stats = dict(
             connection.execute(
                 """
@@ -2644,7 +3061,7 @@ def load_consultivo_snapshot() -> tuple[pd.DataFrame, dict[str, Any]]:
                 """
             ).fetchone()
         )
-    enriched = enrich_consultivo_with_roster(raw, roster)
+    enriched = enrich_consultivo_with_roster(raw, roster, aliases)
     return enriched, stats
 
 
@@ -2669,21 +3086,23 @@ def consultivo_import_batches() -> pd.DataFrame:
 
 def clear_demonstration() -> None:
     init_database()
-    with connect() as connection:
+    with _DB_WRITE_LOCK, connect() as connection:
         connection.execute("DELETE FROM production_records WHERE is_demo = 1")
         connection.execute("DELETE FROM technician_roster WHERE is_demo = 1")
         connection.execute("DELETE FROM consultivo_records WHERE is_demo = 1")
+        _refresh_monthly_summaries_in_conn(connection)
     set_setting("demo_disabled", "1")
     set_setting("consultivo_demo_disabled", "1")
 
 
 def clear_database() -> None:
     init_database()
-    with connect() as connection:
+    with _DB_WRITE_LOCK, connect() as connection:
         connection.execute("DELETE FROM production_records")
         connection.execute("DELETE FROM technician_roster")
         connection.execute("DELETE FROM consultivo_records")
         connection.execute("DELETE FROM drive_file_metadata")
+        _refresh_monthly_summaries_in_conn(connection)
     set_setting("demo_disabled", "1")
     set_setting("consultivo_demo_disabled", "1")
 
@@ -2766,6 +3185,25 @@ def _seed_consultivo_demonstration(
                         "600 MEGA (FIBRA)",
                         "CLARO TV+ BOX & 600 MEGA (FIBRA)",
                     )
+                status_pool = (
+                    "INSTALADA",
+                    "INSTALADA",
+                    "INSTALADA",
+                    "INSTALADA",
+                    "PENDENTE",
+                    "EM ANÁLISE",
+                    "CANCELADA",
+                )
+                tab_pool = (
+                    "VENDA",
+                    "VENDA",
+                    "UPGRADE",
+                    "VENDA",
+                    "CONSULTIVO",
+                    "REAGENDADO",
+                    "SEM INTERESSE",
+                )
+                status_idx = (tech_index + month_index * 2 + offset) % len(status_pool)
                 consultivo_demo.append(
                     {
                         "reference_date": ref_date,
@@ -2774,8 +3212,8 @@ def _seed_consultivo_demonstration(
                         "hp": f"1193{seq:06d}",
                         "contact_code": f"1127{seq:05d}",
                         "contract": f"CT-{((tech_index + month_index * 3 + offset) % 12) + 1:03d}",
-                        "tabulation_type": "VENDA",
-                        "status_netsales": "INSTALADA",
+                        "tabulation_type": tab_pool[status_idx],
+                        "status_netsales": status_pool[status_idx],
                         "plano_tv": plano_tv,
                         "plano_internet": plano_net,
                         "tipo_servico": tipo_serv,
@@ -2855,8 +3293,8 @@ def create_demonstration() -> None:
         return
     if stats["records"]:
         if stats["demo_rows"] == stats["records"]:
-            min_date = str(stats.get("min_date") or "")
-            if min_date and min_date <= "2025-01-31":
+            first_date = str(stats.get("first_date") or "")
+            if first_date and first_date <= "2025-01-31":
                 _seed_consultivo_demonstration(names, consultivo_periods)
                 return
             with connect() as connection:
@@ -2864,6 +3302,18 @@ def create_demonstration() -> None:
                 connection.execute("DELETE FROM technician_roster WHERE is_demo = 1")
         else:
             return
+
+    def _working_day_in_month(period_val: pd.Period, seed_num: int) -> str:
+        """Escolhe um dia útil (Seg–Sáb) determinístico dentro da competência."""
+        start_ts = period_val.to_timestamp()
+        days_in_month = period_val.days_in_month
+        workdays = [
+            d
+            for d in range(1, min(days_in_month, 28) + 1)
+            if start_ts.replace(day=d).weekday() < 6
+        ]
+        chosen = workdays[seed_num % len(workdays)] if workdays else 1
+        return start_ts.replace(day=chosen).strftime("%Y-%m-%d")
 
     records: list[dict[str, Any]] = []
     source_row = 2
@@ -2928,13 +3378,17 @@ def create_demonstration() -> None:
                 else:
                     pts = round(prod_total * (os_weights[os_idx] / weight_sum), 2)
                     allocated_prod = round(allocated_prod + pts, 2)
+                ref_day = _working_day_in_month(
+                    period, tech_index * 3 + os_idx * 5 + month_index
+                )
                 records.append(
                     {
                         "technician": technician,
-                        "reference_date": period.to_timestamp().strftime("%Y-%m-%d"),
+                        "reference_date": ref_day,
                         "source_sheet": PROD,
                         "project": project_name,
                         "contract": ct,
+                        "wo": f"WO-{period.strftime('%Y%m')}-{source_row:05d}",
                         "points": float(pts),
                         "source_file": f"{DEMO_SOURCE}_{period.strftime('%Y-%m')}",
                         "source_row": source_row,
@@ -2945,10 +3399,13 @@ def create_demonstration() -> None:
             records.append(
                 {
                     "technician": technician,
-                    "reference_date": period.to_timestamp().strftime("%Y-%m-%d"),
+                    "reference_date": _working_day_in_month(
+                        period, tech_index * 2 + month_index + 7
+                    ),
                     "source_sheet": GPON,
                     "project": project_name,
                     "contract": distinct_contracts[0],
+                    "wo": f"WO-{period.strftime('%Y%m')}-{source_row:05d}",
                     "points": float(gpon_total),
                     "source_file": f"{DEMO_SOURCE}_{period.strftime('%Y-%m')}",
                     "source_row": source_row,
@@ -2956,19 +3413,71 @@ def create_demonstration() -> None:
             )
             source_row += 1
 
-    # Histórico 2025 de colaborador desligado para exercitar escopos de equipe no comparativo 2025 x 2026.
+    # Colaborador recente (ramp-up nos últimos 3 meses) próximo à faixa de 300 pts na última competência.
+    ramp_periods = periods[-3:]
+    for idx_ramp, period in enumerate(ramp_periods):
+        ramp_pts = [195.0, 248.5, 289.0][idx_ramp]
+        records.append(
+            {
+                "technician": "Matheus Costa",
+                "reference_date": _working_day_in_month(period, idx_ramp * 6 + 4),
+                "source_sheet": PROD,
+                "project": "NET-LESTE",
+                "contract": f"CT-8{idx_ramp:02d}1",
+                "wo": f"WO-{period.strftime('%Y%m')}-{source_row:05d}",
+                "points": round(ramp_pts * 0.72, 2),
+                "source_file": f"{DEMO_SOURCE}_{period.strftime('%Y-%m')}",
+                "source_row": source_row,
+            }
+        )
+        source_row += 1
+        records.append(
+            {
+                "technician": "Matheus Costa",
+                "reference_date": _working_day_in_month(period, idx_ramp * 6 + 11),
+                "source_sheet": GPON,
+                "project": "NET-LESTE",
+                "contract": f"CT-8{idx_ramp:02d}2",
+                "wo": f"WO-{period.strftime('%Y%m')}-{source_row:05d}",
+                "points": round(ramp_pts * 0.28, 2),
+                "source_file": f"{DEMO_SOURCE}_{period.strftime('%Y-%m')}",
+                "source_row": source_row,
+            }
+        )
+        source_row += 1
+
+    # Histórico 2025 de colaboradores desligados para exercitar escopos e painel de Turnover.
     for month_index, period in enumerate(periods):
-        if period.year != 2025 or period.month > 8:
-            continue
-        for ct_offset in range(2):
+        if period.year == 2025 and period.month <= 8:
+            for ct_offset in range(2):
+                records.append(
+                    {
+                        "technician": "Tiago Henrique Mendes",
+                        "reference_date": _working_day_in_month(
+                            period, month_index * 3 + ct_offset * 5
+                        ),
+                        "source_sheet": PROD,
+                        "project": "NET-GUARULHOS",
+                        "contract": f"CT-9{period.month:02d}{ct_offset}",
+                        "wo": f"WO-{period.strftime('%Y%m')}-{source_row:05d}",
+                        "points": float(210 + month_index * 12 + ct_offset * 35),
+                        "source_file": f"{DEMO_SOURCE}_{period.strftime('%Y-%m')}",
+                        "source_row": source_row,
+                    }
+                )
+                source_row += 1
+        if period.year == 2025 and period.month <= 11:
             records.append(
                 {
-                    "technician": "Tiago Henrique Mendes",
-                    "reference_date": period.to_timestamp().strftime("%Y-%m-%d"),
+                    "technician": "Rodrigo Nascimento",
+                    "reference_date": _working_day_in_month(
+                        period, month_index * 4 + 3
+                    ),
                     "source_sheet": PROD,
-                    "project": "NET-GUARULHOS",
-                    "contract": f"CT-9{period.month:02d}{ct_offset}",
-                    "points": float(210 + month_index * 12 + ct_offset * 35),
+                    "project": "NET-ABCDM",
+                    "contract": f"CT-7{period.month:02d}0",
+                    "wo": f"WO-{period.strftime('%Y%m')}-{source_row:05d}",
+                    "points": float(315 + (month_index % 4) * 18),
                     "source_file": f"{DEMO_SOURCE}_{period.strftime('%Y-%m')}",
                     "source_row": source_row,
                 }
@@ -2993,6 +3502,17 @@ def create_demonstration() -> None:
     demo_roster.extend(
         [
             {
+                "technician": "Matheus Costa",
+                "re_code": "8315",
+                "login": "Z640099",
+                "monitor": demo_monitors[2][0],
+                "un": demo_monitors[2][1],
+                "base": demo_monitors[2][2],
+                "status": "ATIVO",
+                "source_tab": ROSTER_ACTIVE_TAB,
+                "last_modified": pd.Timestamp.today().strftime("%Y-%m-%d"),
+            },
+            {
                 "technician": "Rafael Augusto Pereira",
                 "re_code": "8290",
                 "login": "Z649001",
@@ -3012,9 +3532,22 @@ def create_demonstration() -> None:
                 "base": demo_monitors[1][2],
                 "status": "DESLIGADO",
                 "source_tab": ROSTER_TERMINATED_TAB,
-                "last_modified": pd.Timestamp.today().strftime("%Y-%m-%d"),
-                "termination_date": pd.Timestamp.today().strftime("%Y-%m-%d"),
+                "last_modified": "2025-08-29",
+                "termination_date": "2025-08-29",
                 "termination_reason": "Encerramento de contrato",
+            },
+            {
+                "technician": "Rodrigo Nascimento",
+                "re_code": "7995",
+                "login": "Z649003",
+                "monitor": demo_monitors[0][0],
+                "un": demo_monitors[0][1],
+                "base": demo_monitors[0][2],
+                "status": "DESLIGADO",
+                "source_tab": ROSTER_TERMINATED_TAB,
+                "last_modified": "2025-11-28",
+                "termination_date": "2025-11-28",
+                "termination_reason": "Pedido de demissão",
             },
         ]
     )
