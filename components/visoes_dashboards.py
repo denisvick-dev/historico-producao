@@ -6,6 +6,7 @@ import re
 from collections.abc import Mapping
 from typing import Any, cast
 
+import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
@@ -316,29 +317,26 @@ def comparar_tecnicos(atual: pd.DataFrame, anterior: pd.DataFrame) -> pd.DataFra
     resultado["Diferença de pontos"] = (
         resultado["Pontos atuais"] - resultado["Pontos anteriores"]
     )
-    resultado["Variação (%)"] = resultado.apply(
-        lambda linha: (
-            (linha["Pontos atuais"] / linha["Pontos anteriores"] - 1) * 100
-            if linha["Pontos anteriores"] > 0
-            else None
-        ),
-        axis=1,
+    pts_atual = resultado["Pontos atuais"]
+    pts_ant = resultado["Pontos anteriores"]
+    resultado["Variação (%)"] = np.where(
+        pts_ant > 0,
+        (pts_atual / pts_ant.where(pts_ant > 0) - 1.0) * 100.0,
+        np.nan,
     )
-
-    def _status(linha: pd.Series) -> str:
-        if anterior.empty:
-            return "Sem base anterior"
-        if linha["Pontos anteriores"] == 0 and linha["Pontos atuais"] > 0:
-            return "Novo na janela"
-        if linha["Pontos atuais"] == 0 and linha["Pontos anteriores"] > 0:
-            return "Sem produção atual"
-        if linha["Pontos atuais"] > linha["Pontos anteriores"]:
-            return "Alta"
-        if linha["Pontos atuais"] < linha["Pontos anteriores"]:
-            return "Queda"
-        return "Estável"
-
-    resultado["Status"] = resultado.apply(_status, axis=1)
+    if anterior.empty:
+        resultado["Status"] = "Sem base anterior"
+    else:
+        resultado["Status"] = np.select(
+            [
+                (pts_ant == 0) & (pts_atual > 0),
+                (pts_atual == 0) & (pts_ant > 0),
+                pts_atual > pts_ant,
+                pts_atual < pts_ant,
+            ],
+            ["Novo na janela", "Sem produção atual", "Alta", "Queda"],
+            default="Estável",
+        )
     resultado.index.name = "Técnico"
     resultado = resultado.reset_index()
     return (

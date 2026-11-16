@@ -1348,8 +1348,18 @@ class CSSInjector:
         )
 
     @staticmethod
-    def injetar(tema_sidebar: TemaSidebarType | str | None = None) -> None:
+    def injetar(
+        tema_sidebar: TemaSidebarType | str | None = None,
+        *,
+        forcar: bool = False,
+    ) -> None:
         tema_efetivo = _obter_tema_sidebar(tema_sidebar)
+        if (
+            not forcar
+            and st.session_state.get("_totale_css_head_injected") is True
+            and st.session_state.get("_totale_css_head_tema") == tema_efetivo
+        ):
+            return
         css_html = CSSInjector._build_css(tema_efetivo)
         _safe_render_html(css_html)
 
@@ -2315,17 +2325,23 @@ def render_table_html(
         f'<th style="text-align:{alinhamentos.get(col, "left")};">{Validadores.html_escape(str(col))}</th>'
         for col in df_display.columns
     )
+    cols_list = list(df_display.columns)
+    col_arrays = [df_display.iloc[:, idx].tolist() for idx in range(len(cols_list))]
+    ld_col_idx = (
+        cols_list.index(ld_coluna)
+        if ld_coluna and ld_coluna in cols_list and ld_valor
+        else None
+    )
     tr_parts: list[str] = []
-    for i, (_, row) in enumerate(df_display.iterrows()):
+    for i, row_vals in enumerate(zip(*col_arrays, strict=False)):
         td_parts: list[str] = []
         eh_destaque = False
-        if ld_coluna and ld_coluna in df_display.columns and ld_valor:
-            raw_ld = row[ld_coluna]
+        if ld_col_idx is not None:
+            raw_ld = row_vals[ld_col_idx]
             if isinstance(raw_ld, (pd.Series, np.ndarray)):
                 raw_ld = raw_ld.iloc[0] if isinstance(raw_ld, pd.Series) else raw_ld[0]
             eh_destaque = ld_valor in str(raw_ld).strip().upper()
-        for col in df_display.columns:
-            val = row[col]
+        for col, val in zip(cols_list, row_vals, strict=False):
             if isinstance(val, (pd.Series, np.ndarray)):
                 val = val.iloc[0] if isinstance(val, pd.Series) else val[0]
             align = alinhamentos.get(col, "left")
@@ -2501,6 +2517,45 @@ def render_skeleton(
     _safe_render_html(f'<div style="margin:12px 0;">{"".join(rows)}</div>')
 
 
+def navegar_para_tecnico(nome_tecnico: str) -> None:
+    """Agenda navegação direta para o perfil individual de um técnico."""
+    nome = str(nome_tecnico or "").strip()
+    if not nome:
+        return
+    st.session_state["_pending_navigation"] = "Técnicos"
+    st.session_state["_pending_technician"] = nome
+    st.session_state["_pending_sidebar_group"] = "Todos"
+
+
+def render_drilldown_tecnico(
+    tecnicos: list[str],
+    *,
+    key_prefix: str,
+    label: str = "Abrir dossiê 360° do técnico",
+    rotulo_select: str = "Selecionar técnico para detalhamento individual",
+) -> None:
+    """Renderiza seletor rápido com 1 clique para abrir o técnico na aba Técnicos."""
+    opcoes = sorted({str(t).strip() for t in tecnicos if str(t or "").strip()})
+    if not opcoes:
+        return
+    col_sel, col_btn = st.columns([3, 1], vertical_alignment="bottom")
+    with col_sel:
+        escolhido = st.selectbox(
+            rotulo_select,
+            options=opcoes,
+            key=f"{key_prefix}_drilldown_select",
+        )
+    with col_btn:
+        if st.button(
+            label,
+            key=f"{key_prefix}_drilldown_btn",
+            use_container_width=True,
+        ):
+            if escolhido:
+                navegar_para_tecnico(escolhido)
+                st.rerun(scope="app")
+
+
 __all__ = [
     "COR_LARANJA_SUAVE",
     "CSSInjector",
@@ -2546,12 +2601,14 @@ __all__ = [
     "formatar_variacao_pct_br",
     "injetar_css",
     "injetar_css_delta_cards",
+    "navegar_para_tecnico",
     "normalizar_tema_sidebar",
     "normalizar_texto_badge",
     "normalizar_tipo",
     "render_badge",
     "render_card",
     "render_delta_card",
+    "render_drilldown_tecnico",
     "render_empty_state",
     "render_hero",
     "render_hero_migracao",

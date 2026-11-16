@@ -825,23 +825,47 @@ def calcular_comparativo_anos(
     os_por_tec_c = (os_comp / tecs_ativos_c) if tecs_ativos_c > 0 else 0.0
 
     # Tabela mensal formatada para exibição e exportação CSV.
-    linhas_tbl_mensal: list[dict[str, object]] = []
-    for _, row in mensal_rec.iterrows():
-        linhas_tbl_mensal.append(
-            {
-                "Mês": str(row["mes_label"]),
-                f"Contratos {ano_base}": int(row["contratos_base"]),
-                f"Contratos {ano_comp}": int(row["contratos_comp"]),
-                "Δ Contratos": int(row["delta_contratos"]),
-                "Var. Contratos (%)": row["pct_contratos"],
-                f"O.S. {ano_base}": int(row["os_base"]),
-                f"O.S. {ano_comp}": int(row["os_comp"]),
-                "Δ O.S.": int(row["delta_os"]),
-                "Var. O.S. (%)": row["pct_os"],
-                f"O.S./Contrato {ano_base}": float(row["os_por_contrato_base"]),
-                f"O.S./Contrato {ano_comp}": float(row["os_por_contrato_comp"]),
-            }
+    linhas_tbl_mensal: list[dict[str, object]] = [
+        {
+            "Mês": str(m_lbl),
+            f"Contratos {ano_base}": int(ct_b),
+            f"Contratos {ano_comp}": int(ct_c),
+            "Δ Contratos": int(d_ct),
+            "Var. Contratos (%)": pct_ct,
+            f"O.S. {ano_base}": int(os_b),
+            f"O.S. {ano_comp}": int(os_c),
+            "Δ O.S.": int(d_os),
+            "Var. O.S. (%)": pct_o,
+            f"O.S./Contrato {ano_base}": float(oc_b),
+            f"O.S./Contrato {ano_comp}": float(oc_c),
+        }
+        for (
+            m_lbl,
+            ct_b,
+            ct_c,
+            d_ct,
+            pct_ct,
+            os_b,
+            os_c,
+            d_os,
+            pct_o,
+            oc_b,
+            oc_c,
+        ) in zip(
+            mensal_rec["mes_label"].tolist(),
+            mensal_rec["contratos_base"].tolist(),
+            mensal_rec["contratos_comp"].tolist(),
+            mensal_rec["delta_contratos"].tolist(),
+            mensal_rec["pct_contratos"].tolist(),
+            mensal_rec["os_base"].tolist(),
+            mensal_rec["os_comp"].tolist(),
+            mensal_rec["delta_os"].tolist(),
+            mensal_rec["pct_os"].tolist(),
+            mensal_rec["os_por_contrato_base"].tolist(),
+            mensal_rec["os_por_contrato_comp"].tolist(),
+            strict=False,
         )
+    ]
     linhas_tbl_mensal.append(
         {
             "Mês": "Total no recorte",
@@ -1450,6 +1474,56 @@ def _trend_variacao(delta: float | int) -> TipoTrendType:
     return "neutral"
 
 
+@st.cache_data(ttl=1800, max_entries=16, show_spinner=False)
+def _calcular_comparativo_anos_cached(
+    frame: pd.DataFrame,
+    *,
+    ano_base: int,
+    ano_comp: int,
+    modo_meses: Literal["equivalente", "ano_completo", "personalizado"],
+    meses_selecionados: tuple[int, ...] | None,
+    escopo_equipe: Literal["todos", "ativos", "mesma_equipe"],
+) -> ResumoComparativoAnos:
+    return calcular_comparativo_anos(
+        frame,
+        ano_base=ano_base,
+        ano_comp=ano_comp,
+        modo_meses=modo_meses,
+        meses_selecionados=list(meses_selecionados)
+        if meses_selecionados is not None
+        else None,
+        escopo_equipe=escopo_equipe,
+    )
+
+
+@st.cache_data(ttl=1800, max_entries=16, show_spinner=False)
+def _calcular_comparativo_cons_cruzado_cached(
+    consultivo_frame: pd.DataFrame,
+    *,
+    roster: pd.DataFrame | None,
+    ano_base: int,
+    ano_comp: int,
+    modo_meses: Literal["equivalente", "ano_completo", "personalizado"],
+    meses_personalizados: tuple[int, ...] | None,
+    escopo_equipe: Literal["todos", "ativos", "mesma_equipe"],
+    bases: tuple[str, ...] | None,
+    monitores: tuple[str, ...] | None,
+) -> Any:
+    return calcular_comparativo_consultivo(
+        consultivo_frame,
+        roster=roster,
+        ano_base=ano_base,
+        ano_comp=ano_comp,
+        modo_meses=modo_meses,
+        meses_personalizados=list(meses_personalizados)
+        if meses_personalizados is not None
+        else None,
+        escopo_equipe=escopo_equipe,
+        bases=list(bases) if bases is not None else None,
+        monitores=list(monitores) if monitores is not None else None,
+    )
+
+
 def render_comparativo_anos(
     records: pd.DataFrame,
     roster: pd.DataFrame | None = None,
@@ -1623,12 +1697,12 @@ def render_comparativo_anos(
         if sel_tecnicos:
             recorte_dim = recorte_dim[recorte_dim["technician"].isin(sel_tecnicos)]
 
-    resumo = calcular_comparativo_anos(
+    resumo = _calcular_comparativo_anos_cached(
         recorte_dim,
         ano_base=ano_base,
         ano_comp=ano_comp,
         modo_meses=modo_meses,
-        meses_selecionados=meses_manuais,
+        meses_selecionados=tuple(meses_manuais) if meses_manuais is not None else None,
         escopo_equipe=escopo_equipe,
     )
 
@@ -1760,16 +1834,18 @@ def render_comparativo_anos(
     # Seção dedicada de Cards de Saldo / Delta (Δ): Produção, O.S., Contratos (e Consultivo cruzado quando carregado).
     resumo_cons_cruzado = None
     if consultivo_frame is not None and not consultivo_frame.empty:
-        resumo_cons_cruzado = calcular_comparativo_consultivo(
+        resumo_cons_cruzado = _calcular_comparativo_cons_cruzado_cached(
             consultivo_frame,
             roster=roster,
             ano_base=ano_base,
             ano_comp=ano_comp,
             modo_meses=modo_meses,
-            meses_personalizados=meses_manuais,
+            meses_personalizados=tuple(meses_manuais)
+            if meses_manuais is not None
+            else None,
             escopo_equipe=escopo_equipe,
-            bases=sel_bases or None,
-            monitores=sel_monitores or None,
+            bases=tuple(sel_bases) if sel_bases else None,
+            monitores=tuple(sel_monitores) if sel_monitores else None,
         )
 
     render_section_header(

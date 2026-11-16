@@ -13,28 +13,41 @@ Plataforma corporativa em Streamlit dedicada ao acompanhamento executivo e anal�
 
 ## Módulos Executivos
 
-### 1. Produção & Produtividade Técnica
-- **Visão Executiva · Produção**: indicadores consolidados de Pontos Totais, participação percentual `Prod` / `Gpon`, média por técnico ativo, cards de Delta (`Δ`) com destaque percentual contra o período anterior, evolução mensal e ranking da operação.
+### 1. Inteligência Integrada & Gestão à Vista (Novo)
+- **Visão 360° Operacional × Comercial (`Visão 360°`)**: cruza **Produção Técnica (`Prod + Gpon`, O.S. e Contratos)** com **Performance Consultiva (`NetSales`)** e **Cadastro (`lista_ativos`)**, entregando **Penetração Consultiva (`Consultivos ÷ Contratos`)**, **Conversão Comercial (`Produtos ÷ Consultivos`)**, **Score 360° (0–100)**, **Matriz Estratégica de 4 Quadrantes** (*Elite 360°*, *Forte Operacional*, *Forte Comercial*, *Em Desenvolvimento*), visão consolidada por **Monitor**, **Base** e **U.N.**, evolução mensal combinada e exportação CSV.
+- **Radar de Alertas & Gestão à Vista (`Radar de Alertas`)**: motor de priorização automática em 3 níveis (*Crítico*, *Atenção*, *Oportunidade*) destacando **oportunidades de virada de faixa** (275–299,99 pts e limiares superiores), **quedas bruscas MoM (`< -20%`)**, **ativos cadastrados sem produção**, **equipes em campo sem consultivo**, **alta oscilação (`CV > 50%`)** e **produção sem cadastro**, com filtros interativos e exportação CSV.
+- **Scorecard de Supervisão (`Scorecard Supervisão`)**: avaliação executiva por **Monitor**, **Base** ou **U.N.** consolidando *span of control* (`Headcount Ativo`), cobertura produtiva (`%`), média e dispersão interna (`desvio-padrão`), `% em Faixas 4–5 (>= 375 pts)`, O.S., contratos, volume/conversão consultiva e **Índice Supervisão (0–100)**.
+
+### 2. Produção, Qualidade & Produtividade Técnica
+- **Visão Executiva · Produção**: indicadores consolidados de Pontos Totais, participação percentual `Prod` / `Gpon`, média por técnico ativo, cards de Delta (`Δ`) com destaque percentual contra o período anterior, evolução mensal, ranking da operação e barra de filtros global com **Situação**, **Monitor**, **Base**, **U.N.**, **Período**, **Projeto**, **Técnico** e ação **Limpar**.
 - **Gestão por Projeto**: ranking de projetos, evolução mensal, participação percentual, volume de O.S. e detalhamento por técnico.
 - **Ordens de Serviço (O.S.)**: evolução mensal por competência e ranking Top 15 de técnicos (cada registro válido da aba `Prod` corresponde a uma O.S.).
 - **Gestão & Eficiência de Contratos**:
   - *Quantidade de Contratos*: contratos distintos por técnico e competência, média mensal nos meses ativos e matriz exportável em CSV.
   - *Eficiência de Contratos*: classificação mensal nas Faixas 1 a 5 de pontuação, filtros por técnico e faixa predominante, evolução das faixas e matriz de frequência por contrato.
 - **Produtividade Unitária**: indicadores de **Pontos por O.S. (`Prod`)** e **Pontos por Contrato**, evolução do ticket médio de pontos e dispersão estratégica em 4 quadrantes (*Volume × Complexidade*).
-- **Regularidade Operacional & Sazonalidade**: média, mediana, coeficiente de variação, lacunas de produção e mapa de calor mensal por técnico ou projeto.
-- **Matriz de Eficiência & Desempenho Individual**: predominância mensal de faixas e dossiê individual do técnico frente à média da operação.
+- **Qualidade, Reincidência & Ritmo Diário (`Qualidade & Ritmo`)**:
+  - *Reincidência por Contrato / O.S.*: auditoria de retornos ao mesmo contrato em janelas configuráveis (7 / 15 / 30 / 60 dias), deduplicando registros do mesmo dia (`Prod + Gpon`), atribuindo a origem por técnico e projeto e medindo retornos pelo mesmo técnico.
+  - *Ritmo Diário (Seg–Sáb) & Projeção*: cadência média de pontos e O.S. por dia da semana e projeção de fechamento da competência mais recente com base em dias úteis restantes.
+- **Regularidade Operacional & Sazonalidade (`Regularidade`)**: média, mediana, coeficiente de variação, lacunas de produção e **mapa de calor mensal (Sazonalidade)** por técnico ou projeto integrados na mesma visão.
+- **Matriz de Eficiência & Desempenho Individual (`Técnicos`)**: predominância mensal de faixas e dossiê individual enriquecido com **Resumo Consultivo 360°** e **Comparação Direta (Lado a Lado)** entre 2 técnicos.
 
-### 2. Performance Consultiva & Mix Comercial
-- **Performance Consultiva (`Consultivo`)**: sincronizado com a pasta oficial [`Histórico Consultivo`](https://drive.google.com/drive/folders/1xMwEgPm9udFoGobv9cCUoMmuoxuFiPB2) no Google Drive e conciliado com `lista_ativos` via `LOGIN NETSALES` e `VENDEDOR`. Apresenta KPIs executivos com participação percentual em destaque, mix comercial (**Mesh**, **TV Box** e **Virtua**), projeção de fechamento mensal (Seg–Sáb), cards de Delta contra a janela anterior, ranking por **Monitor** ou **Técnico**, equipes sem vendas, meta diária por Monitor e exportação CSV protegida.
+### 3. Performance Consultiva, Funil NetSales & Mix Comercial
+- **Performance Consultiva (`Consultivo`)**: sincronizado com a pasta oficial [`Histórico Consultivo`](https://drive.google.com/drive/folders/1xMwEgPm9udFoGobv9cCUoMmuoxuFiPB2) no Google Drive e conciliado com `lista_ativos` via `LOGIN NETSALES` e `VENDEDOR`. Apresenta KPIs executivos com participação percentual em destaque, mix comercial (**Mesh**, **TV Box** e **Virtua**), projeção de fechamento mensal (Seg–Sáb), cards de Delta contra a janela anterior, ranking por **Monitor** ou **Técnico**, equipes sem vendas, meta diária por Monitor, **Funil NetSales & Mix de Planos** (`STATUS NETSALES`, Pareto de `TIPO DE TABULAÇÃO`, mix real de `PLANO INTERNET` / `PLANO TV` e conversão por `TIPO SERVIÇO`) e exportação CSV protegida.
 
-### 3. Inteligência Comparativa Interanual (`2025 × 2026`)
+### 4. Inteligência Comparativa Interanual (`2025 × 2026`)
 - **Produção `2025 × 2026` (`Comparativo Interanual · Produção, Contratos e O.S.`)**: análise lado a lado entre anos (recorte equivalente dos mesmos meses, ano completo ou seleção manual) e escopos de equipe (*Operação completa*, *Apenas ativos atuais* ou *Mesma equipe nos 2 anos*), com **Cards de Delta (`Δ`) e Spotlight Percentual (`VARIAÇÃO %`)**, comparativos mensais com rótulos percentuais, curvas acumuladas YTD, giro `O.S./Contrato` e cruzamento executivo com Consultivo.
 - **Consultivo `2025 × 2026` (`Comparativo Interanual · Performance Consultiva & Mix`)**: evolução interanual de atendimentos consultivos, produtos comercializados, taxa de conversão (`Produtos/Consultivo`) e deslocamento de mix em pontos percentuais (`Δ Mix p.p.`) para Mesh, TV Box e Virtua por Base, Monitor e Técnico.
 
-### 4. Governança Cadastral & Dados
+### 5. Retenção, Ramp-up & Governança Cadastral
+- **Turnover, Capacidade Perdida & Curva de Ramp-up (`Turnover & Ramp-up`)**: análise de taxa de turnover, Pareto de motivos de desligamento, comparativo por Base, estimativa de **capacidade produtiva mensal perdida (`pts/mês`)** e **curva de maturação de novos técnicos** (Mês 1 a Mês 6+) frente à meta configurável (padrão 300 pts).
 - **Quadro Cadastral (`lista_ativos`)**: conciliação direta com a planilha oficial [`lista_ativos`](https://docs.google.com/spreadsheets/d/1LQKDcLshC6XSXLBVWaEYSpxrro6uydyU9pwDLc38pEg) (abas `lista_ativos` e `desligados`), unificando **RE**, **Login**, **Situação**, **Monitor**, **U.N.** e **Base** aos indicadores operacionais e comerciais.
-- **Governança & Dados**: rastreabilidade de cobertura de projetos, status de sincronização incremental, auditoria de arquivos importados com contador `Qtde_Contrato` e exportação CSV.
-- **Observabilidade & Infraestrutura**: persistência local em SQLite, logs estruturados em JSON (`structlog`), health check nativo para contêineres e pipeline automatizado de qualidade via GitHub Actions.
+- **Governança & Dados**: rastreabilidade de cobertura de projetos, status de sincronização incremental, auditoria de arquivos importados com contador `Qtde_Contrato`, gestão de **De-Para de Técnicos & Logins NetSales (`technician_aliases`)**, **Backup Seguro SQLite (WAL-Safe)** via `sqlite3.backup()` + `PRAGMA optimize` e exportação CSV / **Pacote Executivo multi-aba `.xlsx`** (5 abas estilizadas via `openpyxl`).
+- **Performance, UX, Observabilidade & Infraestrutura**:
+  - Persistência SQLite com modo **WAL**, `busy_timeout=15000`, trava de escrita thread-safe (`threading.RLock`), cache de inicialização de schema, índices compostos e **tabelas materializadas mensais** (`summary_production_monthly`, `summary_consultivo_monthly`).
+  - Carregamento preguiçoso (*lazy loading*) por módulo (incluindo `roster` e `consultivo` sob demanda), cache analítico `@st.cache_data(ttl=1800, max_entries=16)`, subpainéis isolados via `@st.fragment` e sincronização **cache-first em segundo plano** quando a base local já está populada.
+  - Navegação organizada por **categoria de módulos** na barra lateral (`Todos`, `Executivo`, `Operação`, `Comercial`, `Pessoas & Dados`), **drill-down em 1 clique** para o perfil individual de técnicos, **chips visuais de filtros ativos** e sincronização com a URL via `st.query_params`.
+  - Cálculos vetorizados em NumPy/pandas (zero `.apply(axis=1)` / `.iterrows()` em caminhos críticos), telemetria estruturada de latência de renderização (`pagina_renderizada` com `duracao_ms` em `structlog`), **Dockerfile multi-stage não-root (`appuser`)**, benchmarks analíticos (`scripts/benchmark_data.py`) e auditoria de vulnerabilidades (`pip-audit`) no CI.
 
 ---
 

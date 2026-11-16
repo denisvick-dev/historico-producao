@@ -1,23 +1,45 @@
-FROM python:3.12-slim
+# syntax=docker/dockerfile:1
+
+FROM python:3.12-slim AS builder
+
+WORKDIR /build
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN python -m pip install --no-cache-dir --upgrade pip \
+    && python -m pip wheel --no-cache-dir --wheel-dir /wheels -r requirements.txt
+
+
+FROM python:3.12-slim AS runtime
 
 LABEL org.opencontainers.image.title="Totale · Inteligência & Gestão Operacional" \
       org.opencontainers.image.description="Plataforma corporativa de Inteligência & Gestão Operacional da Totale (Produção Técnica, O.S., Contratos, Performance Consultiva e Quadro Ativo)" \
       org.opencontainers.image.vendor="Totale" \
       org.opencontainers.image.source="https://github.com/denisvick-dev/totale-gestao-operacional"
 
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
 WORKDIR /app
 
-# Dependências do sistema (necessárias para alguns pacotes Python)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
     curl \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --create-home --shell /bin/bash --uid 10001 appuser
 
+COPY --from=builder /wheels /wheels
 COPY requirements.txt .
-RUN python -m pip install --no-cache-dir --upgrade pip \
-    && python -m pip install --no-cache-dir -r requirements.txt
+RUN python -m pip install --no-cache-dir --no-index --find-links=/wheels -r requirements.txt \
+    && rm -rf /wheels
 
-COPY . .
+COPY --chown=appuser:appuser . .
+RUN mkdir -p /app/data && chown -R appuser:appuser /app/data
+
+USER appuser
 
 EXPOSE 8501
 

@@ -1391,17 +1391,19 @@ def _grafico_dumbbell_consultivo(
     col_c = f"{metrica_prefixo} {ano_comp}"
     top = tabela.head(limite).iloc[::-1].copy()
 
-    for _, row in top.iterrows():
-        fig_x = [row[col_b], row[col_c]]
+    for lbl, val_b, val_c in zip(
+        top[rotulo].tolist(),
+        top[col_b].tolist(),
+        top[col_c].tolist(),
+        strict=False,
+    ):
         fig.add_trace(
             go.Scatter(
-                x=fig_x,
-                y=[row[rotulo], row[rotulo]],
+                x=[val_b, val_c],
+                y=[lbl, lbl],
                 mode="lines",
                 line={
-                    "color": "#CBD5E1"
-                    if row[col_c] >= row[col_b]
-                    else "rgba(220, 38, 38, 0.38)",
+                    "color": "#CBD5E1" if val_c >= val_b else "rgba(220, 38, 38, 0.38)",
                     "width": 3,
                 },
                 showlegend=False,
@@ -1624,6 +1626,36 @@ def _sintese_executiva_consultivo(
     )
 
 
+@st.cache_data(ttl=1800, max_entries=16, show_spinner=False)
+def _calcular_comparativo_consultivo_cached(
+    consultivo_frame: pd.DataFrame,
+    *,
+    roster: pd.DataFrame | None,
+    ano_base: int,
+    ano_comp: int,
+    modo_meses: Literal["equivalente", "ano_completo", "personalizado"],
+    meses_personalizados: tuple[int, ...] | None,
+    escopo_equipe: Literal["todos", "ativos", "mesma_equipe"],
+    bases: tuple[str, ...] | None,
+    monitores: tuple[str, ...] | None,
+    uns: tuple[str, ...] | None,
+) -> ResumoComparativoConsultivo:
+    return calcular_comparativo_consultivo(
+        consultivo_frame,
+        roster=roster,
+        ano_base=ano_base,
+        ano_comp=ano_comp,
+        modo_meses=modo_meses,
+        meses_personalizados=list(meses_personalizados)
+        if meses_personalizados is not None
+        else None,
+        escopo_equipe=escopo_equipe,
+        bases=list(bases) if bases is not None else None,
+        monitores=list(monitores) if monitores is not None else None,
+        uns=list(uns) if uns is not None else None,
+    )
+
+
 def render_comparativo_consultivo(
     consultivo_frame: pd.DataFrame,
     roster: pd.DataFrame | None = None,
@@ -1774,17 +1806,17 @@ def render_comparativo_consultivo(
                 key="comp_cons_meses_custom",
             )
 
-    resumo = calcular_comparativo_consultivo(
+    resumo = _calcular_comparativo_consultivo_cached(
         consultivo_frame,
         roster=roster,
         ano_base=ano_base,
         ano_comp=ano_comp,
         modo_meses=modo_sel,
-        meses_personalizados=meses_custom,
+        meses_personalizados=tuple(meses_custom) if meses_custom is not None else None,
         escopo_equipe=escopo_equipe,
-        bases=bases_sel or None,
-        monitores=monitores_sel or None,
-        uns=uns_sel or None,
+        bases=tuple(bases_sel) if bases_sel else None,
+        monitores=tuple(monitores_sel) if monitores_sel else None,
+        uns=tuple(uns_sel) if uns_sel else None,
     )
 
     # Upload complementar opcional (útil para carregar base histórica 2025 em CSV/XLSX na hora).
