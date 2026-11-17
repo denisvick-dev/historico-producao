@@ -1680,6 +1680,14 @@ def _invalidate_all_data_caches() -> None:
     _load_dashboard_snapshot.clear()
     _load_roster_cached.clear()
     _load_consultivo_cached.clear()
+    try:
+        from components.tecnicos_comparacao import (
+            _calcular_comparacao_tecnicos_cached as _tecnicos_cached,
+        )
+
+        _tecnicos_cached.clear()
+    except Exception:  # pragma: no cover - defensivo contra import cíclico
+        pass
 
 
 @st.cache_data(ttl=1800, max_entries=8, show_spinner=False)
