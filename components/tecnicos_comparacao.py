@@ -388,6 +388,28 @@ def calcular_comparacao_tecnicos(
     )
 
 
+@st.cache_data(ttl=900, max_entries=16, show_spinner=False)
+def _calcular_comparacao_tecnicos_cached(
+    records: pd.DataFrame,
+    tecnico_a: str,
+    modo: ModoComparacao,
+    tecnico_b: str | None,
+    consultivo_frame: pd.DataFrame | None,
+    period_start: pd.Timestamp | None,
+    period_end: pd.Timestamp | None,
+) -> ComparacaoTecnicoResultado:
+    """Memoiza a comparação 1:1 para não re-agrupar a base a cada interação do fragmento."""
+    return calcular_comparacao_tecnicos(
+        records,
+        tecnico_a,
+        modo=modo,
+        tecnico_b=tecnico_b,
+        consultivo_frame=consultivo_frame,
+        period_start=period_start,
+        period_end=period_end,
+    )
+
+
 @st.fragment
 def render_comparacao_lado_a_lado(
     filtered: pd.DataFrame,
@@ -439,7 +461,7 @@ def render_comparacao_lado_a_lado(
                 "Comparando automaticamente contra o benchmark selecionado no mesmo período."
             )
 
-    res = calcular_comparacao_tecnicos(
+    res = _calcular_comparacao_tecnicos_cached(
         filtered,
         tecnico_a,
         modo=modo,
