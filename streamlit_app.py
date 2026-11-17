@@ -970,7 +970,8 @@ def render_metrics(
     projects: list[str],
     period_start: pd.Timestamp,
     period_end: pd.Timestamp,
-) -> None:
+) -> dict[str, Any]:
+    """Renderiza os cards KPI e devolve os totais agregados para reuso."""
     totals = summarize(filtered, [])
     if totals.empty:
         current_prod = current_gpon = current_total = 0.0
@@ -1126,6 +1127,14 @@ def render_metrics(
             num_atual=float(current_gpon),
         )
 
+    return {
+        "current_total": current_total,
+        "current_prod": current_prod,
+        "current_gpon": current_gpon,
+        "active": active,
+        "average": average,
+    }
+
 
 def render_overview(
     filtered: pd.DataFrame,
@@ -1138,7 +1147,7 @@ def render_overview(
     *,
     monthly_prod_summary: pd.DataFrame | None = None,
 ) -> None:
-    render_metrics(
+    metrics = render_metrics(
         filtered,
         records,
         technicians,
@@ -1147,14 +1156,12 @@ def render_overview(
         period_start,
         period_end,
     )
+    current_total = metrics["current_total"]
+    current_prod = metrics["current_prod"]
+    current_gpon = metrics["current_gpon"]
 
     # Ticker animado com destaques da visão geral
-    totals = summarize(filtered, [])
-    if not totals.empty:
-        current_total = totals.iloc[0]["points_total"]
-        current_prod = totals.iloc[0]["points_prod"]
-        current_gpon = totals.iloc[0]["points_gpon"]
-
+    if not filtered.empty:
         ranking = summarize(filtered, "technician").sort_values(
             "points_total", ascending=False
         )
@@ -1235,10 +1242,7 @@ def render_overview(
     )
     active_months = count_active_months_by_technician(filtered)
     best_months = best_month_by_technician(filtered)
-    latest_period = filtered["period"].max()
-    latest = summarize(
-        filtered[filtered["period"].eq(latest_period)], "technician"
-    ).set_index("technician")
+    # latest_period e latest já foram computados na seção do ticker acima.
     previous_month = latest_period - pd.DateOffset(months=1)
     previous = summarize(
         filtered[filtered["period"].eq(previous_month)], "technician"
